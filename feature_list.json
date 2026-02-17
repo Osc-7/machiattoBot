@@ -62,7 +62,7 @@
         "实现工具调用格式",
         "编写 LLM 客户端测试"
       ],
-      "passes": false,
+      "passes": true,
       "priority": "high"
     },
     {
@@ -74,7 +74,7 @@
         "创建工具注册表",
         "实现 OpenAI Function Calling 格式转换"
       ],
-      "passes": false,
+      "passes": true,
       "priority": "high"
     },
     {

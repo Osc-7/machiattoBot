@@ -1,0 +1,128 @@
+"""
+对话上下文管理
+
+管理多轮对话的消息历史。
+"""
+
+import json
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+
+@dataclass
+class ConversationContext:
+    """
+    对话上下文。
+
+    管理多轮对话的消息历史，支持：
+    - 添加用户消息
+    - 添加助手消息
+    - 添加工具调用结果
+    - 导出为 LLM API 格式
+    """
+
+    messages: List[Dict[str, Any]] = field(default_factory=list)
+    """消息列表"""
+
+    max_messages: int = 100
+    """最大消息数量（超出时会裁剪旧消息）"""
+
+    def add_user_message(self, content: str) -> None:
+        """
+        添加用户消息。
+
+        Args:
+            content: 消息内容
+        """
+        self._add_message({"role": "user", "content": content})
+
+    def add_assistant_message(
+        self,
+        content: Optional[str] = None,
+        tool_calls: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        """
+        添加助手消息。
+
+        Args:
+            content: 文本内容（可选）
+            tool_calls: 工具调用列表（可选）
+        """
+        message: Dict[str, Any] = {"role": "assistant"}
+
+        if content is not None:
+            message["content"] = content
+
+        if tool_calls is not None:
+            message["tool_calls"] = tool_calls
+
+        self._add_message(message)
+
+    def add_tool_result(
+        self,
+        tool_call_id: str,
+        result: Any,
+        is_error: bool = False,
+    ) -> None:
+        """
+        添加工具调用结果。
+
+        Args:
+            tool_call_id: 工具调用 ID
+            result: 工具返回结果
+            is_error: 是否是错误结果
+        """
+        if isinstance(result, str):
+            content = result
+        elif hasattr(result, "to_json"):
+            content = result.to_json()
+        elif hasattr(result, "model_dump"):
+            content = json.dumps(result.model_dump(), ensure_ascii=False)
+        else:
+            content = json.dumps(result, ensure_ascii=False)
+
+        self._add_message(
+            {
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": content,
+            }
+        )
+
+    def get_messages(self) -> List[Dict[str, Any]]:
+        """
+        获取消息列表。
+
+        Returns:
+            消息列表
+        """
+        return list(self.messages)
+
+    def clear(self) -> None:
+        """清空消息历史"""
+        self.messages.clear()
+
+    def _add_message(self, message: Dict[str, Any]) -> None:
+        """
+        添加消息并检查数量限制。
+
+        Args:
+            message: 消息对象
+        """
+        self.messages.append(message)
+
+        # 如果超出限制，移除旧消息（保留第一条系统消息）
+        if len(self.messages) > self.max_messages:
+            # 保留系统消息
+            system_messages = [m for m in self.messages if m.get("role") == "system"]
+            other_messages = [m for m in self.messages if m.get("role") != "system"]
+
+            # 保留最近的消息
+            keep_count = self.max_messages - len(system_messages)
+            other_messages = other_messages[-keep_count:]
+
+            self.messages = system_messages + other_messages
+
+    def __len__(self) -> int:
+        """返回消息数量"""
+        return len(self.messages)

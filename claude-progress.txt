@@ -1,5 +1,64 @@
 # Schedule Agent 开发进度
 
+## 2026-02-17 - 任务: LLM-001 实现豆包 LLM 客户端
+
+### 完成内容:
+- 创建 `src/schedule_agent/core/llm/client.py` LLM 客户端:
+  - 实现 `LLMClient` 类封装豆包/OpenAI API 调用
+  - 实现 `ToolCall` 和 `LLMResponse` 数据类
+  - 实现 `chat()` 基础对话方法
+  - 实现 `chat_with_tools()` 支持工具调用的对话方法
+  - 支持系统消息注入和工具选择策略
+
+- 创建 `src/schedule_agent/core/context/time_context.py` 时间上下文:
+  - 实现 `TimeContext` 类包含当前时间的各种表示形式
+  - 实现中文星期几、时间段描述、周末判断等属性
+  - 实现本周/本月的开始和结束日期计算
+  - 实现 `to_prompt_string()` 生成 LLM 系统提示字符串
+  - 实现 `get_time_context()` 获取当前时间上下文
+  - 实现 `get_relative_date_desc()` 获取相对日期中文描述
+
+- 创建 `src/schedule_agent/core/context/conversation.py` 对话上下文:
+  - 实现 `ConversationContext` 类管理多轮对话消息历史
+  - 实现 `add_user_message()`, `add_assistant_message()` 方法
+  - 实现 `add_tool_result()` 添加工具调用结果
+  - 实现消息数量限制和自动裁剪
+
+- 创建 `src/schedule_agent/core/tools/base.py` 工具基类:
+  - 实现 `ToolParameter` 参数定义类
+  - 实现 `ToolDefinition` 工具定义类（包含示例和注意事项）
+  - 实现 `ToolResult` 工具结果类
+  - 实现 `BaseTool` 抽象基类
+  - 实现 OpenAI Function Calling 格式转换
+
+- 创建 `src/schedule_agent/core/tools/registry.py` 工具注册表:
+  - 实现 `ToolRegistry` 类管理工作
+  - 实现 `register()`, `unregister()`, `get()` 方法
+  - 实现 `get_all_definitions()` 获取所有工具定义
+  - 实现 `execute()` 执行工具并返回结果
+
+- 更新 `src/schedule_agent/core/__init__.py` 导出所有核心类
+
+- 创建测试文件:
+  - `tests/test_llm.py` - LLM 客户端测试 (9 个测试用例)
+  - `tests/test_context.py` - 上下文管理测试 (27 个测试用例)
+  - `tests/test_tools.py` - 工具系统测试 (32 个测试用例)
+
+### 测试:
+- 运行 `pytest tests/ -v` 全部 148 个测试通过 (1 个跳过)
+- 验证 LLM 客户端基础功能和工具调用功能
+- 验证时间上下文生成和格式化
+- 验证对话上下文的消息管理
+- 验证工具定义和注册表功能
+
+### 备注:
+- TOL-001 任务（工具注册表）也在此任务中一并完成
+- LLM 客户端支持异步操作，使用 AsyncOpenAI
+- 工具系统遵循 OpenAI Function Calling 格式
+- 下一步任务: TOL-002 实现时间解析工具
+
+---
+
 ## 2026-02-17 - 任务: STR-001 实现 JSON 存储
 
 ### 完成内容:
