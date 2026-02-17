@@ -1,0 +1,25 @@
+{
+  "name": "build-agent-sandbox",
+  "build": { 
+    "dockerfile": "Dockerfile",
+    "context": "..",
+    "args": { "USERNAME": "claudeuser" } 
+  },
+  "workspaceFolder": "/work",
+  "remoteUser": "root",
+  
+  // 必须为 true：它会把容器内 claudeuser 的 UID 改成跟你 Mac 一样（通常是 501 或 1000）
+  // 这样挂载进去的 /work 文件夹你才有权看
+  "updateRemoteUserUID": true,
+
+  // 如果进去还是没文件，加这一行强制让 VS Code 重新挂载
+  // "workspaceMount": "source=${localWorkspaceFolder},target=/work,type=bind,consistency=cached",
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}

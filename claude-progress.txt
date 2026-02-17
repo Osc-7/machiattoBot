@@ -1,0 +1,12 @@
+# Schedule Agent 开发进度
+
+## 2025-02-17 - 初始化项目
+
+### 准备工作
+- 阅读了 Anthropic 的 long-running agents 指南
+- 创建了 feature_list.json，定义了 13 个功能任务
+- 准备创建 config.yaml 配置豆包 API
+
+### 下一步
+- 配置豆包 API
+- 创建项目目录结构

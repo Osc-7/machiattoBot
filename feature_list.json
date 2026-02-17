@@ -1,0 +1,160 @@
+{
+  "features": [
+    {
+      "category": "infrastructure",
+      "id": "INF-001",
+      "description": "初始化项目结构和 Git 仓库",
+      "steps": [
+        "创建 src/schedule_agent 目录结构",
+        "初始化 Git 仓库",
+        "创建 feature_list.json",
+        "创建 claude-progress.txt",
+        "创建 requirements.txt"
+      ],
+      "passes": false,
+      "priority": "high"
+    },
+    {
+      "category": "config",
+      "id": "CFG-001",
+      "description": "配置豆包 API",
+      "steps": [
+        "创建 config.yaml 模板",
+        "实现配置加载模块",
+        "测试配置读取"
+      ],
+      "passes": false,
+      "priority": "high"
+    },
+    {
+      "category": "models",
+      "id": "MDL-001",
+      "description": "定义数据模型 (Event, Task, TimeSlot)",
+      "steps": [
+        "创建 Event 模型",
+        "创建 Task 模型",
+        "创建 TimeSlot 模型",
+        "编写模型测试"
+      ],
+      "passes": false,
+      "priority": "high"
+    },
+    {
+      "category": "storage",
+      "id": "STR-001",
+      "description": "实现 JSON 存储",
+      "steps": [
+        "创建 JSON 存储类",
+        "实现 Event CRUD",
+        "实现 Task CRUD",
+        "编写存储测试"
+      ],
+      "passes": false,
+      "priority": "high"
+    },
+    {
+      "category": "llm",
+      "id": "LLM-001",
+      "description": "实现豆包 LLM 客户端",
+      "steps": [
+        "创建 LLM 客户端封装",
+        "实现时间上下文注入",
+        "实现工具调用格式",
+        "编写 LLM 客户端测试"
+      ],
+      "passes": false,
+      "priority": "high"
+    },
+    {
+      "category": "tools",
+      "id": "TOL-001",
+      "description": "实现工具注册表",
+      "steps": [
+        "定义工具基类",
+        "创建工具注册表",
+        "实现 OpenAI Function Calling 格式转换"
+      ],
+      "passes": false,
+      "priority": "high"
+    },
+    {
+      "category": "tools",
+      "id": "TOL-002",
+      "description": "实现时间解析工具",
+      "steps": [
+        "创建 parse_time 工具",
+        "使用 LLM 解析自然语言时间",
+        "处理相对时间（明天、下周等）",
+        "编写测试用例"
+      ],
+      "passes": false,
+      "priority": "high"
+    },
+    {
+      "category": "tools",
+      "id": "TOL-003",
+      "description": "实现存储工具 (add_event, add_task, get_events, get_tasks)",
+      "steps": [
+        "创建 add_event 工具",
+        "创建 add_task 工具",
+        "创建 get_events 工具",
+        "创建 get_tasks 工具",
+        "编写工具测试"
+      ],
+      "passes": false,
+      "priority": "high"
+    },
+    {
+      "category": "tools",
+      "id": "TOL-004",
+      "description": "实现规划器工具 (get_free_slots, plan_tasks)",
+      "steps": [
+        "创建 get_free_slots 工具",
+        "创建 plan_tasks 工具",
+        "实现睡眠时间考虑",
+        "编写测试用例"
+      ],
+      "passes": false,
+      "priority": "high"
+    },
+    {
+      "category": "agent",
+      "id": "AGT-001",
+      "description": "实现主 Agent 循环",
+      "steps": [
+        "创建 Agent 类",
+        "实现多轮工具调用循环",
+        "实现对话上下文管理",
+        "添加时间上下文注入"
+      ],
+      "passes": false,
+      "priority": "high"
+    },
+    {
+      "category": "cli",
+      "id": "CLI-001",
+      "description": "实现命令行交互界面",
+      "steps": [
+        "创建 main.py CLI 入口",
+        "实现交互式循环",
+        "添加退出命令",
+        "测试 CLI"
+      ],
+      "passes": false,
+      "priority": "high"
+    },
+    {
+      "category": "testing",
+      "id": "TST-001",
+      "description": "端到端场景测试",
+      "steps": [
+        "测试场景1: 基本添加 Event",
+        "测试场景2: 添加 Task",
+        "测试场景3: 混合输入和规划",
+        "测试场景4: 查看日程"
+      ],
+      "passes": false,
+      "priority": "medium"
+    }
+  ]
+}

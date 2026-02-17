@@ -1,0 +1,48 @@
+# Schedule Agent 配置示例
+# 豆包 API 说明：
+# 1. 需要在火山引擎控制台创建推理接口获取 endpoint_id
+# 2. API Key 从火山引擎控制台获取
+# 3. model 参数填写推理端点 ID (如 ep-20250117123456)
+
+# 使用方式：
+# 方式1（推荐）：设置环境变量
+#   export DOUBAO_API_KEY="your-api-key"
+#   export DOUBAO_MODEL="ep-20250117123456"  # 你的推理端点ID
+#   python -m schedule_agent.main
+#
+# 方式2：直接填写（不推荐，容易泄露）
+#   将下面的 your-doubao-api-key-here 替换为实际值
+
+# 豆包 LLM 配置
+llm:
+  provider: "doubao"
+  api_key: "your-doubao-api-key-here"
+  base_url: "https://ark.cn-beijing.volces.com/api/v3"
+  # 模型列表（需要在控制台创建推理接口）：
+  #   - doubao-pro-256k: 256K 长上下文
+  #   - doubao-pro-128k: 128K 长上下文
+  #   - doubao-pro-32k: 32K 上下文
+  #   - doubao-pro: 标准版
+  #   - doubao-lite: 轻量版
+  # 实际使用时填写推理端点 ID，如：ep-20250117123456
+  model: "doubao-pro-32k"
+  temperature: 0.7
+  max_tokens: 4096
+
+# 时间配置
+time:
+  timezone: "Asia/Shanghai"
+  sleep_start: "23:00"
+  sleep_end: "08:00"
+
+# 存储配置
+storage:
+  type: "json"
+  data_dir: "./data"
+  events_file: "events.json"
+  tasks_file: "tasks.json"
+
+# Agent 配置
+agent:
+  max_iterations: 10
+  enable_debug: true
