@@ -1,5 +1,68 @@
 # Schedule Agent 开发进度
 
+## 2026-02-17 - 任务: TOL-003 实现存储工具 (add_event, add_task, get_events, get_tasks)
+
+### 完成内容:
+- 创建 `src/schedule_agent/core/tools/storage_tools.py` 存储工具:
+  - 实现 `AddEventTool` 工具类：创建日程事件
+  - 实现 `AddTaskTool` 工具类：创建待办任务
+  - 实现 `GetEventsTool` 工具类：查询日程事件
+  - 实现 `GetTasksTool` 工具类：查询任务
+
+- AddEventTool 功能:
+  - 创建具有固定开始和结束时间的事件
+  - 支持标题、描述、地点、优先级、标签
+  - 自动检测时间冲突并警告
+  - 参数验证（时间格式、时间顺序）
+  - 生成唯一事件 ID
+
+- AddTaskTool 功能:
+  - 创建带有预计时长和截止日期的任务
+  - 支持标题、描述、优先级、标签
+  - 自动设置默认值（预计60分钟、中优先级）
+  - 参数验证（日期格式）
+
+- GetEventsTool 功能:
+  - today: 查询今天的事件
+  - upcoming: 查询未来N天的事件
+  - search: 按关键词搜索事件
+  - all: 查询所有事件（排除已取消）
+  - range: 按日期范围查询
+  - 结果按开始时间升序排列
+
+- GetTasksTool 功能:
+  - todo: 查询待办任务
+  - completed: 查询已完成任务
+  - overdue: 查询过期任务
+  - search: 按关键词搜索任务
+  - all: 查询所有任务（排除已取消）
+  - 结果按优先级和截止日期排序
+
+- 更新 `src/schedule_agent/core/tools/__init__.py` 导出新工具
+
+- 创建测试文件 `tests/test_storage_tools.py`:
+  - AddEventTool 测试 (11 个用例)
+  - AddTaskTool 测试 (8 个用例)
+  - GetEventsTool 测试 (11 个用例)
+  - GetTasksTool 测试 (14 个用例)
+  - 集成测试 (3 个用例)
+
+### 测试:
+- 运行 `pytest tests/test_storage_tools.py -v` 全部 47 个测试通过
+- 运行 `pytest tests/ -v` 全部 236 个测试通过 (1 个跳过)
+- 验证事件创建、冲突检测、参数验证
+- 验证任务创建、默认值、日期解析
+- 验证查询功能（多种查询类型）
+- 验证排序功能（按时间、按优先级）
+
+### 备注:
+- 工具遵循 OpenAI Function Calling 格式
+- 每个工具都有详细的使用说明和示例
+- 工具返回结构化的 ToolResult
+- 下一步任务: TOL-004 实现规划器工具
+
+---
+
 ## 2026-02-17 - 任务: TOL-002 实现时间解析工具
 
 ### 完成内容:

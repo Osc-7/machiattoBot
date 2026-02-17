@@ -5,6 +5,7 @@
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 from .parse_time import ParseTimeTool, ParsedTime, TimeParser
 from .registry import ToolRegistry
+from .storage_tools import AddEventTool, AddTaskTool, GetEventsTool, GetTasksTool
 
 __all__ = [
     "BaseTool",
@@ -15,4 +16,8 @@ __all__ = [
     "ParseTimeTool",
     "ParsedTime",
     "TimeParser",
+    "AddEventTool",
+    "AddTaskTool",
+    "GetEventsTool",
+    "GetTasksTool",
 ]

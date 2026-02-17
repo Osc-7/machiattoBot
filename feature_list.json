@@ -101,7 +101,7 @@
         "创建 get_tasks 工具",
         "编写工具测试"
       ],
-      "passes": false,
+      "passes": true,
       "priority": "high"
     },
     {
