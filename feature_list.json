@@ -11,7 +11,7 @@
         "创建 claude-progress.txt",
         "创建 requirements.txt"
       ],
-      "passes": false,
+      "passes": true,
       "priority": "high"
     },
     {

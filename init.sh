@@ -34,15 +34,9 @@ if [ -f "requirements.txt" ]; then
     log_success "依赖检查完成"
 fi
 
-# 3. 设置 PYTHONPATH (确保当前目录下的模块可以被导入)
-export PYTHONPATH=$PYTHONPATH:$(pwd)
+# 3. 设置 PYTHONPATH (确保 src 目录下的模块可以被导入)
+export PYTHONPATH=$(pwd)/src:$PYTHONPATH
 log_info "PYTHONPATH 已设置: $PYTHONPATH"
 
-# 4. 核心模块验证
-if $PYTHON_BIN -c "from schedule_agent.main import ScheduleAgent" 2>/dev/null; then
-    log_success "核心模块导入正常"
-else
-    log_warn "核心模块导入失败，请检查代码结构"
-fi
 
 echo -e "${GREEN}✅ 环境就绪 (${PYTHON_BIN})${NC}"

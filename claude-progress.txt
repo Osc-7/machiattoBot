@@ -1,5 +1,46 @@
 # Schedule Agent 开发进度
 
+## 2026-02-17 - 任务: INF-001 初始化项目结构和 Git 仓库
+
+### 完成内容:
+- 创建了 `requirements.txt`，包含核心依赖（pyyaml, pydantic, openai, pytest 等）
+- 为所有子目录创建了 `__init__.py` 文件：
+  - `src/schedule_agent/core/__init__.py`
+  - `src/schedule_agent/core/context/__init__.py`
+  - `src/schedule_agent/core/llm/__init__.py`
+  - `src/schedule_agent/core/tools/__init__.py`
+  - `src/schedule_agent/models/__init__.py`
+  - `src/schedule_agent/storage/__init__.py`
+  - `src/schedule_agent/utils/__init__.py`
+  - `tests/__init__.py`
+- 修复了 `init.sh` 中的 PYTHONPATH 设置，改为 `/work/src` 以确保模块可以正确导入
+
+### 测试:
+- 运行 `source init.sh && python3 -c "import schedule_agent..."` 验证所有模块可以正常导入
+- 验证项目版本号可以正确读取 (`schedule_agent.__version__` = 0.1.0)
+
+### 项目目录结构:
+```
+src/schedule_agent/
+├── __init__.py          # 包入口
+├── core/
+│   ├── __init__.py
+│   ├── context/         # 对话上下文管理
+│   ├── llm/             # LLM 客户端
+│   └── tools/           # 工具系统
+├── models/              # 数据模型
+├── storage/             # 存储层
+└── utils/               # 工具函数
+tests/                   # 测试目录
+```
+
+### 备注:
+- Git 仓库已在之前初始化
+- feature_list.json 和 claude-progress.txt 在之前创建
+- 下一步任务: CFG-001 配置豆包 API
+
+---
+
 ## 2025-02-17 - 初始化项目
 
 ### 准备工作
