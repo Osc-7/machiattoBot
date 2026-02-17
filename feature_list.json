@@ -127,7 +127,7 @@
         "实现对话上下文管理",
         "添加时间上下文注入"
       ],
-      "passes": false,
+      "passes": true,
       "priority": "high"
     },
     {
