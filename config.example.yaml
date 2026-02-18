@@ -1,31 +1,40 @@
 # Schedule Agent 配置示例
-# 豆包 API 说明：
+#
+# === 豆包 (Doubao) ===
 # 1. 需要在火山引擎控制台创建推理接口获取 endpoint_id
 # 2. API Key 从火山引擎控制台获取
 # 3. model 参数填写推理端点 ID (如 ep-20250117123456)
-
-# 使用方式：
-# 方式1（推荐）：设置环境变量
-#   export DOUBAO_API_KEY="your-api-key"
-#   export DOUBAO_MODEL="ep-20250117123456"  # 你的推理端点ID
-#   python -m schedule_agent.main
+# 环境变量：DOUBAO_API_KEY, DOUBAO_MODEL
 #
-# 方式2：直接填写（不推荐，容易泄露）
-#   将下面的 your-doubao-api-key-here 替换为实际值
+# === 阿里云百炼 Qwen ===
+# 1. API Key 从百炼控制台获取：https://bailian.console.aliyun.com/
+# 2. 使用 OpenAI 兼容端点，支持多轮工具调用 (Function Calling)
+# 3. 推荐模型：qwen-3.5-plus
+# 环境变量：QWEN_API_KEY 或 DASHSCOPE_API_KEY, QWEN_MODEL
+#
+# 使用方式：
+# 方式1（推荐）：设置环境变量后运行
+#   export QWEN_API_KEY="your-api-key"   # 或 DOUBAO_API_KEY
+#   export QWEN_MODEL="qwen-3.5-plus"   # 或 DOUBAO_MODEL
+#   python -m schedule_agent.main
+# 方式2：在下方 llm 中直接填写（不推荐，容易泄露）
 
-# 豆包 LLM 配置
+# 豆包 LLM 配置示例
+# llm:
+#   provider: "doubao"
+#   api_key: "your-doubao-api-key-here"
+#   base_url: "https://ark.cn-beijing.volces.com/api/v3"
+#   model: "ep-20250117123456"  # 推理端点 ID
+#   temperature: 0.7
+#   max_tokens: 4096
+
+# 阿里云百炼 Qwen 配置示例（推荐，支持多轮工具调用）
 llm:
-  provider: "doubao"
-  api_key: "your-doubao-api-key-here"
-  base_url: "https://ark.cn-beijing.volces.com/api/v3"
-  # 模型列表（需要在控制台创建推理接口）：
-  #   - doubao-pro-256k: 256K 长上下文
-  #   - doubao-pro-128k: 128K 长上下文
-  #   - doubao-pro-32k: 32K 上下文
-  #   - doubao-pro: 标准版
-  #   - doubao-lite: 轻量版
-  # 实际使用时填写推理端点 ID，如：ep-20250117123456
-  model: "doubao-pro-32k"
+  provider: "qwen"
+  api_key: "your-qwen-api-key-here"
+  # base_url 可不填，默认使用百炼 OpenAI 兼容端点
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  model: "qwen-3.5-plus"
   temperature: 0.7
   max_tokens: 4096
 

@@ -1,7 +1,8 @@
 """
 LLM 客户端封装
 
-封装豆包/OpenAI API 调用，支持工具调用。
+封装豆包/阿里云百炼 Qwen/OpenAI 兼容 API 调用，支持多轮工具调用（Function Calling）。
+百炼说明：https://bailian.console.aliyun.com/ 支持 qwen-3.5-plus 等多轮工具调用。
 """
 
 from dataclasses import dataclass, field
@@ -73,9 +74,9 @@ class LLMClient:
     """
     LLM 客户端。
 
-    封装豆包/OpenAI API 调用，支持：
+    封装豆包/阿里云百炼 Qwen（OpenAI 兼容）/OpenAI API 调用，支持：
     - 基础对话
-    - 工具调用（Function Calling）
+    - 多轮工具调用（Function Calling）
     - 流式响应（可选）
     """
 

@@ -16,7 +16,10 @@ from pydantic import BaseModel, Field
 class LLMConfig(BaseModel):
     """LLM 配置"""
 
-    provider: str = Field(default="doubao", description="LLM 提供商")
+    provider: str = Field(
+        default="doubao",
+        description="LLM 提供商: doubao(豆包) | qwen(阿里云百炼)",
+    )
     api_key: str = Field(..., description="API 密钥")
     base_url: str = Field(
         default="https://ark.cn-beijing.volces.com/api/v3",
@@ -119,13 +122,28 @@ def load_config(config_path: Optional[Path] = None) -> Config:
 
     # 支持环境变量覆盖敏感配置
     if "llm" in raw_config:
-        env_api_key = os.environ.get("DOUBAO_API_KEY")
-        if env_api_key:
-            raw_config["llm"]["api_key"] = env_api_key
-
-        env_model = os.environ.get("DOUBAO_MODEL")
-        if env_model:
-            raw_config["llm"]["model"] = env_model
+        provider = raw_config["llm"].get("provider", "doubao")
+        if provider == "qwen":
+            # 阿里云百炼 Qwen：默认 base_url 为 OpenAI 兼容端点，支持多轮工具调用
+            raw_config["llm"].setdefault(
+                "base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1"
+            )
+            env_api_key = os.environ.get("QWEN_API_KEY") or os.environ.get(
+                "DASHSCOPE_API_KEY"
+            )
+            if env_api_key:
+                raw_config["llm"]["api_key"] = env_api_key
+            env_model = os.environ.get("QWEN_MODEL")
+            if env_model:
+                raw_config["llm"]["model"] = env_model
+        else:
+            # 豆包
+            env_api_key = os.environ.get("DOUBAO_API_KEY")
+            if env_api_key:
+                raw_config["llm"]["api_key"] = env_api_key
+            env_model = os.environ.get("DOUBAO_MODEL")
+            if env_model:
+                raw_config["llm"]["model"] = env_model
 
     return Config(**raw_config)
 
