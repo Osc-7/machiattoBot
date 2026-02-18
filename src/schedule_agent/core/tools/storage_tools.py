@@ -12,6 +12,11 @@ from schedule_agent.storage.json_repository import EventRepository, TaskReposito
 from schedule_agent.models import Event, Task, EventStatus, TaskStatus, EventPriority, TaskPriority
 
 
+def _datetime_sort_key(dt: datetime) -> float:
+    """统一 datetime 排序键，兼容 offset-naive 与 offset-aware。"""
+    return dt.timestamp()
+
+
 class AddEventTool(BaseTool):
     """
     添加日程事件工具
@@ -568,8 +573,8 @@ class GetEventsTool(BaseTool):
             events = self._repository.get_today()
             message = f"今天有 {len(events)} 个日程"
 
-        # 按开始时间排序
-        events.sort(key=lambda e: e.start_time)
+        # 按开始时间排序（兼容 naive/aware 混合）
+        events.sort(key=lambda e: _datetime_sort_key(e.start_time))
 
         return ToolResult(
             success=True,
