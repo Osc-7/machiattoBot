@@ -186,6 +186,13 @@ class EventRepository(JSONRepository[Event]):
             file_path = Path("data/events.json")
         super().__init__(file_path, Event)
 
+    @staticmethod
+    def _to_timestamp(dt: datetime) -> float:
+        """将 datetime 转为时间戳，统一 naive/aware 以便比较"""
+        if dt.tzinfo is None:
+            return dt.timestamp()
+        return dt.timestamp()
+
     def get_by_date_range(
         self,
         start: datetime,
@@ -201,10 +208,13 @@ class EventRepository(JSONRepository[Event]):
         Returns:
             匹配的事件列表
         """
+        start_ts = self._to_timestamp(start)
+        end_ts = self._to_timestamp(end)
         all_events = self.get_all()
         return [
             event for event in all_events
-            if event.start_time < end and event.end_time > start
+            if self._to_timestamp(event.start_time) < end_ts
+            and self._to_timestamp(event.end_time) > start_ts
             and event.status != EventStatus.CANCELLED
         ]
 

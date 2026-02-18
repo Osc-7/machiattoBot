@@ -90,6 +90,12 @@ class Event(BaseModel):
         """判断是否为全天事件（持续时间>=24小时）"""
         return self.duration_minutes >= 24 * 60
 
+    def _to_timestamp(self, dt: datetime) -> float:
+        """将 datetime 转为时间戳，统一 naive/aware 以便比较"""
+        if dt.tzinfo is None:
+            return dt.timestamp()  # naive 当作本地时间
+        return dt.timestamp()
+
     def is_conflict_with(self, other: "Event") -> bool:
         """
         检查是否与另一个事件时间冲突
@@ -104,9 +110,10 @@ class Event(BaseModel):
         if self.status == EventStatus.CANCELLED or other.status == EventStatus.CANCELLED:
             return False
 
+        # 使用时间戳比较，避免 offset-naive 与 offset-aware 混合比较报错
         return (
-            self.start_time < other.end_time and
-            self.end_time > other.start_time
+            self._to_timestamp(self.start_time) < self._to_timestamp(other.end_time)
+            and self._to_timestamp(self.end_time) > self._to_timestamp(other.start_time)
         )
 
     def __str__(self) -> str:

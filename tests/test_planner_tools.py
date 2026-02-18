@@ -536,6 +536,12 @@ class TestPlannerToolsIntegration:
     @pytest.mark.asyncio
     async def test_avoid_conflicts_with_existing_events(self, event_repo, task_repo):
         """测试避免与现有事件冲突"""
+        from unittest.mock import patch
+        from datetime import date as date_type
+
+        # 使用固定日期，确保规划和事件在同一天
+        target_date = date_type(2026, 2, 17)
+
         # 创建一个占用大部分白天的事件
         all_day_event = Event(
             title="全天培训",
@@ -551,14 +557,16 @@ class TestPlannerToolsIntegration:
         )
         task_repo.create(task)
 
-        # 规划任务
+        # 规划任务（mock date.today 确保规划目标日期与事件一致）
         plan_tool = PlanTasksTool(
             event_repository=event_repo,
             task_repository=task_repo,
         )
-        result = await plan_tool.execute(days=1, max_tasks=1)
+        with patch("schedule_agent.core.tools.planner_tools.date") as mock_date:
+            mock_date.today.return_value = target_date
+            result = await plan_tool.execute(days=1, max_tasks=1)
 
-        # 如果规划成功，检查时间不冲突
+        # 如果规划成功，检查时间不冲突（应避开 8:00-18:00）
         if result.data["planned_tasks"]:
             planned = result.data["planned_tasks"][0]
             scheduled_start = datetime.fromisoformat(planned["scheduled_start"])

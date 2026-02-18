@@ -6,6 +6,7 @@
 
 from datetime import datetime, date, timedelta
 from typing import Optional, List, Tuple
+from zoneinfo import ZoneInfo
 import uuid
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
@@ -14,6 +15,13 @@ from schedule_agent.models import (
     Event, Task, TimeSlot, SlotType,
     EventStatus, TaskStatus, TaskPriority
 )
+
+
+def _to_naive_local(dt: datetime, tz: str = "Asia/Shanghai") -> datetime:
+    """将 datetime 转为 naive 本地时间，统一 planner 内的时间比较"""
+    if dt.tzinfo is not None:
+        return dt.astimezone(ZoneInfo(tz)).replace(tzinfo=None)
+    return dt
 
 
 class GetFreeSlotsTool(BaseTool):
@@ -186,8 +194,8 @@ class GetFreeSlotsTool(BaseTool):
         for event in events:
             if event.status != EventStatus.CANCELLED:
                 busy_slots.append(TimeSlot(
-                    start_time=event.start_time,
-                    end_time=event.end_time,
+                    start_time=_to_naive_local(event.start_time),
+                    end_time=_to_naive_local(event.end_time),
                     slot_type=SlotType.BUSY,
                     title=event.title,
                     metadata={"event_id": event.id}
@@ -499,8 +507,8 @@ class PlanTasksTool(BaseTool):
             for event in events:
                 if event.status != EventStatus.CANCELLED:
                     busy_slots.append(TimeSlot(
-                        start_time=event.start_time,
-                        end_time=event.end_time,
+                        start_time=_to_naive_local(event.start_time),
+                        end_time=_to_naive_local(event.end_time),
                         slot_type=SlotType.BUSY,
                         title=event.title,
                     ))
