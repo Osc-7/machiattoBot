@@ -13,8 +13,13 @@ import sys
 from schedule_agent.config import Config, LLMConfig, LoggingConfig
 from schedule_agent.core import ScheduleAgent
 from schedule_agent.core.tools import BaseTool
+from schedule_agent.cli.interactive import (
+    print_welcome,
+    print_help,
+    run_interactive_loop,
+)
 
-# 导入 main 模块的函数
+# 导入 main 模块的函数（编排与入口）
 import main as cli_module
 
 
@@ -59,7 +64,7 @@ class TestPrintFunctions:
 
     def test_print_welcome(self, capsys):
         """测试打印欢迎信息"""
-        cli_module.print_welcome()
+        print_welcome()
         captured = capsys.readouterr()
 
         assert "Schedule Agent" in captured.out
@@ -71,7 +76,7 @@ class TestPrintFunctions:
 
     def test_print_help(self, capsys):
         """测试打印帮助信息"""
-        cli_module.print_help()
+        print_help()
         captured = capsys.readouterr()
 
         assert "帮助信息" in captured.out
@@ -107,7 +112,8 @@ class TestRunInteractiveLoop:
     @pytest.fixture(autouse=True)
     def disable_prompt_toolkit(self):
         """测试时禁用 prompt_toolkit，使用标准 input()"""
-        with patch.object(cli_module, '_HAS_PROMPT_TOOLKIT', False):
+        import schedule_agent.cli.interactive as interactive_module
+        with patch.object(interactive_module, '_HAS_PROMPT_TOOLKIT', False):
             yield
 
     @pytest.fixture
@@ -123,7 +129,7 @@ class TestRunInteractiveLoop:
     async def test_exit_command_quit(self, mock_agent):
         """测试退出命令 quit"""
         with patch('builtins.input', side_effect=['quit']):
-            await cli_module.run_interactive_loop(mock_agent)
+            await run_interactive_loop(mock_agent)
 
         mock_agent.process_input.assert_not_called()
 
@@ -131,7 +137,7 @@ class TestRunInteractiveLoop:
     async def test_exit_command_exit(self, mock_agent):
         """测试退出命令 exit"""
         with patch('builtins.input', side_effect=['exit']):
-            await cli_module.run_interactive_loop(mock_agent)
+            await run_interactive_loop(mock_agent)
 
         mock_agent.process_input.assert_not_called()
 
@@ -139,7 +145,7 @@ class TestRunInteractiveLoop:
     async def test_exit_command_q(self, mock_agent):
         """测试退出命令 q"""
         with patch('builtins.input', side_effect=['q']):
-            await cli_module.run_interactive_loop(mock_agent)
+            await run_interactive_loop(mock_agent)
 
         mock_agent.process_input.assert_not_called()
 
@@ -147,7 +153,7 @@ class TestRunInteractiveLoop:
     async def test_clear_command(self, mock_agent):
         """测试清空对话命令"""
         with patch('builtins.input', side_effect=['clear', 'quit']):
-            await cli_module.run_interactive_loop(mock_agent)
+            await run_interactive_loop(mock_agent)
 
         mock_agent.clear_context.assert_called_once()
 
@@ -155,7 +161,7 @@ class TestRunInteractiveLoop:
     async def test_help_command(self, mock_agent, capsys):
         """测试帮助命令"""
         with patch('builtins.input', side_effect=['help', 'quit']):
-            await cli_module.run_interactive_loop(mock_agent)
+            await run_interactive_loop(mock_agent)
 
         captured = capsys.readouterr()
         assert "帮助信息" in captured.out
@@ -164,7 +170,7 @@ class TestRunInteractiveLoop:
     async def test_normal_input(self, mock_agent):
         """测试正常输入处理"""
         with patch('builtins.input', side_effect=['明天的日程', 'quit']):
-            await cli_module.run_interactive_loop(mock_agent)
+            await run_interactive_loop(mock_agent)
 
         mock_agent.process_input.assert_called_once_with('明天的日程')
 
@@ -172,7 +178,7 @@ class TestRunInteractiveLoop:
     async def test_empty_input_skipped(self, mock_agent):
         """测试空输入被跳过"""
         with patch('builtins.input', side_effect=['', '   ', 'quit']):
-            await cli_module.run_interactive_loop(mock_agent)
+            await run_interactive_loop(mock_agent)
 
         mock_agent.process_input.assert_not_called()
 
@@ -180,13 +186,13 @@ class TestRunInteractiveLoop:
     async def test_keyboard_interrupt(self, mock_agent):
         """测试键盘中断"""
         with patch('builtins.input', side_effect=KeyboardInterrupt()):
-            await cli_module.run_interactive_loop(mock_agent)
+            await run_interactive_loop(mock_agent)
 
     @pytest.mark.asyncio
     async def test_eof_error(self, mock_agent):
         """测试 EOF 错误"""
         with patch('builtins.input', side_effect=EOFError()):
-            await cli_module.run_interactive_loop(mock_agent)
+            await run_interactive_loop(mock_agent)
 
     @pytest.mark.asyncio
     async def test_process_input_error(self, mock_agent):
@@ -194,7 +200,7 @@ class TestRunInteractiveLoop:
         mock_agent.process_input = AsyncMock(side_effect=Exception("测试错误"))
 
         with patch('builtins.input', side_effect=['测试输入', 'quit']):
-            await cli_module.run_interactive_loop(mock_agent)
+            await run_interactive_loop(mock_agent)
 
         # 应该捕获异常并继续运行
 
@@ -269,7 +275,8 @@ class TestCLIIntegration:
     @pytest.fixture(autouse=True)
     def disable_prompt_toolkit(self):
         """测试时禁用 prompt_toolkit"""
-        with patch.object(cli_module, '_HAS_PROMPT_TOOLKIT', False):
+        import schedule_agent.cli.interactive as interactive_module
+        with patch.object(interactive_module, '_HAS_PROMPT_TOOLKIT', False):
             yield
 
     @pytest.fixture
