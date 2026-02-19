@@ -231,11 +231,26 @@ class TestLLMClient:
 
 class TestLLMClientIntegration:
     """LLM 客户端集成测试（需要真实 API）"""
-
-    @pytest.mark.skip(reason="需要真实 API Key")
+    @pytest.mark.skip(reason="需要真实 API Key，跳过测试")
     @pytest.mark.asyncio
     async def test_real_chat(self):
         """测试真实 API 调用（跳过）"""
         # 此测试需要真实的 API Key 和端点
-        # 仅在手动测试时启用
-        pass
+        # 这里为真实 API 集成测试示例，需填写有效 KEY 后启用
+        from schedule_agent.config import get_config
+        from schedule_agent.core.llm import LLMClient
+
+        config = get_config()
+        client = LLMClient(config=config)
+        user_message = {"role": "user", "content": "请用一句话介绍一下你自己。"}
+
+        response = await client.chat_with_tools(
+            messages=[user_message],
+            tools=None,
+        )
+
+        assert response.content is not None
+        assert isinstance(response.content, str)
+        print("真实 LLM 回复:", response.content)
+        await client.close()
+        

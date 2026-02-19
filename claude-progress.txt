@@ -1,5 +1,54 @@
 # Schedule Agent 开发进度
 
+## 2026-02-19 - Web 架构设计
+
+### 完成内容:
+- 创建 Web 架构设计文档 `docs/WEB_ARCHITECTURE.md`:
+  - 系统架构概览（前端层、后端 API 层、业务逻辑层、数据层）
+  - 技术栈选择说明（FastAPI、WebSocket、原生 JS）
+  - API 设计规范（REST API + WebSocket）
+  - 会话管理方案
+  - 安全考虑和性能优化
+  - 部署方案
+
+- 创建实现计划文档 `docs/WEB_IMPLEMENTATION_PLAN.md`:
+  - 详细的实现步骤（7 个步骤）
+  - 每个模块的代码示例
+  - 目录结构说明
+  - 测试计划
+
+- 创建架构图文档 `docs/WEB_ARCHITECTURE_DIAGRAM.md`:
+  - 系统架构流程图（Mermaid）
+  - WebSocket 消息流图
+  - 会话生命周期图
+  - 数据流图
+  - 组件依赖关系图
+
+- 创建总结文档 `docs/WEB_SUMMARY.md`:
+  - 已完成工作清单
+  - 架构设计要点
+  - 下一步行动建议
+
+- 更新 `feature_list.json`:
+  - 添加 6 个 Web 相关任务（WEB-001 至 WEB-006）
+  - 涵盖会话管理、WebSocket、REST API、服务器入口、前端界面等
+
+### 架构设计要点:
+- **后端**: FastAPI（异步、高性能、自动 API 文档）
+- **实时通信**: WebSocket（支持流式响应）
+- **前端**: 原生 HTML + Vanilla JS + Tailwind CSS（轻量级）
+- **会话管理**: 内存存储（每个会话对应一个 ScheduleAgent 实例）
+- **API 设计**: RESTful API + WebSocket 双通道
+
+### 下一步:
+- 按照 `WEB_IMPLEMENTATION_PLAN.md` 逐步实现 Web 功能
+- 优先实现 MVP（基础对话功能）
+- 然后扩展 REST API 和视图功能
+
+---
+
+# Schedule Agent 开发进度
+
 ## 2026-02-17 - 任务: TST-001 端到端场景测试
 
 ### 完成内容:

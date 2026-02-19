@@ -155,6 +155,88 @@
       ],
       "passes": true,
       "priority": "medium"
+    },
+    {
+      "category": "web",
+      "id": "WEB-001",
+      "description": "实现 Web 会话管理器",
+      "steps": [
+        "创建 SessionManager 类",
+        "实现会话创建、获取、删除",
+        "实现会话过期清理",
+        "编写单元测试"
+      ],
+      "passes": false,
+      "priority": "high"
+    },
+    {
+      "category": "web",
+      "id": "WEB-002",
+      "description": "实现 WebSocket 处理器",
+      "steps": [
+        "创建 WebSocket 端点",
+        "实现消息接收和响应",
+        "实现流式响应支持（可选）",
+        "编写集成测试"
+      ],
+      "passes": false,
+      "priority": "high"
+    },
+    {
+      "category": "web",
+      "id": "WEB-003",
+      "description": "实现 REST API 路由",
+      "steps": [
+        "创建事件 CRUD API",
+        "创建任务 CRUD API",
+        "创建会话管理 API",
+        "创建统计信息 API",
+        "编写 API 测试"
+      ],
+      "passes": false,
+      "priority": "high"
+    },
+    {
+      "category": "web",
+      "id": "WEB-004",
+      "description": "创建 Web 服务器入口",
+      "steps": [
+        "创建 web_server.py",
+        "配置 FastAPI 应用",
+        "注册路由和中间件",
+        "配置静态文件服务",
+        "测试服务器启动"
+      ],
+      "passes": false,
+      "priority": "high"
+    },
+    {
+      "category": "web",
+      "id": "WEB-005",
+      "description": "实现前端对话界面",
+      "steps": [
+        "创建 HTML 页面结构",
+        "实现 WebSocket 客户端",
+        "实现消息显示和输入",
+        "添加样式和交互",
+        "测试对话流程"
+      ],
+      "passes": false,
+      "priority": "high"
+    },
+    {
+      "category": "web",
+      "id": "WEB-006",
+      "description": "实现日程和任务视图",
+      "steps": [
+        "创建日程日历视图",
+        "创建任务列表视图",
+        "实现数据获取和展示",
+        "添加交互功能",
+        "测试视图功能"
+      ],
+      "passes": false,
+      "priority": "medium"
     }
   ]
 }

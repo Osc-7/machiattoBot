@@ -12,6 +12,15 @@ from typing import List, Optional
 from schedule_agent.config import Config, get_config
 from schedule_agent.core import ScheduleAgent
 from schedule_agent.utils.session_logger import SessionLogger
+from schedule_agent.utils.cli_style import (
+    title,
+    hint,
+    label,
+    accent,
+    prompt_prefix,
+    assistant_prefix,
+    sep_line,
+)
 from schedule_agent.core.tools import (
     BaseTool,
     ParseTimeTool,
@@ -55,51 +64,58 @@ def get_default_tools() -> List[BaseTool]:
 
 def print_welcome():
     """打印欢迎信息"""
-    print("\n" + "=" * 50)
-    print("  Schedule Agent - 智能日程管理助手")
-    print("=" * 50)
-    print("\n你好！我是你的日程管理助手，可以帮助你：")
-    print("  - 添加日程事件（会议、约会等）")
-    print("  - 创建待办任务")
-    print("  - 查询日程和任务")
-    print("  - 智能规划时间")
-    print("\n输入 'quit' 或 'exit' 退出程序")
-    print("输入 'clear' 清空对话历史")
-    print("输入 'help' 查看帮助信息")
-    print("输入 'usage' 或 'stats' 查看本会话 token 用量")
-    print("-" * 50 + "\n")
+    print()
+    print(sep_line("=", 50))
+    print("  " + title("Schedule Agent - 智能日程管理助手"))
+    print(sep_line("=", 50))
+    print()
+    print(hint("你好！我是你的日程管理助手，可以帮助你："))
+    print("  • 添加日程事件（会议、约会等）")
+    print("  • 创建待办任务")
+    print("  • 查询日程和任务")
+    print("  • 智能规划时间")
+    print()
+    print(hint("命令：") + " quit/exit 退出  |  clear 清空对话  |  help 帮助  |  usage/stats 用量")
+    print(sep_line("-", 50))
+    print()
 
 
 def print_help():
     """打印帮助信息"""
-    print("\n" + "-" * 50)
-    print("帮助信息")
-    print("-" * 50)
-    print("\n可用命令:")
-    print("  quit / exit  - 退出程序")
-    print("  clear        - 清空对话历史")
-    print("  help         - 显示此帮助信息")
-    print("  usage / stats - 查看本会话 token 用量统计")
-    print("\n示例对话:")
-    print("  - 明天下午3点有个团队会议")
-    print("  - 添加一个任务：完成项目报告，预计2小时，周五前完成")
-    print("  - 查看今天的日程")
-    print("  - 查看我的待办任务")
-    print("  - 帮我规划一下明天的任务")
-    print("-" * 50 + "\n")
+    print()
+    print(sep_line("-", 50))
+    print(title("帮助信息"))
+    print(sep_line("-", 50))
+    print()
+    print(label("可用命令:"))
+    print("  quit / exit  退出程序")
+    print("  clear       清空对话历史")
+    print("  help        显示此帮助")
+    print("  usage/stats 本会话 token 用量")
+    print()
+    print(label("示例对话:"))
+    print("  • 明天下午3点有个团队会议")
+    print("  • 添加一个任务：完成项目报告，预计2小时，周五前完成")
+    print("  • 查看今天的日程")
+    print("  • 查看我的待办任务")
+    print("  • 帮我规划一下明天的任务")
+    print(sep_line("-", 50))
+    print()
 
 
 def print_token_usage(agent: ScheduleAgent):
     """打印本会话 token 用量统计"""
     u = agent.get_token_usage()
-    print("\n" + "-" * 50)
-    print("本会话 Token 用量统计")
-    print("-" * 50)
-    print(f"  调用次数:     {u['call_count']}")
+    print()
+    print(sep_line("-", 50))
+    print(title("本会话 Token 用量统计"))
+    print(sep_line("-", 50))
+    print(f"  调用次数:     {accent(str(u['call_count']))}")
     print(f"  输入 token:   {u['prompt_tokens']}")
     print(f"  输出 token:   {u['completion_tokens']}")
     print(f"  合计 token:   {u['total_tokens']}")
-    print("-" * 50 + "\n")
+    print(sep_line("-", 50))
+    print()
 
 
 async def run_interactive_loop(agent: ScheduleAgent):
@@ -111,14 +127,41 @@ async def run_interactive_loop(agent: ScheduleAgent):
     """
     print_welcome()
 
-    pt_session = _PromptSession() if _HAS_PROMPT_TOOLKIT else None
+    # 有 prompt_toolkit 时使用带样式的提示符和底部状态栏显示 token 统计
+    if _HAS_PROMPT_TOOLKIT:
+        pt_session = _PromptSession()
+        prompt_text = HTML('<style fg="ansicyan" bold="true">你: </style>')
+
+        def _bottom_toolbar():
+            """底部状态栏：显示当前会话的 token 统计信息"""
+            u = agent.get_token_usage()
+            # 使用浅色背景 + 深色前景，类似 Vim 状态栏效果
+            text = (
+                f" Token: total {u['total_tokens']} "
+                f"| in {u['prompt_tokens']} "
+                f"| out {u['completion_tokens']} "
+                f"| calls {u['call_count']} "
+            )
+            return HTML(
+                "<style bg='ansigray' fg='ansiblack'>"
+                + text +
+                "</style>"
+            )
+    else:
+        pt_session = None
+        prompt_text = None
 
     while True:
         try:
-            if pt_session is not None:
-                user_input = (await pt_session.prompt_async("你: ")).strip()
+            if pt_session is not None and prompt_text is not None:
+                user_input = (
+                    await pt_session.prompt_async(
+                        prompt_text,
+                        bottom_toolbar=_bottom_toolbar,
+                    )
+                ).strip()
             else:
-                user_input = input("你: ").strip()
+                user_input = input(prompt_prefix()).strip()
 
             # 跳过空输入
             if not user_input:
@@ -128,14 +171,19 @@ async def run_interactive_loop(agent: ScheduleAgent):
             if user_input.lower() in ("quit", "exit", "q"):
                 u = agent.get_token_usage()
                 if u["call_count"] > 0:
-                    print(f"\n本会话共调用 LLM {u['call_count']} 次，合计 token: {u['total_tokens']}（输入 {u['prompt_tokens']} + 输出 {u['completion_tokens']}）")
-                print("\n再见！祝你生活愉快！\n")
+                    print()
+                    print(hint(f"本会话共调用 LLM {u['call_count']} 次，合计 token: {u['total_tokens']}（输入 {u['prompt_tokens']} + 输出 {u['completion_tokens']}）"))
+                print()
+                print(label("再见！祝你生活愉快！"))
+                print()
                 break
 
             # 处理清空对话命令
             if user_input.lower() == "clear":
                 agent.clear_context()
-                print("\n对话历史已清空。\n")
+                print()
+                print(hint("对话历史已清空。"))
+                print()
                 continue
 
             # 处理帮助命令
@@ -151,16 +199,24 @@ async def run_interactive_loop(agent: ScheduleAgent):
             # 处理用户输入
             try:
                 response = await agent.process_input(user_input)
-                print(f"\n助手: {response}\n")
+                print()
+                print(assistant_prefix() + response)
+                print()
             except Exception as e:
-                print(f"\n抱歉，处理您的请求时发生错误: {str(e)}\n")
-                print("请重试或换一种方式表达。\n")
+                print()
+                print(accent("抱歉，处理您的请求时发生错误: ") + str(e))
+                print(hint("请重试或换一种方式表达。"))
+                print()
 
         except KeyboardInterrupt:
-            print("\n\n检测到中断信号，正在退出...\n")
+            print()
+            print(hint("检测到中断信号，正在退出..."))
+            print()
             break
         except EOFError:
-            print("\n\n再见！\n")
+            print()
+            print(label("再见！"))
+            print()
             break
 
 
