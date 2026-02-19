@@ -12,6 +12,7 @@ from typing import Optional, List, Generic, TypeVar, Union
 from threading import Lock
 
 from pydantic import BaseModel
+from pydantic import ValidationError as PydanticValidationError
 
 from ..models import Event, Task, EventStatus, TaskStatus
 
@@ -81,6 +82,15 @@ class JSONRepository(Generic[T]):
         """将字典转换为模型实例"""
         return self.model_class.model_validate(data)
 
+    def _safe_dict_to_item(self, data: dict) -> Optional[T]:
+        """将字典转换为模型实例，无效数据返回 None（用于容错加载）。"""
+        if not isinstance(data, dict):
+            return None
+        try:
+            return self.model_class.model_validate(data)
+        except (PydanticValidationError, TypeError):
+            return None
+
     def create(self, item: T) -> T:
         """
         创建新记录
@@ -105,11 +115,11 @@ class JSONRepository(Generic[T]):
             id: 记录 ID
 
         Returns:
-            找到的记录，如果不存在则返回 None
+            找到的记录，如果不存在或数据无效则返回 None
         """
         data = self._read_data()
         if id in data:
-            return self._dict_to_item(data[id])
+            return self._safe_dict_to_item(data[id])
         return None
 
     def update(self, item: T) -> Optional[T]:
@@ -150,13 +160,16 @@ class JSONRepository(Generic[T]):
 
     def get_all(self) -> List[T]:
         """
-        获取所有记录
-
-        Returns:
-            所有记录列表
+        获取所有记录。
+        无效或损坏的条目会被跳过，避免因单条脏数据导致加载失败。
         """
         data = self._read_data()
-        return [self._dict_to_item(item_data) for item_data in data.values()]
+        result = []
+        for item_data in data.values():
+            item = self._safe_dict_to_item(item_data)
+            if item is not None:
+                result.append(item)
+        return result
 
     def count(self) -> int:
         """
@@ -174,6 +187,22 @@ class JSONRepository(Generic[T]):
             self._write_data({})
 
 
+def _default_events_path() -> Path:
+    """获取默认事件存储路径。测试时使用 SCHEDULE_AGENT_TEST_DATA_DIR 环境变量指定的临时目录。"""
+    base = os.environ.get("SCHEDULE_AGENT_TEST_DATA_DIR")
+    if base:
+        return Path(base) / "events.json"
+    return Path("data/events.json")
+
+
+def _default_tasks_path() -> Path:
+    """获取默认任务存储路径。测试时使用 SCHEDULE_AGENT_TEST_DATA_DIR 环境变量指定的临时目录。"""
+    base = os.environ.get("SCHEDULE_AGENT_TEST_DATA_DIR")
+    if base:
+        return Path(base) / "tasks.json"
+    return Path("data/tasks.json")
+
+
 class EventRepository(JSONRepository[Event]):
     """
     Event 专用存储仓库
@@ -183,7 +212,7 @@ class EventRepository(JSONRepository[Event]):
 
     def __init__(self, file_path: Union[str, Path] = None):
         if file_path is None:
-            file_path = Path("data/events.json")
+            file_path = _default_events_path()
         super().__init__(file_path, Event)
 
     @staticmethod
@@ -317,7 +346,7 @@ class TaskRepository(JSONRepository[Task]):
 
     def __init__(self, file_path: Union[str, Path] = None):
         if file_path is None:
-            file_path = Path("data/tasks.json")
+            file_path = _default_tasks_path()
         super().__init__(file_path, Task)
 
     def get_by_status(self, status: TaskStatus) -> List[Task]:
