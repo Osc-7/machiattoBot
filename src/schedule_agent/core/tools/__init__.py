@@ -11,6 +11,7 @@ from .storage_tools import (
     AddTaskTool,
     GetEventsTool,
     GetTasksTool,
+    UpdateTaskTool,
     DeleteScheduleDataTool,
 )
 
@@ -27,6 +28,7 @@ __all__ = [
     "AddTaskTool",
     "GetEventsTool",
     "GetTasksTool",
+    "UpdateTaskTool",
     "DeleteScheduleDataTool",
     "GetFreeSlotsTool",
     "PlanTasksTool",

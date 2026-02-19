@@ -1,3 +1,8 @@
+---
+description: 
+alwaysApply: true
+---
+
 # Schedule Agent 开发规范
 
 本文档定义了 Schedule Agent 项目的开发规范，基于 Anthropic 和 OpenAI 的官方指南以及业界最佳实践整理。
@@ -62,7 +67,7 @@ source init.sh
 
 ### Step 3: 选择下一个任务
 
-从 `feature_list.json` 中选择一个 `passes: false` 的任务。
+从 `feature_list.json` 中选择一个 `passes: false` 的任务；或者在用户提出需求时，按照用户的需求开发。
 
 选择优先级：
 1. 高优先级任务 (`priority: "high"`)
@@ -123,7 +128,7 @@ source init.sh
 # 3. 一次性提交所有更改
 
 git add .
-git commit -m "[任务ID] 完成任务描述"
+git commit -m "任务类型：完成任务描述"
 ```
 
 ---
@@ -397,198 +402,6 @@ async def execute(self, **kwargs) -> ToolResult:
             error="CREATE_ERROR"
         )
 ```
-
----
-
-## 代码规范
-
-### 1. 类型注解
-
-所有公开方法必须有类型注解：
-
-```python
-def find_schedules(
-    self,
-    query: str,
-    limit: int = 10,
-) -> List[ScheduleItem]:
-    """智能查找日程"""
-    pass
-```
-
-### 2. 文档字符串
-
-使用 Google 风格的文档字符串：
-
-```python
-async def update_schedule(
-    self,
-    target_desc: str,
-    update_desc: str,
-) -> OperationResult:
-    """
-    修改日程。
-
-    Args:
-        target_desc: 目标描述（如 "明天的会议"、"刚才添加的"）
-        update_desc: 修改描述（如 "改到后天下午"、"标题改成项目评审"）
-
-    Returns:
-        操作结果，包含 success、message、data 等字段
-
-    Raises:
-        ValueError: 当参数无效时
-    """
-    pass
-```
-
-### 3. 导入规范
-
-```python
-# 标准库
-from datetime import datetime
-from typing import List, Optional, Dict, Any
-
-# 第三方库
-from pydantic import BaseModel
-
-# 本地模块
-from .models import ScheduleItem
-from ..storage.json_repository import JSONRepository
-```
-
-### 4. 命名规范
-
-- **类名**: PascalCase（如 `ScheduleItem`）
-- **函数/方法**: snake_case（如 `find_schedules`）
-- **常量**: UPPER_SNAKE_CASE（如 `MAX_ITERATIONS`）
-- **私有方法**: _leading_underscore（如 `_parse_update`）
-
-
-## 测试规范
-
-### 1. 测试文件组织
-
-```
-tests/
-├── core/
-│   ├── llm/
-│   │   ├── test_client.py
-│   │   └── test_conversation.py
-│   ├── storage/
-│   │   └── test_json_repository.py
-│   ├── input/
-│   │   ├── test_time_parser.py
-│   │   └── test_extractor.py
-│   └── nlu/
-│       └── test_intent.py
-└── cli/
-    └── test_main.py
-```
-
-### 2. 测试命名
-
-```python
-def test_create_schedule_with_valid_input():
-    """测试使用有效输入创建日程"""
-    pass
-
-def test_create_schedule_with_invalid_time_should_fail():
-    """测试无效时间应导致失败"""
-    pass
-```
-
-### 3. Mock 外部依赖
-
-```python
-@pytest.fixture
-def mock_llm_client():
-    """Mock LLM 客户端"""
-    client = Mock(spec=LLMClient)
-    client.chat_with_tools = AsyncMock(return_value=MockResponse())
-    return client
-```
-
-### 4. 评估系统
-
-使用自动化评估系统验证 Agent 性能：
-
-```python
-class EvalRunner:
-    async def run_evaluation(self, tasks: List[EvalTask]):
-        results = []
-        for task in tasks:
-            result = await self.evaluate_task(task)
-            results.append(result)
-
-        return EvalReport(
-            total=len(tasks),
-            passed=sum(1 for r in results if r.passed),
-            results=results
-        )
-```
-
----
-
-## 文档规范
-
-### 1. README.md 结构
-
-```markdown
-# 项目名称
-
-简短描述
-
-## 核心特性
-
-## 快速开始
-
-## 使用示例
-
-## 项目结构
-
-## 开发指南
-
-## 许可证
-```
-
-### 2. API 文档
-
-所有公开 API 必须有文档：
-
-```python
-def find_schedules(query: str, limit: int = 10) -> List[ScheduleItem]:
-    """
-    智能查找日程。
-
-    支持多种查找方式：
-    - 时间描述："明天的"、"本周的"
-    - 关键词："会议"、"项目"
-    - 时间 + 关键词组合
-
-    Args:
-        query: 查询描述
-        limit: 最大返回数量，默认 10
-
-    Returns:
-        匹配的日程列表
-
-    Example:
-        >>> schedules = find_schedules("明天的会议")
-        >>> print(schedules[0].title)
-        "团队周会"
-    """
-```
-
-### 3. 架构文档
-
-维护 `ARCHITECTURE.md` 文件，描述：
-- 系统整体架构
-- 核心模块职责
-- 数据流图
-- 扩展点
-
----
 
 ## 参考资源
 

@@ -734,6 +734,136 @@ class GetTasksTool(BaseTool):
         )
 
 
+class UpdateTaskTool(BaseTool):
+    """
+    更新任务状态工具
+
+    支持将任务标记为已完成、已取消、进行中或待办。
+    """
+
+    def __init__(self, repository: Optional[TaskRepository] = None):
+        self._repository = repository or TaskRepository()
+
+    @property
+    def name(self) -> str:
+        return "update_task"
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name="update_task",
+            description="""更新任务的状态。
+
+这是修改任务状态的唯一工具，当用户想要：
+- 标记任务为已完成（"做完了""完成了""搞定了"）
+- 取消任务
+- 将任务标记为进行中
+- 将任务重新设为待办
+
+重要区分：
+- 修改任务状态（完成/取消/进行中/待办）→ 使用本工具 update_task
+- 永久删除任务 → 使用 delete_schedule_data
+这两者是完全不同的操作，不可混淆。""",
+            parameters=[
+                ToolParameter(
+                    name="task_id",
+                    type="string",
+                    description="要更新的任务 ID",
+                    required=True,
+                ),
+                ToolParameter(
+                    name="status",
+                    type="string",
+                    description="目标状态：completed（已完成）、cancelled（已取消）、in_progress（进行中）、todo（待办）",
+                    required=True,
+                    enum=["completed", "cancelled", "in_progress", "todo"],
+                ),
+            ],
+            examples=[
+                {
+                    "description": "将任务标记为已完成",
+                    "params": {"task_id": "a1b2c3d4", "status": "completed"},
+                },
+                {
+                    "description": "取消一个任务",
+                    "params": {"task_id": "a1b2c3d4", "status": "cancelled"},
+                },
+                {
+                    "description": "将任务改为进行中",
+                    "params": {"task_id": "a1b2c3d4", "status": "in_progress"},
+                },
+            ],
+            usage_notes=[
+                "标记完成、取消等状态变更请使用本工具，不要使用 delete_schedule_data",
+                '用户说「做完了」「完成了」「搞定了」「标记为已完成」等都应调用本工具',
+                "需要先通过 get_tasks 获取任务 ID",
+            ],
+        )
+
+    async def execute(self, **kwargs) -> ToolResult:
+        task_id = kwargs.get("task_id")
+        if not task_id:
+            return ToolResult(
+                success=False,
+                error="MISSING_TASK_ID",
+                message="缺少任务 ID",
+            )
+
+        status_str = kwargs.get("status")
+        if not status_str:
+            return ToolResult(
+                success=False,
+                error="MISSING_STATUS",
+                message="缺少目标状态",
+            )
+
+        try:
+            target_status = TaskStatus(status_str)
+        except ValueError:
+            return ToolResult(
+                success=False,
+                error="INVALID_STATUS",
+                message=f"无效的状态值: {status_str}，可选: todo, in_progress, completed, cancelled",
+            )
+
+        task = self._repository.get(task_id)
+        if not task:
+            return ToolResult(
+                success=False,
+                error="TASK_NOT_FOUND",
+                message=f"未找到 ID 为 {task_id} 的任务",
+            )
+
+        old_status = task.status
+
+        if target_status == TaskStatus.COMPLETED:
+            task.mark_completed()
+        elif target_status == TaskStatus.CANCELLED:
+            task.mark_cancelled()
+        else:
+            task.status = target_status
+            task.update_timestamp()
+
+        self._repository.update(task)
+
+        status_labels = {
+            TaskStatus.TODO: "待办",
+            TaskStatus.IN_PROGRESS: "进行中",
+            TaskStatus.COMPLETED: "已完成",
+            TaskStatus.CANCELLED: "已取消",
+        }
+
+        return ToolResult(
+            success=True,
+            data=task,
+            message=f"任务「{task.title}」状态已从 {status_labels[old_status]} 更新为 {status_labels[target_status]}",
+            metadata={
+                "task_id": task.id,
+                "old_status": old_status.value,
+                "new_status": target_status.value,
+            },
+        )
+
+
 class DeleteScheduleDataTool(BaseTool):
     """
     删除日程/任务工具
@@ -763,17 +893,24 @@ class DeleteScheduleDataTool(BaseTool):
     def get_definition(self) -> ToolDefinition:
         return ToolDefinition(
             name="delete_schedule_data",
-            description="""删除事件或任务。
+            description="""永久删除事件或任务（不可恢复）。
+
+本工具仅用于「永久删除」，不可用于状态变更。
+
+重要语义区分：
+- 用户说"完成了""搞定了""标记为已完成" → 必须使用 update_task，绝对不可调用本工具
+- 用户说"取消任务" → 必须使用 update_task（status=cancelled），绝对不可调用本工具
+- 只有用户明确表达"删除""移除""清除"等永久删除意图时，才可使用本工具
 
 支持以下删除模式：
 - 单条删除：按 ID 删除单个事件/任务
 - 批量删除：按 ID 列表删除多条记录
 - 全量删除：删除该类型下全部记录（delete_all=true）
 
-重要：所有删除都必须先经用户确认。流程应为：
+删除确认流程：
 1. 用户提出删除请求时，先用 get_events/get_tasks 查出将要删除的条目，向用户列出并询问「确认删除吗？请回复 是/确认/yes 以执行」；
 2. 仅当用户明确回复 是、确认、yes 等肯定意图后，再调用本工具并传 confirm=true 执行删除。
-不要在没有用户确认的情况下传 confirm=true。""",
+3. "标记完成""已完成""做完了"等表述绝不是删除确认。""",
             parameters=[
                 ToolParameter(
                     name="resource_type",
@@ -830,6 +967,8 @@ class DeleteScheduleDataTool(BaseTool):
             ],
             usage_notes=[
                 "删除操作不可恢复。批量/全量删除前务必先列出待删项并让用户确认（是/yes/确认）后再调用并传 confirm=true。",
+                'confirm=true 仅在用户明确同意「删除」时才可设置。「标记完成」「已完成」「做完了」等表述是状态更新，不是删除确认，应使用 update_task。',
+                "如果用户的原始请求不是删除，而是标记完成或取消，请改用 update_task 工具。",
             ],
         )
 

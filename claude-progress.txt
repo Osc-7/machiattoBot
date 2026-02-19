@@ -553,6 +553,39 @@ tests/                   # 测试目录
 
 ---
 
+## 2026-02-19 - 四大问题修复
+
+### 完成内容:
+1. **新增 UpdateTaskTool** (storage_tools.py)
+   - 支持将任务标记为 completed/cancelled/in_progress/todo
+   - 调用 Task.mark_completed() / mark_cancelled() 等已有模型方法
+   - 在 __init__.py 和 main.py 中注册
+
+2. **强化 DeleteScheduleDataTool 语义约束**
+   - description 明确区分「删除」与「标记完成」语义
+   - usage_notes 增加：「标记完成」「已完成」「做完了」等不是删除确认
+   - 防止 LLM 将状态变更误解为删除确认
+
+3. **规范日程/任务展示格式** (agent.py _build_system_prompt)
+   - 新增「日程与任务展示格式」章节，定义统一的列表格式
+   - 新增「操作权限规则」章节，明确状态变更 vs 删除的工具选择
+
+4. **引入 prompt_toolkit 改善中文输入**
+   - 使用 PromptSession.prompt_async() 替代 input()
+   - 更好的 Unicode/IME 退格支持
+   - 安装失败时自动回退到标准 input()
+
+### 测试:
+- 新增 11 个 UpdateTaskTool 单元测试（全部通过）
+- 更新 CLI 测试适配 prompt_toolkit（禁用后回退 input()）
+- 全量 351 个测试通过
+
+### 备注:
+- prompt_toolkit 对 IME 输入改善显著，但 Cursor 内置终端可能仍有独立限制
+- 系统提示中新增的权限规则从多层面防止「标记完成被当作删除」
+
+---
+
 ## 2025-02-17 - 初始化项目
 
 ### 准备工作

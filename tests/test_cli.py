@@ -44,6 +44,7 @@ class TestGetDefaultTools:
             "add_task",
             "get_events",
             "get_tasks",
+            "update_task",
             "delete_schedule_data",
             "get_free_slots",
             "plan_tasks",
@@ -103,6 +104,12 @@ class TestRunSingleCommand:
 class TestRunInteractiveLoop:
     """测试交互式循环"""
 
+    @pytest.fixture(autouse=True)
+    def disable_prompt_toolkit(self):
+        """测试时禁用 prompt_toolkit，使用标准 input()"""
+        with patch.object(cli_module, '_HAS_PROMPT_TOOLKIT', False):
+            yield
+
     @pytest.fixture
     def mock_agent(self):
         """创建 Mock Agent"""
@@ -118,7 +125,6 @@ class TestRunInteractiveLoop:
         with patch('builtins.input', side_effect=['quit']):
             await cli_module.run_interactive_loop(mock_agent)
 
-        # 验证循环正常退出，没有调用 process_input
         mock_agent.process_input.assert_not_called()
 
     @pytest.mark.asyncio
@@ -176,15 +182,11 @@ class TestRunInteractiveLoop:
         with patch('builtins.input', side_effect=KeyboardInterrupt()):
             await cli_module.run_interactive_loop(mock_agent)
 
-        # 应该正常退出，不抛出异常
-
     @pytest.mark.asyncio
     async def test_eof_error(self, mock_agent):
         """测试 EOF 错误"""
         with patch('builtins.input', side_effect=EOFError()):
             await cli_module.run_interactive_loop(mock_agent)
-
-        # 应该正常退出，不抛出异常
 
     @pytest.mark.asyncio
     async def test_process_input_error(self, mock_agent):
@@ -264,6 +266,12 @@ class TestMain:
 class TestCLIIntegration:
     """CLI 集成测试"""
 
+    @pytest.fixture(autouse=True)
+    def disable_prompt_toolkit(self):
+        """测试时禁用 prompt_toolkit"""
+        with patch.object(cli_module, '_HAS_PROMPT_TOOLKIT', False):
+            yield
+
     @pytest.fixture
     def mock_config(self):
         """创建测试配置"""
@@ -278,7 +286,6 @@ class TestCLIIntegration:
     @pytest.mark.asyncio
     async def test_full_interaction_flow(self, mock_config):
         """测试完整交互流程"""
-        # 模拟用户输入序列
         inputs = [
             "hello",           # 正常输入
             "clear",           # 清空对话
@@ -288,19 +295,17 @@ class TestCLIIntegration:
 
         with patch('main.get_config', return_value=mock_config):
             with patch('main.ScheduleAgent') as MockAgent:
-                # 设置 Mock Agent
                 mock_agent = MagicMock()
                 mock_agent.__aenter__ = AsyncMock(return_value=mock_agent)
                 mock_agent.__aexit__ = AsyncMock()
                 mock_agent.process_input = AsyncMock(return_value="响应内容")
                 mock_agent.clear_context = MagicMock()
+                mock_agent.get_token_usage = MagicMock(return_value={"call_count": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
                 MockAgent.return_value = mock_agent
 
                 with patch('builtins.input', side_effect=inputs):
                     with patch('builtins.print'):
                         await cli_module.main_async([])
 
-                # 验证 process_input 只被调用一次（hello）
                 mock_agent.process_input.assert_called_once_with("hello")
-                # 验证 clear_context 被调用
                 mock_agent.clear_context.assert_called_once()

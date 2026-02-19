@@ -15,6 +15,7 @@ from schedule_agent.core.tools.storage_tools import (
     AddTaskTool,
     GetEventsTool,
     GetTasksTool,
+    UpdateTaskTool,
     DeleteScheduleDataTool,
 )
 from schedule_agent.core.tools.base import ToolDefinition
@@ -69,6 +70,12 @@ def get_events_tool(event_repository):
 def get_tasks_tool(task_repository):
     """创建获取任务工具"""
     return GetTasksTool(repository=task_repository)
+
+
+@pytest.fixture
+def update_task_tool(task_repository):
+    """创建更新任务工具"""
+    return UpdateTaskTool(repository=task_repository)
 
 
 @pytest.fixture
@@ -690,6 +697,138 @@ class TestGetTasksTool:
         # 应该按截止日期排序
         assert result.data[0].title == "先截止"
         assert result.data[1].title == "后截止"
+
+
+# ============================================================================
+# UpdateTaskTool 测试
+# ============================================================================
+
+class TestUpdateTaskTool:
+    """UpdateTaskTool 测试类"""
+
+    def test_name(self, update_task_tool):
+        assert update_task_tool.name == "update_task"
+
+    def test_get_definition(self, update_task_tool):
+        definition = update_task_tool.get_definition()
+        assert isinstance(definition, ToolDefinition)
+        assert definition.name == "update_task"
+        param_names = [p.name for p in definition.parameters]
+        assert "task_id" in param_names
+        assert "status" in param_names
+
+    @pytest.mark.asyncio
+    async def test_mark_completed(self, update_task_tool, task_repository):
+        """测试标记任务为已完成"""
+        task = Task(title="待完成任务", status=TaskStatus.TODO)
+        task_repository.create(task)
+
+        result = await update_task_tool.execute(
+            task_id=task.id, status="completed"
+        )
+
+        assert result.success is True
+        assert result.metadata["old_status"] == "todo"
+        assert result.metadata["new_status"] == "completed"
+
+        updated = task_repository.get(task.id)
+        assert updated.status == TaskStatus.COMPLETED
+        assert updated.completed_at is not None
+
+    @pytest.mark.asyncio
+    async def test_mark_cancelled(self, update_task_tool, task_repository):
+        """测试取消任务"""
+        task = Task(title="待取消任务")
+        task_repository.create(task)
+
+        result = await update_task_tool.execute(
+            task_id=task.id, status="cancelled"
+        )
+
+        assert result.success is True
+        assert result.metadata["new_status"] == "cancelled"
+
+        updated = task_repository.get(task.id)
+        assert updated.status == TaskStatus.CANCELLED
+
+    @pytest.mark.asyncio
+    async def test_mark_in_progress(self, update_task_tool, task_repository):
+        """测试标记为进行中"""
+        task = Task(title="待开始任务")
+        task_repository.create(task)
+
+        result = await update_task_tool.execute(
+            task_id=task.id, status="in_progress"
+        )
+
+        assert result.success is True
+        updated = task_repository.get(task.id)
+        assert updated.status == TaskStatus.IN_PROGRESS
+
+    @pytest.mark.asyncio
+    async def test_revert_to_todo(self, update_task_tool, task_repository):
+        """测试重新设为待办"""
+        task = Task(title="进行中任务", status=TaskStatus.IN_PROGRESS)
+        task_repository.create(task)
+
+        result = await update_task_tool.execute(
+            task_id=task.id, status="todo"
+        )
+
+        assert result.success is True
+        updated = task_repository.get(task.id)
+        assert updated.status == TaskStatus.TODO
+
+    @pytest.mark.asyncio
+    async def test_missing_task_id(self, update_task_tool):
+        """测试缺少任务 ID"""
+        result = await update_task_tool.execute(status="completed")
+        assert result.success is False
+        assert result.error == "MISSING_TASK_ID"
+
+    @pytest.mark.asyncio
+    async def test_missing_status(self, update_task_tool, task_repository):
+        """测试缺少目标状态"""
+        task = Task(title="任务")
+        task_repository.create(task)
+
+        result = await update_task_tool.execute(task_id=task.id)
+        assert result.success is False
+        assert result.error == "MISSING_STATUS"
+
+    @pytest.mark.asyncio
+    async def test_invalid_status(self, update_task_tool, task_repository):
+        """测试无效状态值"""
+        task = Task(title="任务")
+        task_repository.create(task)
+
+        result = await update_task_tool.execute(
+            task_id=task.id, status="invalid_status"
+        )
+        assert result.success is False
+        assert result.error == "INVALID_STATUS"
+
+    @pytest.mark.asyncio
+    async def test_task_not_found(self, update_task_tool):
+        """测试任务不存在"""
+        result = await update_task_tool.execute(
+            task_id="nonexistent", status="completed"
+        )
+        assert result.success is False
+        assert result.error == "TASK_NOT_FOUND"
+
+    @pytest.mark.asyncio
+    async def test_completed_task_not_deleted(self, update_task_tool, task_repository):
+        """测试标记完成后任务仍然存在（不是删除）"""
+        task = Task(title="重要任务")
+        task_repository.create(task)
+
+        await update_task_tool.execute(task_id=task.id, status="completed")
+
+        still_exists = task_repository.get(task.id)
+        assert still_exists is not None
+        assert still_exists.title == "重要任务"
+        assert still_exists.status == TaskStatus.COMPLETED
 
 
 # ============================================================================

@@ -19,10 +19,18 @@ from schedule_agent.core.tools import (
     AddTaskTool,
     GetEventsTool,
     GetTasksTool,
+    UpdateTaskTool,
     DeleteScheduleDataTool,
     GetFreeSlotsTool,
     PlanTasksTool,
 )
+
+try:
+    from prompt_toolkit import PromptSession as _PromptSession
+    from prompt_toolkit.formatted_text import HTML
+    _HAS_PROMPT_TOOLKIT = True
+except ImportError:
+    _HAS_PROMPT_TOOLKIT = False
 
 
 def get_default_tools() -> List[BaseTool]:
@@ -38,6 +46,7 @@ def get_default_tools() -> List[BaseTool]:
         AddTaskTool(),
         GetEventsTool(),
         GetTasksTool(),
+        UpdateTaskTool(),
         DeleteScheduleDataTool(),
         GetFreeSlotsTool(),
         PlanTasksTool(),
@@ -102,10 +111,14 @@ async def run_interactive_loop(agent: ScheduleAgent):
     """
     print_welcome()
 
+    pt_session = _PromptSession() if _HAS_PROMPT_TOOLKIT else None
+
     while True:
         try:
-            # 读取用户输入
-            user_input = input("你: ").strip()
+            if pt_session is not None:
+                user_input = (await pt_session.prompt_async("你: ")).strip()
+            else:
+                user_input = input("你: ").strip()
 
             # 跳过空输入
             if not user_input:
