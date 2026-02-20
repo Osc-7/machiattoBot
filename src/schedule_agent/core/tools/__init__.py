@@ -15,6 +15,7 @@ from .storage_tools import (
     UpdateTaskTool,
     DeleteScheduleDataTool,
 )
+from .file_tools import ReadFileTool, WriteFileTool, ModifyFileTool
 from .web_extractor_tool import WebExtractorTool
 
 __all__ = [
@@ -33,6 +34,9 @@ __all__ = [
     "UpdateEventTool",
     "UpdateTaskTool",
     "DeleteScheduleDataTool",
+    "ReadFileTool",
+    "WriteFileTool",
+    "ModifyFileTool",
     "GetFreeSlotsTool",
     "PlanTasksTool",
     "WebExtractorTool",

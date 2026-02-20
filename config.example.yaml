@@ -66,6 +66,15 @@ storage:
   events_file: "events.json"
   tasks_file: "tasks.json"
 
+# 文件读写工具配置
+# 读取默认启用，写入和修改需显式启用
+file_tools:
+  enabled: true       # 是否启用文件读写工具
+  allow_read: true    # 允许读取文件
+  allow_write: false  # 允许写入/创建文件（建议按需启用）
+  allow_modify: false # 允许修改/追加文件（建议按需启用）
+  base_dir: "."       # 允许操作的基础目录，所有路径必须在此目录下
+
 # Agent 配置
 agent:
   max_iterations: 10

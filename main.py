@@ -23,6 +23,9 @@ from schedule_agent.core.tools import (
     UpdateEventTool,
     UpdateTaskTool,
     DeleteScheduleDataTool,
+    ReadFileTool,
+    WriteFileTool,
+    ModifyFileTool,
     GetFreeSlotsTool,
     PlanTasksTool,
     WebExtractorTool,
@@ -34,7 +37,7 @@ def get_default_tools(config: Optional[Config] = None) -> List[BaseTool]:
     获取默认的工具列表。
 
     Args:
-        config: 配置对象，用于判断是否启用网页抓取工具
+        config: 配置对象，用于判断是否启用网页抓取、文件读写等工具
 
     Returns:
         工具实例列表
@@ -51,7 +54,13 @@ def get_default_tools(config: Optional[Config] = None) -> List[BaseTool]:
         GetFreeSlotsTool(),
         PlanTasksTool(),
     ]
-    
+
+    # 文件读写工具（读取、写入、修改，写入/修改需配置允许）
+    if config and config.file_tools.enabled:
+        tools.append(ReadFileTool(config=config))
+        tools.append(WriteFileTool(config=config))
+        tools.append(ModifyFileTool(config=config))
+
     # 如果配置支持网页抓取（provider=qwen），添加网页抓取工具
     if config and config.llm.provider == "qwen":
         # 检查是否配置了网页抓取相关设置（即使 enable_web_extractor=false，工具也可以工作）

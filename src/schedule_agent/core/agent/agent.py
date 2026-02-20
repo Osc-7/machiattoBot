@@ -237,6 +237,7 @@ class ScheduleAgent:
             time_context=time_ctx.to_prompt_string(),
             config=self._config,
             has_web_extractor=self._tool_registry.has("extract_web_content"),
+            has_file_tools=self._tool_registry.has("read_file"),
         )
 
     def _add_assistant_message_with_tool_calls(self, response: LLMResponse) -> None:

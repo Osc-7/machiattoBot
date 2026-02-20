@@ -15,6 +15,7 @@ from schedule_agent.config import (
     TimeConfig,
     StorageConfig,
     AgentConfig,
+    FileToolsConfig,
     load_config,
     get_config,
     reset_config,
@@ -73,6 +74,24 @@ class TestConfigModels:
         assert config.time.timezone == "Asia/Shanghai"
         assert config.storage.type == "json"
         assert config.agent.max_iterations == 10
+
+    def test_file_tools_config_defaults(self):
+        """测试文件工具配置默认值"""
+        ft = FileToolsConfig()
+        assert ft.enabled is True
+        assert ft.allow_read is True
+        assert ft.allow_write is False
+        assert ft.allow_modify is False
+        assert ft.base_dir == "."
+
+    def test_config_has_file_tools_default(self):
+        """测试 Config 未指定 file_tools 时使用默认值"""
+        config = Config(
+            llm=LLMConfig(api_key="x", model="x"),
+        )
+        assert config.file_tools is not None
+        assert config.file_tools.enabled is True
+        assert config.file_tools.allow_write is False
 
 
 class TestLoadConfig:

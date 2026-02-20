@@ -100,6 +100,31 @@ class StorageConfig(BaseModel):
     tasks_file: str = Field(default="tasks.json", description="任务文件名")
 
 
+class FileToolsConfig(BaseModel):
+    """文件读写工具配置"""
+
+    enabled: bool = Field(
+        default=True,
+        description="是否启用文件读写工具",
+    )
+    allow_read: bool = Field(
+        default=True,
+        description="是否允许读取文件",
+    )
+    allow_write: bool = Field(
+        default=False,
+        description="是否允许写入/创建文件（需显式启用）",
+    )
+    allow_modify: bool = Field(
+        default=False,
+        description="是否允许修改/追加现有文件（需显式启用）",
+    )
+    base_dir: str = Field(
+        default=".",
+        description="允许操作的基础目录，所有文件路径必须在此目录下（安全限制）",
+    )
+
+
 class AgentConfig(BaseModel):
     """Agent 配置"""
 
@@ -137,6 +162,10 @@ class Config(BaseModel):
     storage: StorageConfig = Field(default_factory=StorageConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    file_tools: FileToolsConfig = Field(
+        default_factory=FileToolsConfig,
+        description="文件读写工具配置",
+    )
 
 
 def find_config_file() -> Path:

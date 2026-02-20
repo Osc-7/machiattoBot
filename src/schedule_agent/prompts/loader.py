@@ -61,6 +61,7 @@ def build_system_prompt(
     time_context: str,
     config: Config,
     has_web_extractor: bool,
+    has_file_tools: bool = False,
     mode: PromptMode = "full",
     max_section_chars: int = DEFAULT_MAX_SECTION_CHARS,
 ) -> str:
@@ -128,5 +129,9 @@ def build_system_prompt(
         # 5.3 网页访问（可选）
         if has_web_extractor:
             _maybe_append(parts, load("runtime_web_extractor"))
+
+        # 5.4 文件读写（可选）
+        if has_file_tools:
+            _maybe_append(parts, load("runtime_file_tools"))
 
     return "\n\n".join(parts)

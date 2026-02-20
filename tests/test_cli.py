@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from io import StringIO
 import sys
 
-from schedule_agent.config import Config, LLMConfig, LoggingConfig
+from schedule_agent.config import Config, LLMConfig, LoggingConfig, FileToolsConfig
 from schedule_agent.core import ScheduleAgent
 from schedule_agent.core.tools import BaseTool
 from schedule_agent.cli.interactive import (
@@ -58,6 +58,18 @@ class TestGetDefaultTools:
 
         for expected in expected_tools:
             assert expected in tool_names, f"缺少工具: {expected}"
+
+    def test_get_default_tools_includes_file_tools_when_enabled(self):
+        """当 file_tools.enabled 时，应包含 read_file, write_file, modify_file"""
+        config = Config(
+            llm=LLMConfig(api_key="x", model="x"),
+            file_tools=FileToolsConfig(enabled=True, allow_read=True),
+        )
+        tools = cli_module.get_default_tools(config=config)
+        tool_names = [t.name for t in tools]
+        assert "read_file" in tool_names
+        assert "write_file" in tool_names
+        assert "modify_file" in tool_names
 
 
 class TestPrintFunctions:
