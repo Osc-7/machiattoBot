@@ -37,6 +37,21 @@ llm:
   model: "qwen-3.5-plus"
   temperature: 0.7
   max_tokens: 4096
+  # 联网搜索配置（仅支持阿里云百炼 Qwen）
+  # 参见 https://help.aliyun.com/zh/model-studio/web-search
+  enable_search: false  # 是否启用联网搜索
+  enable_thinking: false  # 是否启用思考模式（用于网页抓取等功能）
+  enable_web_extractor: false  # 是否启用网页抓取功能（需 enable_search=true 和 enable_thinking=true）
+  # 参见 https://help.aliyun.com/zh/model-studio/web-extractor
+  search_options:
+    forced_search: false  # 是否强制联网搜索（默认模型自动判断）
+    search_strategy: "turbo"  # 搜索策略: turbo(默认) | max | agent | agent_max（网页抓取需设为 agent_max）
+    enable_source: false  # 是否返回搜索来源（仅 DashScope 协议支持）
+    enable_citation: false  # 是否开启角标标注（需 enable_source=true）
+    citation_format: "[<number>]"  # 角标格式: [<number>] | [ref_<number>]
+    enable_search_extension: false  # 是否开启垂域搜索（天气、股票等）
+    # freshness: 7  # 搜索时效性（天数）: 7 | 30 | 180 | 365
+    # assigned_site_list: []  # 限定搜索来源站点列表（最多25个）
 
 # 时间配置
 time:

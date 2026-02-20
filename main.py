@@ -20,31 +20,45 @@ from schedule_agent.core.tools import (
     AddTaskTool,
     GetEventsTool,
     GetTasksTool,
+    UpdateEventTool,
     UpdateTaskTool,
     DeleteScheduleDataTool,
     GetFreeSlotsTool,
     PlanTasksTool,
+    WebExtractorTool,
 )
 
 
-def get_default_tools() -> List[BaseTool]:
+def get_default_tools(config: Optional[Config] = None) -> List[BaseTool]:
     """
     获取默认的工具列表。
+
+    Args:
+        config: 配置对象，用于判断是否启用网页抓取工具
 
     Returns:
         工具实例列表
     """
-    return [
+    tools: List[BaseTool] = [
         ParseTimeTool(),
         AddEventTool(),
         AddTaskTool(),
         GetEventsTool(),
         GetTasksTool(),
+        UpdateEventTool(),
         UpdateTaskTool(),
         DeleteScheduleDataTool(),
         GetFreeSlotsTool(),
         PlanTasksTool(),
     ]
+    
+    # 如果配置支持网页抓取（provider=qwen），添加网页抓取工具
+    if config and config.llm.provider == "qwen":
+        # 检查是否配置了网页抓取相关设置（即使 enable_web_extractor=false，工具也可以工作）
+        # 工具内部会创建自己的配置
+        tools.append(WebExtractorTool(config=config))
+    
+    return tools
 
 
 def _load_config() -> Optional[Config]:
@@ -92,7 +106,7 @@ async def main_async(args: Optional[List[str]] = None):
         return
 
     # 获取默认工具
-    tools = get_default_tools()
+    tools = get_default_tools(config=config)
 
     # 创建 Session 日志记录器（若启用）
     session_logger = None

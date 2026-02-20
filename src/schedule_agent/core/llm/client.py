@@ -5,6 +5,7 @@ LLM 客户端封装
 百炼说明：https://bailian.console.aliyun.com/ 支持 qwen-3.5-plus 等多轮工具调用。
 """
 
+import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -188,6 +189,52 @@ class LLMClient:
             # 参见 https://help.aliyun.com/zh/model-studio/qwen-function-calling
             request_params["parallel_tool_calls"] = True
 
+        # 联网搜索功能（仅支持阿里云百炼 Qwen）
+        # 注意：网页抓取功能已通过 WebExtractorTool 工具实现，不在全局启用
+        # 参见 https://help.aliyun.com/zh/model-studio/web-search
+        if self._config.llm.enable_search and self._config.llm.provider == "qwen":
+            extra_body = {"enable_search": True}
+            
+            # 启用思考模式（如果配置了）
+            if self._config.llm.enable_thinking:
+                extra_body["enable_thinking"] = True
+            
+            # 添加搜索选项
+            search_options = {}
+            
+            if self._config.llm.search_options:
+                search_opts = self._config.llm.search_options
+                
+                if search_opts.forced_search:
+                    search_options["forced_search"] = True
+                
+                # 注意：search_strategy: agent_max 会与工具冲突，工具内部会单独处理
+                # 这里只使用非 agent_max 的策略（turbo, max 等）
+                if search_opts.search_strategy not in ("agent_max", "agent") and search_opts.search_strategy != "turbo":
+                    search_options["search_strategy"] = search_opts.search_strategy
+                
+                if search_opts.enable_source:
+                    search_options["enable_source"] = True
+                
+                if search_opts.enable_citation and search_opts.enable_source:
+                    search_options["enable_citation"] = True
+                    if search_opts.citation_format != "[<number>]":
+                        search_options["citation_format"] = search_opts.citation_format
+                
+                if search_opts.enable_search_extension:
+                    search_options["enable_search_extension"] = True
+                
+                if search_opts.freshness is not None:
+                    search_options["freshness"] = search_opts.freshness
+                
+                if search_opts.assigned_site_list:
+                    search_options["assigned_site_list"] = search_opts.assigned_site_list
+            
+            if search_options:
+                extra_body["search_options"] = search_options
+            
+            request_params["extra_body"] = extra_body
+
         response = await self._client.chat.completions.create(**request_params)
 
         choice = response.choices[0]
@@ -211,6 +258,77 @@ class LLMClient:
             tool_calls=tool_calls,
             finish_reason=choice.finish_reason,
             raw_response=response,
+            usage=usage,
+        )
+
+    async def _chat_with_tools_stream(self, request_params: Dict[str, Any]) -> LLMResponse:
+        """
+        流式调用（网页抓取必须使用流式模式）。
+        汇总流式响应后返回完整的 LLMResponse。
+        """
+        params = {**request_params, "stream": True}
+        stream = await self._client.chat.completions.create(**params)
+
+        content_parts: List[str] = []
+        tool_calls_map: Dict[int, Dict[str, Any]] = {}
+        finish_reason = "stop"
+        last_usage = None
+
+        async for chunk in stream:
+            if not chunk.choices:
+                if hasattr(chunk, "usage") and chunk.usage:
+                    last_usage = chunk.usage
+                continue
+
+            delta = chunk.choices[0].delta
+            if hasattr(chunk.choices[0], "finish_reason") and chunk.choices[0].finish_reason:
+                finish_reason = chunk.choices[0].finish_reason
+
+            if delta.content:
+                content_parts.append(delta.content)
+
+            if hasattr(delta, "tool_calls") and delta.tool_calls:
+                for tc in delta.tool_calls:
+                    idx = getattr(tc, "index", 0)
+                    if idx not in tool_calls_map:
+                        tool_calls_map[idx] = {
+                            "id": getattr(tc, "id", "") or "",
+                            "name": getattr(tc.function, "name", "") or "",
+                            "arguments": getattr(tc.function, "arguments", "") or "",
+                        }
+                    else:
+                        if getattr(tc, "id", None):
+                            tool_calls_map[idx]["id"] = tc.id
+                        if hasattr(tc, "function") and tc.function:
+                            if getattr(tc.function, "name", None):
+                                tool_calls_map[idx]["name"] = tc.function.name
+                            if getattr(tc.function, "arguments", None):
+                                tool_calls_map[idx]["arguments"] += tc.function.arguments or ""
+
+            if hasattr(chunk, "usage") and chunk.usage:
+                last_usage = chunk.usage
+
+        content = "".join(content_parts) if content_parts else None
+
+        tool_calls_list: List[ToolCall] = []
+        for idx in sorted(tool_calls_map.keys()):
+            tc = tool_calls_map[idx]
+            if tc["id"] and tc["name"]:
+                try:
+                    args = json.loads(tc["arguments"]) if tc["arguments"] else {}
+                except json.JSONDecodeError:
+                    args = {}
+                tool_calls_list.append(
+                    ToolCall(id=tc["id"], name=tc["name"], arguments=args)
+                )
+
+        usage = TokenUsage.from_response(last_usage) if last_usage else None
+
+        return LLMResponse(
+            content=content,
+            tool_calls=tool_calls_list,
+            finish_reason=finish_reason,
+            raw_response=None,
             usage=usage,
         )
 

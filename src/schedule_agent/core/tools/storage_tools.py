@@ -723,13 +723,150 @@ class GetTasksTool(BaseTool):
             t.due_date or date.max,
         ))
 
+        # 检测过期任务（排除已查询过期任务的情况）
+        overdue_tasks = []
+        if query_type != "overdue":
+            overdue_tasks = [t for t in tasks if t.is_overdue]
+        
+        metadata = {
+            "query_type": query_type,
+            "count": len(tasks),
+        }
+        
+        # 如果有过期任务，在 metadata 中标记
+        if overdue_tasks:
+            metadata["has_overdue"] = True
+            metadata["overdue_count"] = len(overdue_tasks)
+            metadata["overdue_task_ids"] = [t.id for t in overdue_tasks]
+
         return ToolResult(
             success=True,
             data=tasks,
             message=message,
+            metadata=metadata,
+        )
+
+
+class UpdateEventTool(BaseTool):
+    """
+    更新事件状态工具
+
+    支持将事件标记为已完成、已取消、进行中或已安排。
+    """
+
+    def __init__(self, repository: Optional[EventRepository] = None):
+        self._repository = repository or EventRepository()
+
+    @property
+    def name(self) -> str:
+        return "update_event"
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name="update_event",
+            description="""更新事件的状态。
+
+这是修改事件状态的工具，当用户想要：
+- 标记事件为已完成（"做完了""完成了""搞定了"）
+- 取消事件
+- 将事件标记为进行中
+- 将事件重新设为已安排
+
+重要区分：
+- 修改事件状态（完成/取消/进行中/已安排）→ 使用本工具 update_event
+- 永久删除事件 → 使用 delete_schedule_data
+这两者是完全不同的操作，不可混淆。""",
+            parameters=[
+                ToolParameter(
+                    name="event_id",
+                    type="string",
+                    description="要更新的事件 ID",
+                    required=True,
+                ),
+                ToolParameter(
+                    name="status",
+                    type="string",
+                    description="目标状态：completed（已完成）、cancelled（已取消）、in_progress（进行中）、scheduled（已安排）",
+                    required=True,
+                    enum=["completed", "cancelled", "in_progress", "scheduled"],
+                ),
+            ],
+            examples=[
+                {
+                    "description": "将事件标记为已完成",
+                    "params": {"event_id": "a1b2c3d4", "status": "completed"},
+                },
+                {
+                    "description": "取消一个事件",
+                    "params": {"event_id": "a1b2c3d4", "status": "cancelled"},
+                },
+                {
+                    "description": "将事件改为进行中",
+                    "params": {"event_id": "a1b2c3d4", "status": "in_progress"},
+                },
+            ],
+            usage_notes=[
+                "标记完成、取消等状态变更请使用本工具，不要使用 delete_schedule_data",
+                '用户说「做完了」「完成了」「搞定了」「标记为已完成」等都应调用本工具',
+                "需要先通过 get_events 获取事件 ID",
+            ],
+        )
+
+    async def execute(self, **kwargs) -> ToolResult:
+        event_id = kwargs.get("event_id")
+        if not event_id:
+            return ToolResult(
+                success=False,
+                error="MISSING_EVENT_ID",
+                message="缺少事件 ID",
+            )
+
+        status_str = kwargs.get("status")
+        if not status_str:
+            return ToolResult(
+                success=False,
+                error="MISSING_STATUS",
+                message="缺少目标状态",
+            )
+
+        try:
+            target_status = EventStatus(status_str)
+        except ValueError:
+            return ToolResult(
+                success=False,
+                error="INVALID_STATUS",
+                message=f"无效的状态值: {status_str}，可选: scheduled, in_progress, completed, cancelled",
+            )
+
+        event = self._repository.get(event_id)
+        if not event:
+            return ToolResult(
+                success=False,
+                error="EVENT_NOT_FOUND",
+                message=f"未找到 ID 为 {event_id} 的事件",
+            )
+
+        old_status = event.status
+        event.status = target_status
+        event.update_timestamp()
+
+        self._repository.update(event)
+
+        status_labels = {
+            EventStatus.SCHEDULED: "已安排",
+            EventStatus.IN_PROGRESS: "进行中",
+            EventStatus.COMPLETED: "已完成",
+            EventStatus.CANCELLED: "已取消",
+        }
+
+        return ToolResult(
+            success=True,
+            data=event,
+            message=f"事件「{event.title}」状态已从 {status_labels[old_status]} 更新为 {status_labels[target_status]}",
             metadata={
-                "query_type": query_type,
-                "count": len(tasks),
+                "event_id": event.id,
+                "old_status": old_status.value,
+                "new_status": target_status.value,
             },
         )
 
@@ -751,16 +888,18 @@ class UpdateTaskTool(BaseTool):
     def get_definition(self) -> ToolDefinition:
         return ToolDefinition(
             name="update_task",
-            description="""更新任务的状态。
+            description="""更新任务的状态或截止日期。
 
-这是修改任务状态的唯一工具，当用户想要：
+这是修改任务的主要工具，当用户想要：
 - 标记任务为已完成（"做完了""完成了""搞定了"）
 - 取消任务
 - 将任务标记为进行中
 - 将任务重新设为待办
+- 调整任务的截止日期（延期、修改截止时间等）
 
 重要区分：
 - 修改任务状态（完成/取消/进行中/待办）→ 使用本工具 update_task
+- 修改任务截止日期 → 使用本工具 update_task（提供 due_date 参数）
 - 永久删除任务 → 使用 delete_schedule_data
 这两者是完全不同的操作，不可混淆。""",
             parameters=[
@@ -773,9 +912,15 @@ class UpdateTaskTool(BaseTool):
                 ToolParameter(
                     name="status",
                     type="string",
-                    description="目标状态：completed（已完成）、cancelled（已取消）、in_progress（进行中）、todo（待办）",
-                    required=True,
+                    description="目标状态：completed（已完成）、cancelled（已取消）、in_progress（进行中）、todo（待办）。如果不更新状态，可以不提供此参数。",
+                    required=False,
                     enum=["completed", "cancelled", "in_progress", "todo"],
+                ),
+                ToolParameter(
+                    name="due_date",
+                    type="string",
+                    description="新的截止日期，格式：YYYY-MM-DD（如 2026-02-25）。如果不更新截止日期，可以不提供此参数。",
+                    required=False,
                 ),
             ],
             examples=[
@@ -791,11 +936,21 @@ class UpdateTaskTool(BaseTool):
                     "description": "将任务改为进行中",
                     "params": {"task_id": "a1b2c3d4", "status": "in_progress"},
                 },
+                {
+                    "description": "更新任务的截止日期",
+                    "params": {"task_id": "a1b2c3d4", "due_date": "2026-02-25"},
+                },
+                {
+                    "description": "同时更新状态和截止日期",
+                    "params": {"task_id": "a1b2c3d4", "status": "todo", "due_date": "2026-02-25"},
+                },
             ],
             usage_notes=[
                 "标记完成、取消等状态变更请使用本工具，不要使用 delete_schedule_data",
                 '用户说「做完了」「完成了」「搞定了」「标记为已完成」等都应调用本工具',
+                "用户说「延期」「调整截止日期」「改到X号」等应使用本工具更新 due_date",
                 "需要先通过 get_tasks 获取任务 ID",
+                "status 和 due_date 至少提供一个，可以同时提供",
             ],
         )
 
@@ -809,20 +964,14 @@ class UpdateTaskTool(BaseTool):
             )
 
         status_str = kwargs.get("status")
-        if not status_str:
-            return ToolResult(
-                success=False,
-                error="MISSING_STATUS",
-                message="缺少目标状态",
-            )
+        due_date_str = kwargs.get("due_date")
 
-        try:
-            target_status = TaskStatus(status_str)
-        except ValueError:
+        # 至少需要提供一个更新参数
+        if not status_str and not due_date_str:
             return ToolResult(
                 success=False,
-                error="INVALID_STATUS",
-                message=f"无效的状态值: {status_str}，可选: todo, in_progress, completed, cancelled",
+                error="MISSING_UPDATE_PARAM",
+                message="至少需要提供 status 或 due_date 参数之一",
             )
 
         task = self._repository.get(task_id)
@@ -834,14 +983,44 @@ class UpdateTaskTool(BaseTool):
             )
 
         old_status = task.status
+        old_due_date = task.due_date
+        updates = []
 
-        if target_status == TaskStatus.COMPLETED:
-            task.mark_completed()
-        elif target_status == TaskStatus.CANCELLED:
-            task.mark_cancelled()
-        else:
-            task.status = target_status
-            task.update_timestamp()
+        # 更新状态
+        if status_str:
+            try:
+                target_status = TaskStatus(status_str)
+            except ValueError:
+                return ToolResult(
+                    success=False,
+                    error="INVALID_STATUS",
+                    message=f"无效的状态值: {status_str}，可选: todo, in_progress, completed, cancelled",
+                )
+
+            if target_status == TaskStatus.COMPLETED:
+                task.mark_completed()
+            elif target_status == TaskStatus.CANCELLED:
+                task.mark_cancelled()
+            else:
+                task.status = target_status
+                task.update_timestamp()
+            
+            updates.append(f"状态: {old_status.value} → {target_status.value}")
+
+        # 更新截止日期
+        if due_date_str:
+            try:
+                new_due_date = datetime.strptime(due_date_str, "%Y-%m-%d").date()
+                task.due_date = new_due_date
+                task.update_timestamp()
+                old_date_str = old_due_date.strftime("%Y-%m-%d") if old_due_date else "无"
+                updates.append(f"截止日期: {old_date_str} → {due_date_str}")
+            except ValueError:
+                return ToolResult(
+                    success=False,
+                    error="INVALID_DATE_FORMAT",
+                    message=f"日期格式无效: {due_date_str}，请使用 YYYY-MM-DD 格式（如 2026-02-25）",
+                )
 
         self._repository.update(task)
 
@@ -852,15 +1031,23 @@ class UpdateTaskTool(BaseTool):
             TaskStatus.CANCELLED: "已取消",
         }
 
+        message = f"任务「{task.title}」已更新：{', '.join(updates)}"
+
+        metadata = {
+            "task_id": task.id,
+        }
+        if status_str:
+            metadata["old_status"] = old_status.value
+            metadata["new_status"] = task.status.value
+        if due_date_str:
+            metadata["old_due_date"] = old_due_date.isoformat() if old_due_date else None
+            metadata["new_due_date"] = task.due_date.isoformat() if task.due_date else None
+
         return ToolResult(
             success=True,
             data=task,
-            message=f"任务「{task.title}」状态已从 {status_labels[old_status]} 更新为 {status_labels[target_status]}",
-            metadata={
-                "task_id": task.id,
-                "old_status": old_status.value,
-                "new_status": target_status.value,
-            },
+            message=message,
+            metadata=metadata,
         )
 
 

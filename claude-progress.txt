@@ -1,5 +1,140 @@
 # Schedule Agent 开发进度
 
+## 2026-02-20 - 实现网页抓取工具（解决 agent_max 与工具冲突问题）
+
+### 完成内容:
+- 创建 `WebExtractorTool` 工具类 (`src/schedule_agent/core/tools/web_extractor_tool.py`)
+  - 作为独立的工具，通过工具调用方式实现网页抓取
+  - 工具内部使用独立的 LLM 调用（启用网页抓取，但不传其他工具）
+  - 解决了 agent_max 模式与自定义工具冲突的问题
+
+- 修改 `LLMClient`
+  - 移除全局的 `enable_web_extractor` 逻辑（避免与工具冲突）
+  - 保留 `_chat_with_tools_stream` 方法供工具内部使用
+  - 全局调用不再使用 agent_max 策略（避免冲突）
+
+- 更新工具注册 (`main.py`, `__init__.py`)
+  - 在 `get_default_tools` 中添加 `WebExtractorTool`
+  - 仅当 provider=qwen 时添加网页抓取工具
+
+- 更新系统提示词 (`agent.py`)
+  - 添加网页访问能力说明
+  - 告知 Agent 可以使用 `extract_web_content` 工具
+
+- 编写测试用例
+  - `tests/test_web_extractor_tool.py`: 完整的工具测试
+  - 更新 `tests/test_llm.py`: 移除全局网页抓取测试
+  - 所有测试通过（18 passed, 1 skipped）
+
+### 技术实现:
+- **解决方案**: 将网页抓取功能封装为独立工具，避免 agent_max 模式与自定义工具冲突
+- **工作原理**:
+  1. 用户请求网页内容时，Agent 调用 `extract_web_content` 工具
+  2. 工具内部创建独立的 LLM 调用（enable_search + enable_thinking + search_strategy: agent_max）
+  3. 工具调用时不传其他工具，避免冲突
+  4. 使用流式模式（网页抓取要求）
+  5. 返回提取的网页内容
+
+### 测试:
+- 运行 `pytest tests/test_llm.py tests/test_web_extractor_tool.py -v`: 18 passed, 1 skipped
+- 所有现有测试通过，未破坏现有功能
+
+### 备注:
+- 网页抓取工具仅在 provider=qwen 时可用
+- 工具会自动处理流式调用和配置
+- 解决了 "Agent mode does not support tools" 错误
+- 现在可以同时使用日程管理工具和网页抓取功能
+
+---
+
+## 2026-02-20 - 添加网页抓取功能
+
+### 完成内容:
+- 在 `LLMConfig` 中添加 `enable_thinking` 和 `enable_web_extractor` 配置选项
+  - `enable_thinking`: 是否启用思考模式（用于网页抓取等功能）
+  - `enable_web_extractor`: 是否启用网页抓取功能（需 enable_search=true 和 enable_thinking=true）
+
+- 修改 `LLMClient` 的 `chat_with_tools` 方法
+  - 支持 `enable_thinking` 参数
+  - 当启用网页抓取时，自动设置 `enable_thinking: true` 和 `search_strategy: agent_max`
+  - 确保网页抓取功能正确配置
+
+- 更新系统提示词 (`agent.py`)
+  - 添加网页抓取能力说明
+  - 告知 Agent 可以访问并分析指定网页内容、提取关键信息、总结文档等
+
+- 更新配置文件
+  - `config.yaml`: 添加网页抓取配置选项
+  - `config.example.yaml`: 添加网页抓取配置示例和注释说明
+
+- 编写测试用例
+  - `test_chat_with_web_extractor_enabled`: 测试启用网页抓取功能
+  - `test_chat_with_thinking_enabled`: 测试启用思考模式（不启用网页抓取）
+  - 所有测试通过
+
+### 技术实现:
+- 根据阿里云百炼文档实现网页抓取功能
+- 参考文档: https://help.aliyun.com/zh/model-studio/web-extractor
+- 网页抓取需要：
+  - `enable_search: true`
+  - `enable_thinking: true`
+  - `search_strategy: agent_max`
+- 支持的模型：qwen3-max、qwen3-max-2026-01-23、qwen3.5-plus、qwen3.5-plus-2026-02-15
+
+### 测试:
+- 运行 `pytest tests/test_llm.py::TestLLMClient -v`: 10 passed
+- 所有现有测试通过，未破坏现有功能
+
+### 备注:
+- 网页抓取功能仅支持阿里云百炼 Qwen 模型
+- 需要在配置文件中显式启用 `enable_web_extractor: true`
+- 启用网页抓取时，系统会自动设置必要的参数（enable_thinking 和 search_strategy: agent_max）
+- 网页抓取可以访问指定 URL 并提取内容，适用于总结文档、分析网页等场景
+
+---
+
+## 2026-02-20 - 添加联网搜索功能
+
+### 完成内容:
+- 在 `LLMConfig` 中添加 `enable_search` 和 `search_options` 配置选项
+  - 创建 `SearchOptionsConfig` 类，支持所有联网搜索配置选项
+  - 包括：forced_search、search_strategy、enable_source、enable_citation、enable_search_extension、freshness、assigned_site_list
+
+- 修改 `LLMClient` 的 `chat_with_tools` 方法
+  - 支持传递 `extra_body` 参数启用联网搜索
+  - 仅当 `enable_search=True` 且 `provider=qwen` 时启用
+  - 自动构建 `search_options` 配置并传递给 API
+
+- 更新 `config.example.yaml`
+  - 添加联网搜索配置示例和注释说明
+  - 包含所有可配置选项的说明
+
+- 编写测试用例
+  - `test_chat_with_web_search_enabled`: 测试启用联网搜索功能
+  - `test_chat_with_web_search_disabled`: 测试禁用联网搜索功能
+  - `test_chat_with_web_search_non_qwen_provider`: 测试非 Qwen 提供商不启用联网搜索
+  - 所有测试通过
+
+### 技术实现:
+- 根据阿里云百炼文档实现联网搜索功能
+- 参考文档: https://help.aliyun.com/zh/model-studio/web-search
+- 支持 OpenAI 兼容协议和 DashScope 协议
+- 支持多种搜索策略：turbo、max、agent、agent_max
+- 支持垂域搜索、搜索来源返回、角标标注等功能
+
+### 测试:
+- 运行 `pytest tests/test_llm.py -v`: 11 passed, 1 skipped
+- 运行 `pytest tests/test_config.py -v`: 15 passed
+- 所有现有测试通过，未破坏现有功能
+
+### 备注:
+- 联网搜索功能仅支持阿里云百炼 Qwen 模型
+- 需要在配置文件中显式启用 `enable_search: true`
+- 模型会自动判断是否需要联网搜索，也可通过 `forced_search: true` 强制联网
+- 搜索策略和选项可根据需求配置
+
+---
+
 ## 2026-02-19 - Web 架构设计
 
 ### 完成内容:

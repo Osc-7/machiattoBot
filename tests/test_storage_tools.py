@@ -698,6 +698,52 @@ class TestGetTasksTool:
         assert result.data[0].title == "先截止"
         assert result.data[1].title == "后截止"
 
+    @pytest.mark.asyncio
+    async def test_execute_detects_overdue_tasks(self, get_tasks_tool, task_repository):
+        """测试查询待办任务时检测过期任务"""
+        from datetime import date, timedelta
+        
+        # 创建一个过期任务和一个未过期任务
+        overdue_task = Task(
+            title="过期任务",
+            due_date=date.today() - timedelta(days=1),
+            status=TaskStatus.TODO,
+        )
+        normal_task = Task(
+            title="正常任务",
+            due_date=date.today() + timedelta(days=1),
+            status=TaskStatus.TODO,
+        )
+        task_repository.create(overdue_task)
+        task_repository.create(normal_task)
+
+        result = await get_tasks_tool.execute(query_type="todo")
+
+        assert result.success is True
+        assert len(result.data) == 2
+        # 应该检测到过期任务
+        assert result.metadata.get("has_overdue") is True
+        assert result.metadata.get("overdue_count") == 1
+        assert overdue_task.id in result.metadata.get("overdue_task_ids", [])
+
+    @pytest.mark.asyncio
+    async def test_execute_no_overdue_when_querying_overdue(self, get_tasks_tool, task_repository):
+        """测试查询过期任务时不再重复标记"""
+        from datetime import date, timedelta
+        
+        overdue_task = Task(
+            title="过期任务",
+            due_date=date.today() - timedelta(days=1),
+            status=TaskStatus.TODO,
+        )
+        task_repository.create(overdue_task)
+
+        result = await get_tasks_tool.execute(query_type="overdue")
+
+        assert result.success is True
+        # 查询过期任务时，不应该在 metadata 中再次标记
+        assert result.metadata.get("has_overdue") is None
+
 
 # ============================================================================
 # UpdateTaskTool 测试
@@ -788,13 +834,13 @@ class TestUpdateTaskTool:
 
     @pytest.mark.asyncio
     async def test_missing_status(self, update_task_tool, task_repository):
-        """测试缺少目标状态"""
+        """测试缺少更新参数（既没有 status 也没有 due_date）"""
         task = Task(title="任务")
         task_repository.create(task)
 
         result = await update_task_tool.execute(task_id=task.id)
         assert result.success is False
-        assert result.error == "MISSING_STATUS"
+        assert result.error == "MISSING_UPDATE_PARAM"
 
     @pytest.mark.asyncio
     async def test_invalid_status(self, update_task_tool, task_repository):
@@ -829,6 +875,50 @@ class TestUpdateTaskTool:
         assert still_exists is not None
         assert still_exists.title == "重要任务"
         assert still_exists.status == TaskStatus.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_update_due_date(self, update_task_tool, task_repository):
+        """测试更新任务的截止日期"""
+        from datetime import date
+        task = Task(title="任务", due_date=date(2026, 2, 20))
+        task_repository.create(task)
+
+        result = await update_task_tool.execute(
+            task_id=task.id, due_date="2026-02-25"
+        )
+        assert result.success is True
+        assert "截止日期" in result.message
+
+        updated_task = task_repository.get(task.id)
+        assert updated_task.due_date == date(2026, 2, 25)
+
+    @pytest.mark.asyncio
+    async def test_update_status_and_due_date(self, update_task_tool, task_repository):
+        """测试同时更新状态和截止日期"""
+        from datetime import date
+        task = Task(title="任务", due_date=date(2026, 2, 20))
+        task_repository.create(task)
+
+        result = await update_task_tool.execute(
+            task_id=task.id, status="in_progress", due_date="2026-02-25"
+        )
+        assert result.success is True
+
+        updated_task = task_repository.get(task.id)
+        assert updated_task.status == TaskStatus.IN_PROGRESS
+        assert updated_task.due_date == date(2026, 2, 25)
+
+    @pytest.mark.asyncio
+    async def test_update_due_date_invalid_format(self, update_task_tool, task_repository):
+        """测试无效的日期格式"""
+        task = Task(title="任务")
+        task_repository.create(task)
+
+        result = await update_task_tool.execute(
+            task_id=task.id, due_date="2026/02/25"
+        )
+        assert result.success is False
+        assert result.error == "INVALID_DATE_FORMAT"
 
 
 # ============================================================================

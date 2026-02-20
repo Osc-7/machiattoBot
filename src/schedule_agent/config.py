@@ -7,10 +7,47 @@
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import yaml
 from pydantic import BaseModel, Field
+
+
+class SearchOptionsConfig(BaseModel):
+    """联网搜索配置选项"""
+
+    forced_search: bool = Field(
+        default=False,
+        description="是否强制联网搜索（默认模型自动判断）",
+    )
+    search_strategy: str = Field(
+        default="turbo",
+        description="搜索策略: turbo(默认) | max | agent | agent_max",
+    )
+    enable_source: bool = Field(
+        default=False,
+        description="是否返回搜索来源（仅 DashScope 协议支持）",
+    )
+    enable_citation: bool = Field(
+        default=False,
+        description="是否开启角标标注（需 enable_source=True）",
+    )
+    citation_format: str = Field(
+        default="[<number>]",
+        description="角标格式: [<number>] | [ref_<number>]",
+    )
+    enable_search_extension: bool = Field(
+        default=False,
+        description="是否开启垂域搜索（天气、股票等）",
+    )
+    freshness: Optional[int] = Field(
+        default=None,
+        description="搜索时效性（天数）: 7 | 30 | 180 | 365",
+    )
+    assigned_site_list: List[str] = Field(
+        default_factory=list,
+        description="限定搜索来源站点列表（最多25个）",
+    )
 
 
 class LLMConfig(BaseModel):
@@ -28,6 +65,22 @@ class LLMConfig(BaseModel):
     model: str = Field(..., description="模型名称或推理端点 ID")
     temperature: float = Field(default=0.7, ge=0, le=2, description="生成温度")
     max_tokens: int = Field(default=4096, ge=1, description="最大 token 数")
+    enable_search: bool = Field(
+        default=False,
+        description="是否启用联网搜索功能（仅支持阿里云百炼 Qwen）",
+    )
+    search_options: Optional[SearchOptionsConfig] = Field(
+        default=None,
+        description="联网搜索配置选项",
+    )
+    enable_thinking: bool = Field(
+        default=False,
+        description="是否启用思考模式（用于网页抓取等功能，仅支持阿里云百炼 Qwen）",
+    )
+    enable_web_extractor: bool = Field(
+        default=False,
+        description="是否启用网页抓取功能（需 enable_search=true 和 enable_thinking=true，仅支持阿里云百炼 Qwen）",
+    )
 
 
 class TimeConfig(BaseModel):
