@@ -10,7 +10,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from io import StringIO
 import sys
 
-from schedule_agent.config import Config, LLMConfig, LoggingConfig, FileToolsConfig
+from schedule_agent.config import (
+    Config,
+    LLMConfig,
+    LoggingConfig,
+    FileToolsConfig,
+    MCPConfig,
+    MCPServerConfig,
+)
 from schedule_agent.core import ScheduleAgent
 from schedule_agent.core.tools import BaseTool
 from schedule_agent.cli.interactive import (
@@ -269,6 +276,76 @@ class TestMainAsync:
                         await cli_module.main_async(['main.py', '明天的日程'])
                         mock_cmd.assert_called_once()
                         mock_print.assert_called_with("响应")
+
+    @pytest.mark.asyncio
+    async def test_main_async_with_mcp_enabled(self):
+        """测试启用 MCP 时会连接并关闭 MCP 管理器"""
+        mock_config = Config(
+            llm=LLMConfig(api_key="test-api-key", model="test-model"),
+            logging=LoggingConfig(enable_session_log=False),
+            mcp=MCPConfig(
+                enabled=True,
+                servers=[
+                    MCPServerConfig(
+                        name="demo",
+                        command="python",
+                        args=["-m", "demo_server"],
+                    )
+                ],
+            ),
+        )
+        with patch('main.get_config', return_value=mock_config):
+            with patch('main.MCPClientManager') as MockMCPManager:
+                mock_mcp = MagicMock()
+                mock_mcp.connect = AsyncMock()
+                mock_mcp.get_proxy_tools = MagicMock(return_value=[])
+                mock_mcp.close = AsyncMock()
+                MockMCPManager.return_value = mock_mcp
+
+                with patch('main.ScheduleAgent') as MockAgent:
+                    mock_agent_instance = MagicMock()
+                    mock_agent_instance.__aenter__ = AsyncMock(return_value=mock_agent_instance)
+                    mock_agent_instance.__aexit__ = AsyncMock()
+                    MockAgent.return_value = mock_agent_instance
+
+                    with patch('main.run_interactive_loop', new_callable=AsyncMock):
+                        await cli_module.main_async([])
+
+                mock_mcp.connect.assert_called_once()
+                mock_mcp.get_proxy_tools.assert_called_once()
+                mock_mcp.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_main_async_auto_add_local_mcp_server(self):
+        """测试启用 MCP 且未配置 server 时自动注入本地 mcp_server.py"""
+        mock_config = Config(
+            llm=LLMConfig(api_key="test-api-key", model="test-model"),
+            logging=LoggingConfig(enable_session_log=False),
+            mcp=MCPConfig(enabled=True, servers=[]),
+        )
+        with patch('main.get_config', return_value=mock_config):
+            with patch('main.MCPClientManager') as MockMCPManager:
+                mock_mcp = MagicMock()
+                mock_mcp.connect = AsyncMock()
+                mock_mcp.get_proxy_tools = MagicMock(return_value=[])
+                mock_mcp.close = AsyncMock()
+                MockMCPManager.return_value = mock_mcp
+
+                with patch('main.ScheduleAgent') as MockAgent:
+                    mock_agent_instance = MagicMock()
+                    mock_agent_instance.__aenter__ = AsyncMock(return_value=mock_agent_instance)
+                    mock_agent_instance.__aexit__ = AsyncMock()
+                    MockAgent.return_value = mock_agent_instance
+
+                    with patch('main.run_interactive_loop', new_callable=AsyncMock):
+                        await cli_module.main_async([])
+
+                assert MockMCPManager.call_count == 1
+                runtime_mcp = MockMCPManager.call_args[0][0]
+                assert runtime_mcp.enabled is True
+                assert len(runtime_mcp.servers) == 1
+                assert runtime_mcp.servers[0].name == "schedule_tools"
+                assert any("mcp_server.py" in arg for arg in runtime_mcp.servers[0].args)
 
 
 class TestMain:

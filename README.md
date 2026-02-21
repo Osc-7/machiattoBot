@@ -8,6 +8,7 @@
 - **工具驱动**：LLM 决策 + 工具执行，职责清晰
 - **多 LLM 支持**：豆包、阿里云百炼 Qwen
 - **可扩展工具**：日程、任务、时间解析、空闲时段、规划、文件读写、网页抓取
+- **MCP 客户端**：可按配置接入外部 MCP Server 并自动注册远程工具
 
 ## 快速开始
 
@@ -51,6 +52,8 @@ src/schedule_agent/
 | `llm.model` | 如 `qwen3.5-plus` 或豆包推理端点 ID |
 | `storage.data_dir` | 日程数据目录 |
 | `file_tools.enabled` | 是否启用文件读写工具 |
+| `mcp.enabled` | 是否启用 MCP 客户端 |
+| `mcp.servers` | MCP Server 列表（stdio） |
 
 详见 `config.example.yaml`。
 
@@ -59,6 +62,28 @@ src/schedule_agent/
 ```bash
 source init.sh
 pytest tests/ -v
+```
+
+## 本地工具 MCP 化
+
+项目内置了 MCP Server 入口，可将现有工具以 stdio 方式暴露：
+
+```bash
+python mcp_server.py
+```
+
+若要让 Agent 通过 MCP 调用你自己的本地工具，可在 `config.yaml` 中配置：
+
+```yaml
+mcp:
+  enabled: true
+  servers:
+    - name: "schedule_tools"
+      transport: "stdio"
+      command: "python"
+      args: ["mcp_server.py"]
+      cwd: "."
+      tool_name_prefix: "mcp_local"
 ```
 
 开发规范见 [AGENTS.md](AGENTS.md)。

@@ -253,7 +253,7 @@ class TestTask:
         # 未过期的任务
         task3 = Task(
             title="未过期",
-            due_date=date(2026, 2, 20)
+            due_date=date.today() + timedelta(days=1)
         )
         assert not task3.is_overdue
 

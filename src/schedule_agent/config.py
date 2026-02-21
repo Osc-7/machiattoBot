@@ -125,6 +125,47 @@ class FileToolsConfig(BaseModel):
     )
 
 
+class MCPServerConfig(BaseModel):
+    """单个 MCP Server 配置。"""
+
+    name: str = Field(..., description="MCP Server 名称，用于工具名前缀和日志定位")
+    enabled: bool = Field(default=True, description="是否启用该 MCP Server")
+    transport: str = Field(default="stdio", description="传输类型，当前仅支持 stdio")
+    command: str = Field(..., description="启动 MCP Server 的命令")
+    args: List[str] = Field(default_factory=list, description="MCP Server 命令参数")
+    env: dict = Field(default_factory=dict, description="传递给 MCP Server 的环境变量")
+    cwd: Optional[str] = Field(default=None, description="MCP Server 工作目录")
+    tool_name_prefix: Optional[str] = Field(
+        default=None,
+        description="本地工具名前缀，默认使用 name",
+    )
+    init_timeout_seconds: int = Field(
+        default=15,
+        ge=1,
+        description="初始化和获取工具列表超时时间（秒）",
+    )
+    call_timeout_seconds: int = Field(
+        default=30,
+        ge=1,
+        description="工具调用超时时间（秒）",
+    )
+
+
+class MCPConfig(BaseModel):
+    """MCP 客户端配置。"""
+
+    enabled: bool = Field(default=False, description="是否启用 MCP 客户端")
+    call_timeout_seconds: int = Field(
+        default=30,
+        ge=1,
+        description="默认 MCP 工具调用超时时间（秒）",
+    )
+    servers: List[MCPServerConfig] = Field(
+        default_factory=list,
+        description="MCP Server 列表",
+    )
+
+
 class AgentConfig(BaseModel):
     """Agent 配置"""
 
@@ -165,6 +206,10 @@ class Config(BaseModel):
     file_tools: FileToolsConfig = Field(
         default_factory=FileToolsConfig,
         description="文件读写工具配置",
+    )
+    mcp: MCPConfig = Field(
+        default_factory=MCPConfig,
+        description="MCP 客户端配置",
     )
 
 

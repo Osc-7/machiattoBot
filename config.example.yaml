@@ -80,6 +80,25 @@ agent:
   max_iterations: 10
   enable_debug: true
 
+# MCP 客户端配置（可选）
+# 用于接入外部 MCP Server，并将远程工具自动注册到 Agent
+mcp:
+  enabled: false
+  call_timeout_seconds: 30
+  servers: []
+  # 示例：
+  # servers:
+  #   - name: "schedule_tools"
+  #     enabled: true
+  #     transport: "stdio"
+  #     command: "python"
+  #     args: ["mcp_server.py"]
+  #     env: {}
+  #     cwd: "."
+  #     tool_name_prefix: "mcp_local"
+  #     init_timeout_seconds: 15
+  #     call_timeout_seconds: 30
+
 # 日志配置
 logging:
   session_log_dir: "./logs/sessions"

@@ -16,6 +16,8 @@ from schedule_agent.config import (
     StorageConfig,
     AgentConfig,
     FileToolsConfig,
+    MCPConfig,
+    MCPServerConfig,
     load_config,
     get_config,
     reset_config,
@@ -92,6 +94,31 @@ class TestConfigModels:
         assert config.file_tools is not None
         assert config.file_tools.enabled is True
         assert config.file_tools.allow_write is False
+
+    def test_mcp_config_defaults(self):
+        """测试 MCP 配置默认值"""
+        mcp = MCPConfig()
+        assert mcp.enabled is False
+        assert mcp.call_timeout_seconds == 30
+        assert mcp.servers == []
+
+    def test_mcp_server_config(self):
+        """测试 MCP Server 配置"""
+        server = MCPServerConfig(
+            name="demo",
+            command="python",
+            args=["-m", "demo_server"],
+        )
+        assert server.name == "demo"
+        assert server.transport == "stdio"
+        assert server.enabled is True
+        assert server.args == ["-m", "demo_server"]
+
+    def test_config_has_mcp_default(self):
+        """测试 Config 未指定 mcp 时使用默认值"""
+        config = Config(llm=LLMConfig(api_key="x", model="x"))
+        assert config.mcp is not None
+        assert config.mcp.enabled is False
 
 
 class TestLoadConfig:
