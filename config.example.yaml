@@ -34,7 +34,7 @@ llm:
   api_key: "your-qwen-api-key-here"
   # base_url 可不填，默认使用百炼 OpenAI 兼容端点
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
-  model: "qwen-3.5-plus"
+  model: "qwen3.5-plus"
   temperature: 0.7
   max_tokens: 4096
   # 联网搜索配置（仅支持阿里云百炼 Qwen）
