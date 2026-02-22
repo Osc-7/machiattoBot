@@ -1,8 +1,15 @@
 """
 Prompt 加载与组合
 
-基于「文件即配置」架构：从 prompts/system/ 加载 Markdown 片段，
-按模式组装系统提示。支持空文件跳过、大文件截断。
+基于「文件即配置」架构，参考 OpenClaw 设计：
+从 prompts/system/ 加载 Markdown 片段，按模式组装系统提示。
+支持空文件跳过、大文件截断。
+
+文件角色（full 模式下注入顺序）：
+- identity: IDENTITY - 身份档案（名称、形象、签名语等元数据）
+- soul: SOUL - 价值观与个性（人格特质、沟通风格、决策原则）
+- agents: AGENTS - 代理行为规范（身份定义、行为准则、操作规范、安全边界）
+- user: USER - 用户画像（基本信息、交互偏好、日程偏好、隐私设置）
 """
 
 from pathlib import Path
@@ -85,34 +92,38 @@ def build_system_prompt(
     def load(name: str) -> str:
         return _load_section(name, max_section_chars)
 
-    # --- 1. Identity（各模式都可能需要）---
+    # --- 1. Identity 身份档案（各模式都可能需要）---
     if mode in ("full", "none"):
         _maybe_append(parts, load("identity"))
 
     if mode == "none":
         return "\n\n".join(parts)
 
-    # --- 2. Soul（仅 full）---
+    # --- 2. Soul 价值观与个性（仅 full）---
     if mode == "full":
         _maybe_append(parts, load("soul"))
 
-    # --- 3. Agents 操作指令（仅 full）---
+    # --- 3. Agents 代理行为规范（仅 full）---
     if mode == "full":
         _maybe_append(parts, load("agents"))
 
-    # --- 4. Tools 工具指南（full + minimal）---
+    # --- 4. User 用户画像（仅 full）---
+    if mode == "full":
+        _maybe_append(parts, load("user"))
+
+    # --- 5. Tools 工具指南（full + minimal）---
     if mode in ("full", "minimal"):
         _maybe_append(parts, load("tools"))
 
-    # --- 5. Runtime 运行时信息（full + minimal）---
+    # --- 6. Runtime 运行时信息（full + minimal）---
     if mode in ("full", "minimal"):
-        # 5.1 时间上下文
+        # 6.1 时间上下文
         time_section = load("runtime_time")
         if time_section:
             time_section = time_section.format(time_context=time_context)
             _maybe_append(parts, time_section)
 
-        # 5.2 联网搜索（可选）
+        # 6.2 联网搜索（可选）
         if config.llm.enable_search and config.llm.provider == "qwen":
             web_capabilities = [
                 "- 当前新闻、热点事件",
@@ -126,11 +137,11 @@ def build_system_prompt(
                 web_search = web_search.format(capabilities="\n".join(web_capabilities))
                 _maybe_append(parts, web_search)
 
-        # 5.3 网页访问（可选）
+        # 6.3 网页访问（可选）
         if has_web_extractor:
             _maybe_append(parts, load("runtime_web_extractor"))
 
-        # 5.4 文件读写（可选）
+        # 6.4 文件读写（可选）
         if has_file_tools:
             _maybe_append(parts, load("runtime_file_tools"))
 
