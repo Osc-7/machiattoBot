@@ -232,9 +232,7 @@ async def run_interactive_loop(agent: ScheduleAgent):
             try:
                 spinner_stop = asyncio.Event()
                 spinner_task = asyncio.create_task(_thinking_spinner(spinner_stop))
-
                 response = await agent.process_input(user_input)
-
                 spinner_stop.set()
                 await spinner_task
 

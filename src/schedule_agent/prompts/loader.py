@@ -1,16 +1,14 @@
 """
 Prompt 加载与组合
 
-基于「文件即配置」架构，参考 OpenClaw 设计：
-从 prompts/system/ 加载系统片段，从 prompts/skills/{name}/ 加载技能（SKILL.md）。
-支持空文件跳过、大文件截断。
+基于「文件即配置」架构，参考 OpenClaw/AgentSkills 设计：
+- 核心能力：prompts/system/ 下的 system 片段 + schedule.md（日程规范）+ runtime_memory（记忆，含决策框架）
+- 可选技能：prompts/skills/{name}/SKILL.md，通过 config.skills.enabled 配置 load/unload
 
 文件角色（full 模式下注入顺序）：
-- identity: IDENTITY - 身份档案（名称、形象、签名语等元数据）
-- soul: SOUL - 价值观与个性（人格特质、沟通风格、决策原则）
-- agents: AGENTS - 代理行为规范（工作流程、行为准则、安全边界）
-- skills/schedule: 日程技能 - prompts/skills/schedule/SKILL.md（默认加载）
-- user: USER - 用户画像（基本信息、交互偏好、日程偏好、隐私设置）
+- identity, soul, agents, schedule, user - 核心系统与日程规范
+- skills (可选) - config.skills.enabled 中启用的技能
+- tools, runtime_* - 工具指南与运行时信息
 """
 
 from pathlib import Path
@@ -155,9 +153,14 @@ def build_system_prompt(
     if mode == "full":
         _maybe_append(parts, load("agents"))
 
-    # --- 3.5 Skills 技能（仅 full，默认加载 schedule）---
+    # --- 3.5 Schedule 日程规范（仅 full，核心能力）---
     if mode == "full":
-        _maybe_append(parts, _load_skill("schedule", max_section_chars))
+        _maybe_append(parts, load("schedule"))
+
+    # --- 3.6 可选技能（仅 full，config.skills.enabled）---
+    if mode == "full":
+        for skill_name in (config.skills.enabled or []):
+            _maybe_append(parts, _load_skill(skill_name, max_section_chars))
 
     # --- 4. User 用户画像（仅 full）---
     if mode == "full":
@@ -201,5 +204,9 @@ def build_system_prompt(
         # 6.4 文件读写（可选）
         if has_file_tools:
             _maybe_append(parts, load("runtime_file_tools"))
+
+        # 6.5 记忆系统（可选）
+        if config.memory.enabled:
+            _maybe_append(parts, load("runtime_memory"))
 
     return "\n\n".join(parts)

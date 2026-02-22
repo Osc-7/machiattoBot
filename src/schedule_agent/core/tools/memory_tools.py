@@ -2,57 +2,45 @@
 记忆系统工具集
 
 为 Agent 提供记忆检索与写入能力：
-- memory_search: 多路检索记忆（短期+长期+内容）
-- memory_store: 将文本写入内容记忆
-- memory_ingest: 将文件转为 Markdown 存入内容记忆
+- memory_search_long_term: 在长期记忆（提炼经验）中检索
+- memory_search_content: 在内容记忆（笔记、文档、PDF 等）中检索
+- memory_store: 将笔记/文档文本写入内容记忆
+- memory_ingest: 将文件（PDF、Word 等）转为 Markdown 存入内容记忆
+
+说明：短期会话摘要和 MEMORY.md 已在每轮对话前自动注入 context，无需检索。
+用户偏好、习惯写入 MEMORY.md 时，使用 write_file 或 modify_file 直接操作。
 """
 
 from __future__ import annotations
 
 from typing import Optional
 
-from schedule_agent.config import Config, get_config
 from schedule_agent.core.memory import (
     ContentMemory,
     LongTermMemory,
-    RecallPolicy,
-    ShortTermMemory,
 )
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 
 
-class MemorySearchTool(BaseTool):
-    """多路记忆检索工具。"""
+class MemorySearchLongTermTool(BaseTool):
+    """在长期记忆中检索（提炼出的经验、决策、教训等）。"""
 
-    def __init__(
-        self,
-        recall_policy: RecallPolicy,
-        short_term: Optional[ShortTermMemory] = None,
-        long_term: Optional[LongTermMemory] = None,
-        content: Optional[ContentMemory] = None,
-    ):
-        self._recall = recall_policy
-        self._short_term = short_term
+    def __init__(self, long_term: LongTermMemory, top_n: int = 5):
         self._long_term = long_term
-        self._content = content
+        self._top_n = top_n
 
     @property
     def name(self) -> str:
-        return "memory_search"
+        return "memory_search_long_term"
 
     def get_definition(self) -> ToolDefinition:
         return ToolDefinition(
             name=self.name,
-            description="""在记忆系统中检索相关信息。
+            description="""在长期记忆（提炼出的经验、决策、教训、约束等）中检索。
 
-当需要：
-- 回忆之前的对话内容、决策
-- 查找用户偏好和习惯
-- 检索笔记、文档、会议记录等内容
-- 获取历史经验和教训
-
-会同时检索短期记忆（最近会话）、长期记忆（提炼经验）、内容记忆（文档笔记）。""",
+当自动注入的 context 不足，需要补充「历史经验」「之前决策」「教训」时使用。
+短期会话和 MEMORY.md 已自动注入，无需检索。""",
             parameters=[
                 ToolParameter(
                     name="query",
@@ -60,29 +48,14 @@ class MemorySearchTool(BaseTool):
                     description="检索查询（自然语言）",
                     required=True,
                 ),
-                ToolParameter(
-                    name="scope",
-                    type="string",
-                    description="检索范围: all(全部) | short_term(近期会话) | long_term(长期经验) | content(文档内容)",
-                    required=False,
-                    default="all",
-                    enum=["all", "short_term", "long_term", "content"],
-                ),
             ],
             examples=[
                 {
-                    "description": "搜索之前关于日程安排的讨论",
+                    "description": "搜索日程相关的历史经验",
                     "params": {"query": "日程安排策略"},
                 },
-                {
-                    "description": "只在文档中搜索 API 相关内容",
-                    "params": {"query": "API 认证", "scope": "content"},
-                },
             ],
-            usage_notes=[
-                "默认会同时搜索所有记忆层，通过 scope 可以限定范围",
-                "返回结果包含来源标记，方便追溯",
-            ],
+            usage_notes=["返回匹配的长期记忆条目"],
         )
 
     async def execute(self, **kwargs) -> ToolResult:
@@ -93,57 +66,86 @@ class MemorySearchTool(BaseTool):
                 error="MISSING_QUERY",
                 message="请提供检索查询内容",
             )
-
-        scope = kwargs.get("scope", "all")
-
-        st = self._short_term if scope in ("all", "short_term") else None
-        lt = self._long_term if scope in ("all", "long_term") else None
-        ct = self._content if scope in ("all", "content") else None
-
-        result = self._recall.recall(
-            query=query,
-            short_term_memory=st,
-            long_term_memory=lt,
-            content_memory=ct,
-        )
-
-        if result.is_empty():
+        entries = self._long_term.search(query, self._top_n)
+        if not entries:
             return ToolResult(
                 success=True,
                 data={"results": []},
-                message="未找到相关记忆",
+                message="未找到相关长期记忆",
             )
-
-        data = {"results": []}
-        if result.short_term:
-            for s in result.short_term:
-                data["results"].append({
-                    "source": "short_term",
-                    "session_id": s.session_id,
-                    "summary": s.summary,
-                    "time": s.time_start,
-                })
-        if result.long_term:
-            for e in result.long_term:
-                data["results"].append({
-                    "source": "long_term",
-                    "category": e.category,
-                    "content": e.content,
-                })
-        if result.content:
-            for path, snippet in result.content:
-                data["results"].append({
-                    "source": "content",
-                    "path": path,
-                    "snippet": snippet[:300],
-                })
-        if result.memory_md_excerpt:
-            data["memory_md"] = result.memory_md_excerpt[:500]
-
+        data = {
+            "results": [
+                {"category": e.category, "content": e.content}
+                for e in entries
+            ]
+        }
         return ToolResult(
             success=True,
             data=data,
-            message=f"找到 {len(data['results'])} 条相关记忆",
+            message=f"找到 {len(entries)} 条相关长期记忆",
+        )
+
+
+class MemorySearchContentTool(BaseTool):
+    """在内容记忆中检索（笔记、文档、PDF 等）。"""
+
+    def __init__(self, content: ContentMemory, top_n: int = 5):
+        self._content = content
+        self._top_n = top_n
+
+    @property
+    def name(self) -> str:
+        return "memory_search_content"
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name=self.name,
+            description="""在内容记忆中检索（笔记、会议记录、讲义、文档等）。
+
+当需要查找「笔记」「文档」「会议记录」「讲义内容」时使用。
+短期会话和 MEMORY.md 已自动注入，无需检索。""",
+            parameters=[
+                ToolParameter(
+                    name="query",
+                    type="string",
+                    description="检索查询（自然语言）",
+                    required=True,
+                ),
+            ],
+            examples=[
+                {
+                    "description": "在文档中搜索 API 相关内容",
+                    "params": {"query": "API 认证"},
+                },
+            ],
+            usage_notes=["支持关键词检索；若启用 QMD 则同时进行语义检索"],
+        )
+
+    async def execute(self, **kwargs) -> ToolResult:
+        query = str(kwargs.get("query", "")).strip()
+        if not query:
+            return ToolResult(
+                success=False,
+                error="MISSING_QUERY",
+                message="请提供检索查询内容",
+            )
+        hits = self._content.search(query, self._top_n)
+        qmd_hits = self._content.search_qmd(query, self._top_n)
+        results = [{"path": str(p), "snippet": s[:300]} for p, s in hits]
+        for hit in qmd_hits:
+            path = hit.get("path", hit.get("file", "unknown"))
+            snippet = hit.get("snippet", hit.get("content", ""))[:300]
+            results.append({"path": str(path), "snippet": snippet})
+        if not results:
+            return ToolResult(
+                success=True,
+                data={"results": []},
+                message="未找到相关内容记忆",
+            )
+        return ToolResult(
+            success=True,
+            data={"results": results},
+            message=f"找到 {len(results)} 条相关内容",
         )
 
 
@@ -160,9 +162,11 @@ class MemoryStoreTool(BaseTool):
     def get_definition(self) -> ToolDefinition:
         return ToolDefinition(
             name=self.name,
-            description="""将文本内容写入内容记忆库。
+            description="""将文本（笔记、会议记录、文档摘要等）写入内容记忆库。
 
-当用户要求保存笔记、总结、经验教训时使用。内容会以 Markdown 格式持久化。""",
+适用：用户要求保存「会议记录」「笔记」「文档总结」「讲义内容」等。
+不适用：用户偏好、习惯、约束 → 使用 write_file 或 modify_file 写入 MEMORY.md。
+内容会以 Markdown 格式存入 data/memory/content/，可被检索。""",
             parameters=[
                 ToolParameter(
                     name="content",
@@ -234,9 +238,11 @@ class MemoryIngestTool(BaseTool):
     def get_definition(self) -> ToolDefinition:
         return ToolDefinition(
             name=self.name,
-            description="""将文件（PDF、Word 等）转为 Markdown 并存入内容记忆库。
+            description="""将文件（PDF、Word、PPT 等）转为 Markdown 并存入内容记忆库。
 
-依赖 markitdown 进行格式转换，支持 PDF、DOCX、HTML、PPTX 等格式。""",
+适用：用户提供文件路径，要求「导入」「入库」「索引」PDF、讲义、文档等。
+不适用：用户偏好、习惯 → 使用 write_file 或 modify_file 写入 MEMORY.md。
+依赖 markitdown 转换，支持 PDF、DOCX、HTML、PPTX 等格式。""",
             parameters=[
                 ToolParameter(
                     name="file_path",

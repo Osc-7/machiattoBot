@@ -63,6 +63,10 @@ class LLMConfig(BaseModel):
         description="API 基础 URL",
     )
     model: str = Field(..., description="模型名称或推理端点 ID")
+    summary_model: Optional[str] = Field(
+        default=None,
+        description="用于总结/提炼的轻量模型（如 qwen-flash），为空则用主模型",
+    )
     temperature: float = Field(default=0.7, ge=0, le=2, description="生成温度")
     max_tokens: int = Field(default=4096, ge=1, description="最大 token 数")
     enable_search: bool = Field(
@@ -266,8 +270,8 @@ class MemoryConfig(BaseModel):
         description="记忆检索的最低得分阈值",
     )
     force_recall: bool = Field(
-        default=True,
-        description="是否强制在每轮对话前执行记忆检索以 enrich context",
+        default=False,
+        description="是否强制在每轮对话前执行记忆检索；默认关闭，由 runtime_memory 决策框架引导按需检索",
     )
 
     # QMD 集成
@@ -278,6 +282,15 @@ class MemoryConfig(BaseModel):
     qmd_command: str = Field(
         default="qmd",
         description="QMD CLI 命令路径",
+    )
+
+
+class SkillsConfig(BaseModel):
+    """可选技能配置（prompts/skills/ 下的可复用技能）"""
+
+    enabled: List[str] = Field(
+        default_factory=list,
+        description="启用的技能名列表，对应 prompts/skills/{name}/SKILL.md",
     )
 
 
@@ -301,9 +314,14 @@ class AgentConfig(BaseModel):
             "call_tool",
             "read_file",
             "write_file",
+            "run_command",
             "extract_web_content",
+            "memory_search_long_term",
+            "memory_search_content",
+            "memory_store",
+            "memory_ingest",
         ],
-        description="kernel 模式下始终暴露给 LLM 的工具名列表",
+        description="kernel 模式下始终暴露给 LLM 的工具名列表（核心+已注册的 pinned）",
     )
 
 
@@ -352,6 +370,10 @@ class Config(BaseModel):
     memory: MemoryConfig = Field(
         default_factory=MemoryConfig,
         description="记忆系统配置",
+    )
+    skills: SkillsConfig = Field(
+        default_factory=SkillsConfig,
+        description="可选技能配置（load/unload）",
     )
 
 
@@ -428,6 +450,9 @@ def load_config(config_path: Optional[Path] = None) -> Config:
             env_model = os.environ.get("QWEN_MODEL")
             if env_model:
                 raw_config["llm"]["model"] = env_model
+            env_summary = os.environ.get("QWEN_SUMMARY_MODEL")
+            if env_summary:
+                raw_config["llm"]["summary_model"] = env_summary
         else:
             # 豆包
             env_api_key = os.environ.get("DOUBAO_API_KEY")

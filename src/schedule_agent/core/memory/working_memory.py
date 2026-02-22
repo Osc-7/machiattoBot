@@ -1,14 +1,15 @@
 """
 工作记忆 - 会话内滑动窗口 + LLM 总结
 
-在 ConversationContext 的基础上增加 token 估算与窗口总结能力：
-- 每次 add_message 后估算总 token 数
-- 接近阈值时触发 LLM 总结，将旧消息折叠为摘要块
+在 ConversationContext 的基础上增加 token 监控与窗口总结能力：
+- 使用 LLM 调用的真实 prompt_tokens 判断阈值（由 Agent 传入），无则回退估算
+- 接近阈值时触发 LLM 总结，与主对话并行执行，完成后合并
 - 保留最近 N 轮原始消息
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Dict, List, Optional
 
@@ -95,57 +96,73 @@ class WorkingMemory:
         """是否需要触发窗口总结。"""
         return self._needs_summarize
 
-    def check_threshold(self) -> bool:
-        """检查当前消息是否接近 token 阈值，更新 _needs_summarize。"""
-        messages = self._context.get_messages()
-        current_tokens = estimate_messages_tokens(messages)
+    def check_threshold(self, actual_tokens: Optional[int] = None) -> bool:
+        """
+        检查是否接近 token 阈值，更新 _needs_summarize。
+
+        Args:
+            actual_tokens: 上一轮 LLM 的 prompt_tokens（日志中有记录），若提供则优先使用
+        """
+        if actual_tokens is not None and actual_tokens > 0:
+            current_tokens = actual_tokens
+        else:
+            current_tokens = estimate_messages_tokens(self._context.get_messages())
         limit = int(self._max_tokens * self._threshold)
         self._needs_summarize = current_tokens >= limit
         return self._needs_summarize
 
-    def get_current_tokens(self) -> int:
+    def get_current_tokens(self, actual_tokens: Optional[int] = None) -> int:
+        """获取当前 token 数，优先使用 actual_tokens。"""
+        if actual_tokens is not None and actual_tokens > 0:
+            return actual_tokens
         return estimate_messages_tokens(self._context.get_messages())
 
-    async def maybe_summarize(self, llm_client) -> bool:
+    def start_summarize(
+        self, llm_client
+    ) -> Optional[tuple[asyncio.Task[str], int]]:
         """
-        若超过阈值，调用 LLM 对旧消息进行总结并折叠。
+        若超过阈值，启动异步总结任务，与主 LLM 对话并行执行。
 
         Returns:
-            是否执行了总结
+            (task, recent_start_index) 或 None。调用方需 await task 后在 apply_summary
         """
-        if not self.check_threshold():
-            return False
-
         messages = self._context.get_messages()
         if len(messages) <= self._keep_recent * 2:
-            return False
+            return None
 
         keep_count = self._keep_recent * 2
-        old_messages = messages[:-keep_count]
-        recent_messages = messages[-keep_count:]
+        recent_start = len(messages) - keep_count
+        old_messages = messages[:recent_start]
 
         summary_input = self._format_messages_for_summary(old_messages)
         if self._running_summary:
             summary_input = f"之前的摘要：\n{self._running_summary}\n\n新增对话：\n{summary_input}"
 
-        response = await llm_client.chat(
-            messages=[{"role": "user", "content": summary_input}],
-            system_message=_SUMMARIZE_SYSTEM_PROMPT,
-        )
+        async def _do_summarize() -> str:
+            response = await llm_client.chat(
+                messages=[{"role": "user", "content": summary_input}],
+                system_message=_SUMMARIZE_SYSTEM_PROMPT,
+            )
+            return response.content or ""
 
-        self._running_summary = response.content or ""
+        task = asyncio.create_task(_do_summarize())
+        return (task, recent_start)
 
+    def apply_summary(self, summary_text: str, recent_start: int) -> None:
+        """
+        合并总结结果：将 summary 替换旧消息，保留 recent_start 及之后的上下文。
+        应在主 LLM 流程结束后、await 总结 task 完成后调用。
+        """
+        self._running_summary = summary_text
         summary_message = {
             "role": "system",
             "content": f"[会话进行中摘要]\n{self._running_summary}",
         }
-
+        messages = self._context.get_messages()
         self._context.messages.clear()
         self._context.messages.append(summary_message)
-        self._context.messages.extend(recent_messages)
-
+        self._context.messages.extend(messages[recent_start:])
         self._needs_summarize = False
-        return True
 
     async def summarize_session(self, llm_client) -> Dict[str, Any]:
         """

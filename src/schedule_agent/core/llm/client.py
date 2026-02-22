@@ -103,14 +103,16 @@ class LLMClient:
     - 流式响应（可选）
     """
 
-    def __init__(self, config: Optional[Config] = None):
+    def __init__(self, config: Optional[Config] = None, model_override: Optional[str] = None):
         """
         初始化 LLM 客户端。
 
         Args:
             config: 配置对象，如果为 None 则使用全局配置
+            model_override: 模型覆盖，若设置则替代 config.llm.model（用于总结等轻量任务）
         """
         self._config = config or get_config()
+        self._model_override = model_override
         self._client = AsyncOpenAI(
             api_key=self._config.llm.api_key,
             base_url=self._config.llm.base_url,
@@ -119,7 +121,7 @@ class LLMClient:
     @property
     def model(self) -> str:
         """获取模型名称"""
-        return self._config.llm.model
+        return self._model_override or self._config.llm.model
 
     @property
     def temperature(self) -> float:

@@ -35,6 +35,7 @@ llm:
   # base_url 可不填，默认使用百炼 OpenAI 兼容端点
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
   model: "qwen3.5-plus"
+  summary_model: "qwen-flash"  # 用于总结/提炼的轻量模型（可选）
   temperature: 0.7
   max_tokens: 4096
   # 联网搜索配置（仅支持阿里云百炼 Qwen）
@@ -85,13 +86,19 @@ agent:
   tool_mode: "full"
   # kernel 模式下 LRU 工作集大小（不含 pinned_tools）
   working_set_size: 6
-  # kernel 模式下始终暴露的核心工具
+  # 核心工具 + pinned_tools，kernel 模式下始终暴露
+  # 核心：search_tools, call_tool；pinned：read_file, write_file, run_command, extract_web_content；记忆启用时可加入 memory_*
   pinned_tools:
     - "search_tools"
     - "call_tool"
     - "read_file"
     - "write_file"
+    - "run_command"
     - "extract_web_content"
+    - "memory_search_long_term"
+    - "memory_search_content"
+    - "memory_store"
+    - "memory_ingest"
 
 # MCP 客户端配置（可选）
 # 用于接入外部 MCP Server，并将远程工具自动注册到 Agent
@@ -112,6 +119,11 @@ mcp:
   #     init_timeout_seconds: 15
   #     call_timeout_seconds: 30
 
+# 可选技能配置（可复用技能，从 prompts/skills/{name}/SKILL.md 加载）
+# 添加技能目录后在此启用即可 load/unload
+skills:
+  enabled: []  # 例如: [my-custom-skill]
+
 # 记忆系统配置
 memory:
   enabled: true
@@ -130,7 +142,7 @@ memory:
   # 检索策略
   recall_top_n: 5
   recall_score_threshold: 0.3
-  force_recall: true              # 每轮对话前强制检索记忆以 enrich context
+  force_recall: false             # 默认关闭；由 memory skill 引导 Agent 按需检索长期记忆
   # QMD 集成（可选）
   qmd_enabled: false
   qmd_command: "qmd"

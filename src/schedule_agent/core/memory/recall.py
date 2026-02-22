@@ -2,50 +2,34 @@
 记忆检索策略（Recall Policy）
 
 在 Agent 处理用户输入前，根据策略检索相关记忆以 enrich context。
-支持多路检索：短期记忆、长期记忆、内容记忆、MEMORY.md。
+仅检索长期记忆和内容记忆；短期会话和 MEMORY.md 由 Agent 直接加载，无需检索。
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Tuple
 
-from .types import MemoryEntry, SessionSummary
+from .types import MemoryEntry
 
 
 @dataclass
 class RecallResult:
-    """记忆检索结果。"""
+    """记忆检索结果（长期 + 内容）。"""
 
-    short_term: List[SessionSummary] = field(default_factory=list)
     long_term: List[MemoryEntry] = field(default_factory=list)
     content: List[Tuple[str, str]] = field(default_factory=list)
-    memory_md_excerpt: str = ""
 
     def is_empty(self) -> bool:
-        return (
-            not self.short_term
-            and not self.long_term
-            and not self.content
-            and not self.memory_md_excerpt
-        )
+        return not self.long_term and not self.content
 
     def to_context_string(self) -> str:
         """格式化为可注入 system prompt 的文本。"""
         parts: List[str] = []
 
-        if self.memory_md_excerpt:
-            parts.append("## 核心记忆 (MEMORY.md)")
-            parts.append(self.memory_md_excerpt)
-
-        if self.short_term:
-            parts.append("\n## 近期会话记忆")
-            for s in self.short_term:
-                parts.append(f"- [{s.session_id}] {s.summary}")
-
         if self.long_term:
-            parts.append("\n## 长期经验")
+            parts.append("## 长期经验")
             for e in self.long_term:
                 parts.append(f"- [{e.category}] {e.content}")
 
@@ -88,16 +72,14 @@ class RecallPolicy:
     def recall(
         self,
         query: str,
-        short_term_memory=None,
         long_term_memory=None,
         content_memory=None,
     ) -> RecallResult:
         """
-        执行多路记忆检索。
+        执行记忆检索（仅长期 + 内容）。短期和 MEMORY.md 由 Agent 直接加载。
 
         Args:
             query: 用户输入
-            short_term_memory: ShortTermMemory 实例
             long_term_memory: LongTermMemory 实例
             content_memory: ContentMemory 实例
 
@@ -106,14 +88,8 @@ class RecallPolicy:
         """
         result = RecallResult()
 
-        if short_term_memory:
-            result.short_term = short_term_memory.search(query, self._top_n)
-
         if long_term_memory:
             result.long_term = long_term_memory.search(query, self._top_n)
-            md_content = long_term_memory.read_memory_md()
-            if md_content and len(md_content) > 50:
-                result.memory_md_excerpt = self._excerpt_memory_md(md_content, query)
 
         if content_memory:
             hits = content_memory.search(query, self._top_n)
@@ -125,27 +101,3 @@ class RecallPolicy:
                 result.content.append((str(path), snippet))
 
         return result
-
-    @staticmethod
-    def _excerpt_memory_md(full_text: str, query: str, max_len: int = 1000) -> str:
-        """从 MEMORY.md 中提取与查询相关的段落，或返回截断版本。"""
-        if len(full_text) <= max_len:
-            return full_text
-
-        query_words = query.lower().split()
-        paragraphs = full_text.split("\n\n")
-        scored: List[Tuple[float, str]] = []
-        for para in paragraphs:
-            score = sum(1 for w in query_words if w in para.lower())
-            scored.append((score, para))
-        scored.sort(key=lambda x: x[0], reverse=True)
-
-        result_parts: List[str] = []
-        total = 0
-        for _, para in scored:
-            if total + len(para) > max_len:
-                break
-            result_parts.append(para)
-            total += len(para)
-
-        return "\n\n".join(result_parts) if result_parts else full_text[:max_len]

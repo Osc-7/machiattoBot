@@ -5,6 +5,7 @@
 集成四层记忆架构：工作记忆、短期记忆、长期记忆、内容记忆。
 """
 
+import asyncio
 import json
 import time
 from datetime import datetime
@@ -69,6 +70,12 @@ class ScheduleAgent:
         """
         self._config = config or get_config()
         self._llm_client = LLMClient(self._config)
+        summary_model = getattr(self._config.llm, "summary_model", None)
+        self._summary_llm_client = (
+            LLMClient(self._config, model_override=summary_model)
+            if summary_model
+            else self._llm_client
+        )
         self._tool_registry = VersionedToolRegistry()
         self._context = ConversationContext()
         self._max_iterations = max_iterations
@@ -89,6 +96,8 @@ class ScheduleAgent:
         self._token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "call_count": 0}
         # 每次调用的 (prompt_tokens, completion_tokens)，用于阶梯计费
         self._usage_calls: List[Tuple[int, int]] = []
+        # 上一轮 LLM 的 prompt_tokens，供工作记忆阈值判断
+        self._last_prompt_tokens: Optional[int] = None
         # 当前轮次（每次 process_input 递增）
         self._current_turn_id = 0
         # 会话起始时间
@@ -227,10 +236,11 @@ class ScheduleAgent:
         turn_id = self._current_turn_id
 
         # 0.5 记忆检索 enrich（在添加用户消息之前收集上下文）
+        # 使用 to_thread 避免同步 recall 阻塞事件循环，确保 spinner 能及时显示
         if self._memory_enabled and self._recall_policy.should_recall(user_input):
-            recall_result = self._recall_policy.recall(
+            recall_result = await asyncio.to_thread(
+                self._recall_policy.recall,
                 query=user_input,
-                short_term_memory=self._short_term_memory,
                 long_term_memory=self._long_term_memory,
                 content_memory=self._content_memory,
             )
@@ -244,11 +254,18 @@ class ScheduleAgent:
         if self._session_logger:
             self._session_logger.on_user_message(turn_id, user_input)
 
-        # 1.5 工作记忆窗口总结（在 LLM 调用前检查是否需要压缩）
-        if self._memory_enabled:
-            await self._working_memory.maybe_summarize(self._llm_client)
+        # 1.5 工作记忆：若超阈值则启动并行总结（与 LLM 对话同时执行，结束后合并）
+        summary_task: Optional[asyncio.Task] = None
+        summary_recent_start: Optional[int] = None
+        if self._memory_enabled and self._working_memory.check_threshold(
+            actual_tokens=self._last_prompt_tokens
+        ):
+            result = self._working_memory.start_summarize(self._summary_llm_client)
+            if result:
+                summary_task, summary_recent_start = result
 
         # 2. Agent 主循环
+        final_response: Optional[str] = None
         iteration = 0
         while iteration < self._max_iterations:
             iteration += 1
@@ -293,6 +310,7 @@ class ScheduleAgent:
                 self._token_usage["total_tokens"] += pt + ct
                 self._token_usage["call_count"] += 1
                 self._usage_calls.append((pt, ct))
+                self._last_prompt_tokens = pt
 
             # 2.2 处理工具调用
             if response.tool_calls:
@@ -315,18 +333,28 @@ class ScheduleAgent:
                 # 继续循环，让 LLM 处理工具结果
                 continue
 
-            # 2.3 返回最终响应
+            # 2.3 最终响应
             if response.content:
                 self._context.add_assistant_message(content=response.content)
                 if self._session_logger:
                     self._session_logger.on_assistant_message(turn_id, response.content)
-                return response.content
+                final_response = response.content
+                break
 
             # 如果没有内容也没有工具调用，返回默认响应
             fallback = "抱歉，我无法处理您的请求。请重试或换一种方式表达。"
             if self._session_logger:
                 self._session_logger.on_assistant_message(turn_id, fallback)
-            return fallback
+            final_response = fallback
+            break
+
+        # 2.4 合并并行总结结果（若已启动）
+        if summary_task is not None and summary_recent_start is not None:
+            summary_text = await summary_task
+            self._working_memory.apply_summary(summary_text, summary_recent_start)
+
+        if final_response is not None:
+            return final_response
 
         # 超过最大迭代次数
         overflow_msg = "抱歉，处理您的请求时超出了最大迭代次数。请简化您的问题或稍后重试。"
@@ -357,10 +385,26 @@ class ScheduleAgent:
         )
 
         if self._memory_enabled:
+            parts: List[str] = []
+            # 短期会话和 MEMORY.md 直接加载，无需检索
+            short_recent = self._short_term_memory.get_recent(
+                self._config.memory.recall_top_n
+            )
+            if short_recent:
+                parts.append("## 近期会话记忆")
+                for s in reversed(short_recent):
+                    parts.append(f"- [{s.session_id}] {s.summary}")
+            md_content = self._long_term_memory.read_memory_md()
+            if md_content and len(md_content) > 50:
+                excerpt = md_content if len(md_content) <= 1000 else md_content[:1000] + "\n..."
+                parts.append("\n## 核心记忆 (MEMORY.md)")
+                parts.append(excerpt)
             recall_ctx = getattr(self, "_last_recall_result", RecallResult())
-            memory_text = recall_ctx.to_context_string()
-            if memory_text:
-                prompt += f"\n\n# 记忆上下文\n\n{memory_text}"
+            recall_text = recall_ctx.to_context_string()
+            if recall_text:
+                parts.append(f"\n{recall_text}")
+            if parts:
+                prompt += "\n\n# 记忆上下文\n\n" + "\n".join(parts)
 
             if self._working_memory.running_summary:
                 prompt += (
@@ -436,7 +480,9 @@ class ScheduleAgent:
         if not self._memory_enabled or self._current_turn_id == 0:
             return None
 
-        summary_data = await self._working_memory.summarize_session(self._llm_client)
+        summary_data = await self._working_memory.summarize_session(
+            self._summary_llm_client
+        )
         session_id = f"sess-{int(time.time())}"
         now_str = datetime.now(dt_timezone.utc).isoformat()
 
@@ -456,13 +502,15 @@ class ScheduleAgent:
         evicted = self._short_term_memory.add(session_summary)
 
         if evicted:
-            await self._long_term_memory.distill(evicted, self._llm_client)
+            await self._long_term_memory.distill(evicted, self._summary_llm_client)
 
         return session_summary
 
     async def close(self) -> None:
         """关闭 Agent，释放资源"""
         await self._llm_client.close()
+        if self._summary_llm_client is not self._llm_client:
+            await self._summary_llm_client.close()
 
     async def __aenter__(self) -> "ScheduleAgent":
         """异步上下文管理器入口"""

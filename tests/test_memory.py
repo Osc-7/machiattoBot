@@ -292,28 +292,27 @@ class TestRecallPolicy:
         assert rp.should_recall("根据经验应该怎么做")
         assert not rp.should_recall("今天天气怎么样")
 
-    def test_recall_with_short_term(self):
+    def test_recall_with_long_term(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            stm = ShortTermMemory(tmpdir, k=10)
-            stm.add(SessionSummary(
-                session_id="s1", time_start="t", time_end="t",
-                summary="安排了明天的日程", tags=["日程"],
-            ))
+            ltm = LongTermMemory(tmpdir, memory_md_path=str(Path(tmpdir) / "MEMORY.md"))
             rp = RecallPolicy(force_recall=True)
-            result = rp.recall("日程", short_term_memory=stm)
-            assert len(result.short_term) == 1
+            result = rp.recall("日程", long_term_memory=ltm)
+            assert isinstance(result.long_term, list)
 
     def test_recall_result_to_context_string(self):
         result = RecallResult(
-            short_term=[SessionSummary(
-                session_id="s1", time_start="t", time_end="t",
-                summary="测试摘要",
-            )],
-            memory_md_excerpt="核心偏好内容",
+            long_term=[
+                MemoryEntry(
+                    id="e1", created_at="", source_session_ids=[],
+                    content="偏好工作日安排会议", category="preference",
+                    tags=[], confidence=0.9,
+                ),
+            ],
+            content=[("path/to/notes.md", "snippet 内容")],
         )
         ctx = result.to_context_string()
-        assert "测试摘要" in ctx
-        assert "核心偏好内容" in ctx
+        assert "偏好工作日安排会议" in ctx
+        assert "path/to/notes.md" in ctx
 
     def test_recall_result_empty(self):
         result = RecallResult()
