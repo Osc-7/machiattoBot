@@ -64,6 +64,7 @@ def build_system_prompt(
     has_file_tools: bool = False,
     mode: PromptMode = "full",
     max_section_chars: int = DEFAULT_MAX_SECTION_CHARS,
+    tool_mode: str = "full",
 ) -> str:
     """
     构建 Agent 系统提示。
@@ -76,7 +77,7 @@ def build_system_prompt(
         has_web_extractor: 是否注册了 extract_web_content 工具
         mode: 组装模式，full | minimal | none
         max_section_chars: 单 section 最大字符数，超出则截断
-
+        tool_mode: 工具暴露模式，full | kernel。kernel 时加载 tools_kernel 片段
     Returns:
         完整的系统提示字符串
     """
@@ -102,7 +103,10 @@ def build_system_prompt(
 
     # --- 4. Tools 工具指南（full + minimal）---
     if mode in ("full", "minimal"):
-        _maybe_append(parts, load("tools"))
+        if (tool_mode or "full").lower() == "kernel":
+            _maybe_append(parts, load("tools_kernel"))
+        else:
+            _maybe_append(parts, load("tools"))
 
     # --- 5. Runtime 运行时信息（full + minimal）---
     if mode in ("full", "minimal"):

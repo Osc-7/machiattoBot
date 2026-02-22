@@ -3,9 +3,11 @@
 """
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from .call_tool_tool import CallToolTool
 from .parse_time import ParseTimeTool, ParsedTime, TimeParser
 from .planner_tools import GetFreeSlotsTool, PlanTasksTool
 from .registry import ToolRegistry
+from .search_tools_tool import SearchToolsTool
 from .storage_tools import (
     AddEventTool,
     AddTaskTool,
@@ -15,6 +17,7 @@ from .storage_tools import (
     UpdateTaskTool,
     DeleteScheduleDataTool,
 )
+from .versioned_registry import VersionedToolRegistry
 from .file_tools import ReadFileTool, WriteFileTool, ModifyFileTool
 from .web_extractor_tool import WebExtractorTool
 
@@ -24,6 +27,9 @@ __all__ = [
     "ToolParameter",
     "ToolResult",
     "ToolRegistry",
+    "VersionedToolRegistry",
+    "SearchToolsTool",
+    "CallToolTool",
     "ParseTimeTool",
     "ParsedTime",
     "TimeParser",

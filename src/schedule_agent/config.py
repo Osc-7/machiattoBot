@@ -171,6 +171,25 @@ class AgentConfig(BaseModel):
 
     max_iterations: int = Field(default=10, ge=1, description="最大工具调用迭代次数")
     enable_debug: bool = Field(default=False, description="是否启用调试模式")
+    tool_mode: str = Field(
+        default="full",
+        description='工具暴露模式: full(全量暴露) | kernel(核心工具+工作集)',
+    )
+    working_set_size: int = Field(
+        default=6,
+        ge=0,
+        description="kernel 模式下 LRU 工作集大小",
+    )
+    pinned_tools: List[str] = Field(
+        default_factory=lambda: [
+            "search_tools",
+            "call_tool",
+            "read_file",
+            "write_file",
+            "extract_web_content",
+        ],
+        description="kernel 模式下始终暴露给 LLM 的工具名列表",
+    )
 
 
 class LoggingConfig(BaseModel):
