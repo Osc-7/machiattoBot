@@ -32,6 +32,7 @@ from schedule_agent.core.tools import (
     GetFreeSlotsTool,
     PlanTasksTool,
     WebExtractorTool,
+    RunCommandTool,
 )
 
 
@@ -63,6 +64,10 @@ def get_default_tools(config: Optional[Config] = None) -> List[BaseTool]:
         tools.append(ReadFileTool(config=config))
         tools.append(WriteFileTool(config=config))
         tools.append(ModifyFileTool(config=config))
+
+    # 终端命令执行工具
+    if config and config.command_tools.enabled:
+        tools.append(RunCommandTool(config=config))
 
     # 如果配置支持网页抓取（provider=qwen），添加网页抓取工具
     if config and config.llm.provider == "qwen":

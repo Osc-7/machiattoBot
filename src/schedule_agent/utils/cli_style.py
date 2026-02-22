@@ -6,6 +6,7 @@ CLI 输出样式
 
 import shutil
 import sys
+from typing import Optional
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -106,18 +107,24 @@ import datetime
 
 
 
-def status_bar(total_tokens: int, call_count: int, delta_tokens: int = 0) -> str:
+def status_bar(
+    total_tokens: int,
+    call_count: int,
+    delta_tokens: int = 0,
+    cost_yuan: Optional[float] = None,
+) -> str:
     """
     生成带右边空隙和本轮调用时刻的 token 状态栏（淡色，右对齐，右侧留空，含本轮时间）。
 
     右对齐但最右边保留4格空白，并把本轮时间显示在最右侧（短格式: HH:MM:SS）
 
     示例:
-    ───── tokens: 1,234 (+56) · calls: 3 │ 17:45:09 ──
+    ───── tokens: 1,234 (+56) · ¥0.08 · calls: 3 │ 17:45:09 ──
     """
     total_str = _format_token_count(total_tokens)
     delta_part = f" (+{_format_token_count(delta_tokens)})" if delta_tokens > 0 else ""
-    info = f" tokens: {total_str}{delta_part} · calls: {call_count} │ "  # tokens状态后加竖线
+    cost_part = f" · ¥{cost_yuan:.4f}" if cost_yuan is not None else ""
+    info = f" tokens: {total_str}{delta_part}{cost_part} · calls: {call_count} │ "
 
 
     # 当前时刻，短格式（24小时制，Asia/Shanghai）

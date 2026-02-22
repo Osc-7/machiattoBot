@@ -16,6 +16,7 @@ from schedule_agent.config import (
     StorageConfig,
     AgentConfig,
     FileToolsConfig,
+    CommandToolsConfig,
     MCPConfig,
     MCPServerConfig,
     load_config,
@@ -98,6 +99,26 @@ class TestConfigModels:
         assert config.file_tools is not None
         assert config.file_tools.enabled is True
         assert config.file_tools.allow_write is False
+
+    def test_command_tools_config_defaults(self):
+        """测试命令工具配置默认值"""
+        ct = CommandToolsConfig()
+        assert ct.enabled is True
+        assert ct.allow_run is True
+        assert ct.base_dir == "."
+        assert ct.default_timeout_seconds == 30.0
+        assert ct.max_timeout_seconds == 300.0
+        assert ct.default_output_limit == 12000
+        assert ct.max_output_limit == 200000
+
+    def test_config_has_command_tools_default(self):
+        """测试 Config 未指定 command_tools 时使用默认值"""
+        config = Config(
+            llm=LLMConfig(api_key="x", model="x"),
+        )
+        assert config.command_tools is not None
+        assert config.command_tools.enabled is True
+        assert config.command_tools.allow_run is True
 
     def test_mcp_config_defaults(self):
         """测试 MCP 配置默认值"""

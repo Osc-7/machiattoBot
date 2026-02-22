@@ -125,6 +125,43 @@ class FileToolsConfig(BaseModel):
     )
 
 
+class CommandToolsConfig(BaseModel):
+    """命令执行工具配置"""
+
+    enabled: bool = Field(
+        default=True,
+        description="是否启用 run_command 工具",
+    )
+    allow_run: bool = Field(
+        default=True,
+        description="是否允许执行终端命令",
+    )
+    base_dir: str = Field(
+        default=".",
+        description="命令允许执行的基础目录，cwd 必须在此目录下",
+    )
+    default_timeout_seconds: float = Field(
+        default=30.0,
+        gt=0,
+        description="默认命令超时（秒）",
+    )
+    max_timeout_seconds: float = Field(
+        default=300.0,
+        gt=0,
+        description="允许的最大 timeout（秒）",
+    )
+    default_output_limit: int = Field(
+        default=12000,
+        gt=0,
+        description="默认输出限制（stdout+stderr 字符总数）",
+    )
+    max_output_limit: int = Field(
+        default=200000,
+        gt=0,
+        description="允许的最大输出限制（字符）",
+    )
+
+
 class MCPServerConfig(BaseModel):
     """单个 MCP Server 配置。"""
 
@@ -225,6 +262,10 @@ class Config(BaseModel):
     file_tools: FileToolsConfig = Field(
         default_factory=FileToolsConfig,
         description="文件读写工具配置",
+    )
+    command_tools: CommandToolsConfig = Field(
+        default_factory=CommandToolsConfig,
+        description="命令执行工具配置",
     )
     mcp: MCPConfig = Field(
         default_factory=MCPConfig,

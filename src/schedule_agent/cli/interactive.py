@@ -139,13 +139,14 @@ def print_help():
 def print_token_usage(agent: ScheduleAgent):
     """打印本会话 token 用量统计（Markdown 格式，推荐 rich 渲染）"""
     u = agent.get_token_usage()
+    cost_line = f"\n- **预估费用**: `¥{u['cost_yuan']:.4f}`" if u.get("cost_yuan") is not None else ""
     md = f"""
 # Token 用量统计
 
 - **调用次数**: `{u['call_count']}`
 - **输入 token**: `{u['prompt_tokens']}`
 - **输出 token**: `{u['completion_tokens']}`
-- **合计 token**: `{u['total_tokens']}`
+- **合计 token**: `{u['total_tokens']}`{cost_line}
 """
     if _HAS_RICH and _RICH_CONSOLE is not None:
         _RICH_CONSOLE.print(Markdown(md))
@@ -158,6 +159,8 @@ def print_token_usage(agent: ScheduleAgent):
         print(f"  输入 token:   {u['prompt_tokens']}")
         print(f"  输出 token:   {u['completion_tokens']}")
         print(f"  合计 token:   {u['total_tokens']}")
+        if u.get("cost_yuan") is not None:
+            print(f"  预估费用:     ¥{u['cost_yuan']:.4f}")
         print("=" * 50)
         print()
 
@@ -200,7 +203,8 @@ async def run_interactive_loop(agent: ScheduleAgent):
                 u = agent.get_token_usage()
                 if u["call_count"] > 0:
                     print()
-                    print(hint(f"本会话共调用 LLM {u['call_count']} 次，合计 token: {u['total_tokens']}（输入 {u['prompt_tokens']} + 输出 {u['completion_tokens']}）"))
+                    cost_str = f"，约 ¥{u['cost_yuan']:.4f}" if u.get("cost_yuan") is not None else ""
+                    print(hint(f"本会话共调用 LLM {u['call_count']} 次，合计 token: {u['total_tokens']}（输入 {u['prompt_tokens']} + 输出 {u['completion_tokens']}）{cost_str}"))
                 print()
                 print(label("再见！祝你生活愉快！"))
                 print()
@@ -246,7 +250,8 @@ async def run_interactive_loop(agent: ScheduleAgent):
                 u = agent.get_token_usage()
                 delta = u["total_tokens"] - prev_total_tokens
                 prev_total_tokens = u["total_tokens"]
-                print(status_bar(u["total_tokens"], u["call_count"], delta))
+                cost = u.get("cost_yuan")
+                print(status_bar(u["total_tokens"], u["call_count"], delta, cost))
 
             except Exception as e:
                 if spinner_stop is not None:

@@ -6,10 +6,11 @@
 
 import json
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from schedule_agent.config import Config, get_config
 from schedule_agent.core.context import ConversationContext, get_time_context
+from schedule_agent.utils.billing import compute_cost_from_calls
 from schedule_agent.core.orchestrator import ToolSnapshot, ToolWorkingSetManager
 from schedule_agent.prompts import build_system_prompt as build_prompt
 from schedule_agent.core.llm import LLMClient, LLMResponse, ToolCall, TokenUsage
@@ -74,6 +75,8 @@ class ScheduleAgent:
         self._current_visible_tools: set[str] = set()
         # 本会话 token 用量累计
         self._token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "call_count": 0}
+        # 每次调用的 (prompt_tokens, completion_tokens)，用于阶梯计费
+        self._usage_calls: List[Tuple[int, int]] = []
         # 当前轮次（每次 process_input 递增）
         self._current_turn_id = 0
 
@@ -138,9 +141,16 @@ class ScheduleAgent:
         获取本会话累计的 token 用量。
 
         Returns:
-            包含 prompt_tokens, completion_tokens, total_tokens, call_count 的字典
+            包含 prompt_tokens, completion_tokens, total_tokens, call_count, cost_yuan 的字典
         """
-        return dict(self._token_usage)
+        out = dict(self._token_usage)
+        cost = compute_cost_from_calls(
+            self._usage_calls,
+            self._config.llm.model,
+        )
+        if cost is not None:
+            out["cost_yuan"] = cost
+        return out
 
     def get_turn_count(self) -> int:
         """获取本会话已处理的用户轮次数量"""
@@ -149,6 +159,7 @@ class ScheduleAgent:
     def reset_token_usage(self) -> None:
         """重置本会话的 token 用量统计"""
         self._token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "call_count": 0}
+        self._usage_calls.clear()
 
     async def process_input(self, user_input: str) -> str:
         """
@@ -213,12 +224,14 @@ class ScheduleAgent:
             if self._session_logger:
                 self._session_logger.on_llm_response(turn_id, iteration, response)
 
-            # 累计 token 用量
+            # 累计 token 用量（含 per-call 记录用于阶梯计费）
             if response.usage:
-                self._token_usage["prompt_tokens"] += response.usage.prompt_tokens
-                self._token_usage["completion_tokens"] += response.usage.completion_tokens
-                self._token_usage["total_tokens"] += response.usage.total_tokens
+                pt, ct = response.usage.prompt_tokens, response.usage.completion_tokens
+                self._token_usage["prompt_tokens"] += pt
+                self._token_usage["completion_tokens"] += ct
+                self._token_usage["total_tokens"] += pt + ct
                 self._token_usage["call_count"] += 1
+                self._usage_calls.append((pt, ct))
 
             # 2.2 处理工具调用
             if response.tool_calls:

@@ -20,6 +20,7 @@ from .storage_tools import (
 from .versioned_registry import VersionedToolRegistry
 from .file_tools import ReadFileTool, WriteFileTool, ModifyFileTool
 from .web_extractor_tool import WebExtractorTool
+from .command_tools import RunCommandTool
 
 __all__ = [
     "BaseTool",
@@ -46,4 +47,5 @@ __all__ = [
     "GetFreeSlotsTool",
     "PlanTasksTool",
     "WebExtractorTool",
+    "RunCommandTool",
 ]
