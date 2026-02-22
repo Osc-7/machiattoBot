@@ -203,6 +203,84 @@ class MCPConfig(BaseModel):
     )
 
 
+class MemoryConfig(BaseModel):
+    """记忆系统配置"""
+
+    enabled: bool = Field(default=True, description="是否启用记忆系统")
+
+    # 工作记忆
+    max_working_tokens: int = Field(
+        default=8000,
+        ge=1000,
+        description="工作记忆最大 token 数，超过阈值触发窗口总结",
+    )
+    working_summary_threshold: float = Field(
+        default=0.8,
+        ge=0.5,
+        le=1.0,
+        description="触发工作记忆总结的阈值比例（相对 max_working_tokens）",
+    )
+    working_keep_recent: int = Field(
+        default=4,
+        ge=1,
+        description="工作记忆总结时保留的最近消息轮次数",
+    )
+
+    # 短期记忆
+    short_term_k: int = Field(
+        default=20,
+        ge=1,
+        description="短期记忆队列容量（最近 K 个会话摘要）",
+    )
+    short_term_dir: str = Field(
+        default="./data/memory/short_term",
+        description="短期记忆存储目录",
+    )
+
+    # 长期记忆
+    long_term_dir: str = Field(
+        default="./data/memory/long_term",
+        description="长期记忆存储目录",
+    )
+    memory_md_path: str = Field(
+        default="./MEMORY.md",
+        description="核心人类可读记忆文件路径",
+    )
+
+    # 内容记忆
+    content_dir: str = Field(
+        default="./data/memory/content",
+        description="内容记忆存储目录（Markdown 文档）",
+    )
+
+    # 检索策略
+    recall_top_n: int = Field(
+        default=5,
+        ge=1,
+        description="记忆检索返回的最大条目数",
+    )
+    recall_score_threshold: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="记忆检索的最低得分阈值",
+    )
+    force_recall: bool = Field(
+        default=True,
+        description="是否强制在每轮对话前执行记忆检索以 enrich context",
+    )
+
+    # QMD 集成
+    qmd_enabled: bool = Field(
+        default=False,
+        description="是否启用 QMD 作为长期/内容记忆的语义检索后端",
+    )
+    qmd_command: str = Field(
+        default="qmd",
+        description="QMD CLI 命令路径",
+    )
+
+
 class AgentConfig(BaseModel):
     """Agent 配置"""
 
@@ -270,6 +348,10 @@ class Config(BaseModel):
     mcp: MCPConfig = Field(
         default_factory=MCPConfig,
         description="MCP 客户端配置",
+    )
+    memory: MemoryConfig = Field(
+        default_factory=MemoryConfig,
+        description="记忆系统配置",
     )
 
 

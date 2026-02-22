@@ -237,6 +237,24 @@
       ],
       "passes": false,
       "priority": "medium"
+    },
+    {
+      "category": "memory",
+      "id": "MEM-001",
+      "description": "四层记忆库架构（工作/短期/长期/内容记忆）",
+      "steps": [
+        "新增 MemoryConfig 配置段",
+        "实现工作记忆 token 监控与窗口总结",
+        "实现会话结束摘要并写入短期记忆",
+        "实现短期记忆 FIFO 队列与出队机制",
+        "实现长期记忆提炼（MEMORY.md + 语义库）",
+        "实现内容记忆入库（markitdown + 分类存储）",
+        "实现记忆检索策略与 memory_search/store/ingest 工具",
+        "集成 QMD 语义检索",
+        "编写 30 个记忆系统单元测试"
+      ],
+      "passes": true,
+      "priority": "high"
     }
   ]
 }

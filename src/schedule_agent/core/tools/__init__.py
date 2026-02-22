@@ -21,6 +21,7 @@ from .versioned_registry import VersionedToolRegistry
 from .file_tools import ReadFileTool, WriteFileTool, ModifyFileTool
 from .web_extractor_tool import WebExtractorTool
 from .command_tools import RunCommandTool
+from .memory_tools import MemorySearchTool, MemoryStoreTool, MemoryIngestTool
 
 __all__ = [
     "BaseTool",
@@ -48,4 +49,7 @@ __all__ = [
     "PlanTasksTool",
     "WebExtractorTool",
     "RunCommandTool",
+    "MemorySearchTool",
+    "MemoryStoreTool",
+    "MemoryIngestTool",
 ]

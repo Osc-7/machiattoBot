@@ -112,6 +112,29 @@ mcp:
   #     init_timeout_seconds: 15
   #     call_timeout_seconds: 30
 
+# 记忆系统配置
+memory:
+  enabled: true
+  # 工作记忆
+  max_working_tokens: 8000        # 工作记忆窗口最大 token 数
+  working_summary_threshold: 0.8  # 触发总结的阈值比例
+  working_keep_recent: 4          # 总结时保留最近几轮原始消息
+  # 短期记忆
+  short_term_k: 20                # 保留最近 K 个会话摘要
+  short_term_dir: "./data/memory/short_term"
+  # 长期记忆
+  long_term_dir: "./data/memory/long_term"
+  memory_md_path: "./MEMORY.md"
+  # 内容记忆
+  content_dir: "./data/memory/content"
+  # 检索策略
+  recall_top_n: 5
+  recall_score_threshold: 0.3
+  force_recall: true              # 每轮对话前强制检索记忆以 enrich context
+  # QMD 集成（可选）
+  qmd_enabled: false
+  qmd_command: "qmd"
+
 # 日志配置
 logging:
   session_log_dir: "./logs/sessions"

@@ -2,13 +2,16 @@
 主 Agent 实现
 
 实现基于工具驱动的 Agent 循环，支持多轮对话和工具调用。
+集成四层记忆架构：工作记忆、短期记忆、长期记忆、内容记忆。
 """
 
 import json
 import time
+from datetime import datetime
+from datetime import timezone as dt_timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-from schedule_agent.config import Config, get_config
+from schedule_agent.config import Config, MemoryConfig, get_config
 from schedule_agent.core.context import ConversationContext, get_time_context
 from schedule_agent.utils.billing import compute_cost_from_calls
 from schedule_agent.core.orchestrator import ToolSnapshot, ToolWorkingSetManager
@@ -20,6 +23,15 @@ from schedule_agent.core.tools import (
     SearchToolsTool,
     ToolResult,
     VersionedToolRegistry,
+)
+from schedule_agent.core.memory import (
+    WorkingMemory,
+    ShortTermMemory,
+    LongTermMemory,
+    ContentMemory,
+    RecallPolicy,
+    RecallResult,
+    SessionSummary,
 )
 
 if TYPE_CHECKING:
@@ -79,6 +91,39 @@ class ScheduleAgent:
         self._usage_calls: List[Tuple[int, int]] = []
         # 当前轮次（每次 process_input 递增）
         self._current_turn_id = 0
+        # 会话起始时间
+        self._session_start_time = datetime.now(dt_timezone.utc).isoformat()
+
+        # 四层记忆系统
+        mem_cfg: MemoryConfig = self._config.memory
+        self._memory_enabled = mem_cfg.enabled
+
+        self._working_memory = WorkingMemory(
+            context=self._context,
+            max_tokens=mem_cfg.max_working_tokens,
+            threshold=mem_cfg.working_summary_threshold,
+            keep_recent=mem_cfg.working_keep_recent,
+        )
+        self._short_term_memory = ShortTermMemory(
+            storage_dir=mem_cfg.short_term_dir,
+            k=mem_cfg.short_term_k,
+        )
+        self._long_term_memory = LongTermMemory(
+            storage_dir=mem_cfg.long_term_dir,
+            memory_md_path=mem_cfg.memory_md_path,
+            qmd_enabled=mem_cfg.qmd_enabled,
+            qmd_command=mem_cfg.qmd_command,
+        )
+        self._content_memory = ContentMemory(
+            content_dir=mem_cfg.content_dir,
+            qmd_enabled=mem_cfg.qmd_enabled,
+            qmd_command=mem_cfg.qmd_command,
+        )
+        self._recall_policy = RecallPolicy(
+            force_recall=mem_cfg.force_recall,
+            top_n=mem_cfg.recall_top_n,
+            score_threshold=mem_cfg.recall_score_threshold,
+        )
 
         # 注册工具
         if tools:
@@ -181,11 +226,27 @@ class ScheduleAgent:
         self._current_turn_id += 1
         turn_id = self._current_turn_id
 
+        # 0.5 记忆检索 enrich（在添加用户消息之前收集上下文）
+        if self._memory_enabled and self._recall_policy.should_recall(user_input):
+            recall_result = self._recall_policy.recall(
+                query=user_input,
+                short_term_memory=self._short_term_memory,
+                long_term_memory=self._long_term_memory,
+                content_memory=self._content_memory,
+            )
+            self._last_recall_result = recall_result
+        else:
+            self._last_recall_result = RecallResult()
+
         # 1. 添加用户消息到上下文
         self._context.add_user_message(user_input)
 
         if self._session_logger:
             self._session_logger.on_user_message(turn_id, user_input)
+
+        # 1.5 工作记忆窗口总结（在 LLM 调用前检查是否需要压缩）
+        if self._memory_enabled:
+            await self._working_memory.maybe_summarize(self._llm_client)
 
         # 2. Agent 主循环
         iteration = 0
@@ -281,6 +342,7 @@ class ScheduleAgent:
         - Agent 身份和能力说明
         - 当前时间上下文
         - 工具使用指南
+        - 记忆上下文（若有）
 
         Returns:
             系统提示字符串
@@ -293,6 +355,18 @@ class ScheduleAgent:
             has_file_tools=self._tool_registry.has("read_file"),
             tool_mode=self._config.agent.tool_mode or "full",
         )
+
+        if self._memory_enabled:
+            recall_ctx = getattr(self, "_last_recall_result", RecallResult())
+            memory_text = recall_ctx.to_context_string()
+            if memory_text:
+                prompt += f"\n\n# 记忆上下文\n\n{memory_text}"
+
+            if self._working_memory.running_summary:
+                prompt += (
+                    f"\n\n# 工作记忆摘要\n\n{self._working_memory.running_summary}"
+                )
+
         return prompt
 
     def _add_assistant_message_with_tool_calls(self, response: LLMResponse) -> None:
@@ -351,6 +425,40 @@ class ScheduleAgent:
 
         # 执行工具
         return await self._tool_registry.execute(tool_call.name, **kwargs)
+
+    async def finalize_session(self) -> Optional[SessionSummary]:
+        """
+        会话结束时调用：总结会话并写入短期记忆，触发出队提炼。
+
+        Returns:
+            生成的 SessionSummary，若记忆系统未启用或会话为空则返回 None
+        """
+        if not self._memory_enabled or self._current_turn_id == 0:
+            return None
+
+        summary_data = await self._working_memory.summarize_session(self._llm_client)
+        session_id = f"sess-{int(time.time())}"
+        now_str = datetime.now(dt_timezone.utc).isoformat()
+
+        session_summary = SessionSummary(
+            session_id=session_id,
+            time_start=self._session_start_time,
+            time_end=now_str,
+            summary=summary_data.get("summary", ""),
+            decisions=summary_data.get("decisions", []),
+            open_questions=summary_data.get("open_questions", []),
+            referenced_files=summary_data.get("referenced_files", []),
+            tags=summary_data.get("tags", []),
+            turn_count=self._current_turn_id,
+            token_usage=dict(self._token_usage),
+        )
+
+        evicted = self._short_term_memory.add(session_summary)
+
+        if evicted:
+            await self._long_term_memory.distill(evicted, self._llm_client)
+
+        return session_summary
 
     async def close(self) -> None:
         """关闭 Agent，释放资源"""

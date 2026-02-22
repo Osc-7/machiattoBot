@@ -770,6 +770,78 @@ tests/                   # 测试目录
 
 ---
 
+## 2026-02-22 - 任务: 四层记忆库架构
+
+### 完成内容:
+
+1. **配置层**: 新增 `MemoryConfig` 配置模型（config.py），在 config.yaml / config.example.yaml 中添加 memory 配置段
+
+2. **工作记忆 (WorkingMemory)**:
+   - token 粗略估算（中英文混合）
+   - 滑动窗口阈值检测（可配置 max_working_tokens + threshold 比例）
+   - LLM 驱动窗口总结：旧消息折叠为摘要块，保留最近 N 轮原始消息
+   - 会话结束总结：输出结构化 JSON（summary / decisions / open_questions / referenced_files / tags）
+
+3. **短期记忆 (ShortTermMemory)**:
+   - JSONL 持久化 FIFO 队列（容量 K 可配）
+   - 关键词搜索 + 格式化注入 system prompt
+   - 出队时返回被淘汰条目供长期记忆提炼
+
+4. **长期记忆 (LongTermMemory)**:
+   - LLM 提炼出队的短期记忆，生成 MemoryEntry 条目
+   - JSONL 持久化 + Markdown 文件双写
+   - 自动追加 MEMORY.md（高确信条目标记"待人工确认"）
+   - 初始化 MEMORY.md 模板（用户偏好 / 约束 / 决策 / 教训）
+   - QMD collection 写入支持（qmd_enabled 开关）
+
+5. **内容记忆 (ContentMemory)**:
+   - markitdown 格式转换（PDF / DOCX → Markdown）
+   - 按分类目录存储（docs / meeting / diary / lessons / notes / code）
+   - 关键词搜索 + QMD 语义检索
+
+6. **记忆检索策略 (RecallPolicy)**:
+   - 强制 / 模式匹配两种触发模式
+   - 多路检索：短期 + 长期 + 内容 + MEMORY.md
+   - RecallResult 聚合，格式化注入 system prompt
+
+7. **Agent 集成**:
+   - 在 process_input 前执行记忆检索，将结果注入系统提示
+   - 每轮 LLM 调用前检查工作记忆窗口，必要时触发总结
+   - 会话结束时 finalize_session：总结 → 短期入队 → 出队提炼
+
+8. **记忆工具集**:
+   - `memory_search`: 多路检索工具，支持 scope 限定
+   - `memory_store`: 文本写入内容记忆
+   - `memory_ingest`: 文件转 Markdown 入库
+   - 工具已注册到 main.py 的 get_default_tools
+
+9. **QMD 集成**:
+   - ContentMemory.search_qmd() CLI 语义检索
+   - LongTermMemory 出队提炼后自动写入 QMD collection
+   - RecallPolicy 合并 QMD 检索结果
+
+### 新增文件:
+- src/schedule_agent/core/memory/__init__.py
+- src/schedule_agent/core/memory/types.py
+- src/schedule_agent/core/memory/working_memory.py
+- src/schedule_agent/core/memory/short_term.py
+- src/schedule_agent/core/memory/long_term.py
+- src/schedule_agent/core/memory/content_memory.py
+- src/schedule_agent/core/memory/recall.py
+- src/schedule_agent/core/tools/memory_tools.py
+- tests/test_memory.py
+
+### 测试:
+- 新增 30 个记忆系统单元测试（全部通过）
+- 全量 462 个测试通过，零回归
+
+### 备注:
+- QMD 需单独安装（Node.js 22+），通过 `qmd_enabled: true` 启用
+- markitdown 需安装（pip install markitdown），未安装时 ingest 回退失败
+- MEMORY.md 自动更新条目标记"待人工确认"，需定期人工审核
+
+---
+
 ## 2025-02-17 - 初始化项目
 
 ### 准备工作

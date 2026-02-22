@@ -33,6 +33,15 @@ from schedule_agent.core.tools import (
     PlanTasksTool,
     WebExtractorTool,
     RunCommandTool,
+    MemorySearchTool,
+    MemoryStoreTool,
+    MemoryIngestTool,
+)
+from schedule_agent.core.memory import (
+    ContentMemory,
+    LongTermMemory,
+    RecallPolicy,
+    ShortTermMemory,
 )
 
 
@@ -71,10 +80,23 @@ def get_default_tools(config: Optional[Config] = None) -> List[BaseTool]:
 
     # 如果配置支持网页抓取（provider=qwen），添加网页抓取工具
     if config and config.llm.provider == "qwen":
-        # 检查是否配置了网页抓取相关设置（即使 enable_web_extractor=false，工具也可以工作）
-        # 工具内部会创建自己的配置
         tools.append(WebExtractorTool(config=config))
-    
+
+    # 记忆系统工具
+    if config and config.memory.enabled:
+        mem_cfg = config.memory
+        short_term = ShortTermMemory(mem_cfg.short_term_dir, mem_cfg.short_term_k)
+        long_term = LongTermMemory(mem_cfg.long_term_dir, mem_cfg.memory_md_path)
+        content = ContentMemory(
+            mem_cfg.content_dir, mem_cfg.qmd_enabled, mem_cfg.qmd_command
+        )
+        recall = RecallPolicy(
+            mem_cfg.force_recall, mem_cfg.recall_top_n, mem_cfg.recall_score_threshold
+        )
+        tools.append(MemorySearchTool(recall, short_term, long_term, content))
+        tools.append(MemoryStoreTool(content))
+        tools.append(MemoryIngestTool(content))
+
     return tools
 
 
@@ -209,6 +231,16 @@ async def main_async(args: Optional[List[str]] = None):
                 # 运行交互式循环
                 await run_interactive_loop(agent)
     finally:
+        # 会话结束时触发记忆总结（在关闭 LLM 连接之前）
+        if agent_ref:
+            try:
+                session_summary = await agent_ref.finalize_session()
+                if session_summary and config.agent.enable_debug:
+                    print(f"\n[记忆] 会话摘要已保存: {session_summary.session_id}")
+            except Exception as e:
+                if config.agent.enable_debug:
+                    print(f"\n[记忆] 会话摘要生成失败: {e}")
+
         if mcp_manager:
             await mcp_manager.close()
         if session_logger:
