@@ -79,6 +79,19 @@ file_tools:
 agent:
   max_iterations: 10
   enable_debug: true
+  # 工具暴露模式：
+  # - full: 每轮将全部工具发送给 LLM（兼容旧行为）
+  # - kernel: 仅暴露核心工具 + working set（推荐用于控制 token）
+  tool_mode: "full"
+  # kernel 模式下 LRU 工作集大小（不含 pinned_tools）
+  working_set_size: 6
+  # kernel 模式下始终暴露的核心工具
+  pinned_tools:
+    - "search_tools"
+    - "call_tool"
+    - "read_file"
+    - "write_file"
+    - "extract_web_content"
 
 # MCP 客户端配置（可选）
 # 用于接入外部 MCP Server，并将远程工具自动注册到 Agent

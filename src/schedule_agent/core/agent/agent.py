@@ -10,9 +10,16 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from schedule_agent.config import Config, get_config
 from schedule_agent.core.context import ConversationContext, get_time_context
+from schedule_agent.core.orchestrator import ToolSnapshot, ToolWorkingSetManager
 from schedule_agent.prompts import build_system_prompt as build_prompt
 from schedule_agent.core.llm import LLMClient, LLMResponse, ToolCall, TokenUsage
-from schedule_agent.core.tools import BaseTool, ToolRegistry, ToolResult
+from schedule_agent.core.tools import (
+    BaseTool,
+    CallToolTool,
+    SearchToolsTool,
+    ToolResult,
+    VersionedToolRegistry,
+)
 
 if TYPE_CHECKING:
     from schedule_agent.utils.session_logger import SessionLogger
@@ -49,11 +56,22 @@ class ScheduleAgent:
         """
         self._config = config or get_config()
         self._llm_client = LLMClient(self._config)
-        self._tool_registry = ToolRegistry()
+        self._tool_registry = VersionedToolRegistry()
         self._context = ConversationContext()
         self._max_iterations = max_iterations
         self._timezone = timezone
         self._session_logger = session_logger
+        self._kernel_enabled = (self._config.agent.tool_mode or "full").lower() == "kernel"
+        pinned_tools = list(self._config.agent.pinned_tools or [])
+        for core_name in ["search_tools", "call_tool"]:
+            if core_name not in pinned_tools:
+                pinned_tools.append(core_name)
+        self._working_set = ToolWorkingSetManager(
+            pinned_tools=pinned_tools,
+            working_set_size=self._config.agent.working_set_size,
+        )
+        self._last_snapshot = ToolSnapshot(version=-1, tool_names=[], openai_tools=[])
+        self._current_visible_tools: set[str] = set()
         # 本会话 token 用量累计
         self._token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "call_count": 0}
         # 当前轮次（每次 process_input 递增）
@@ -64,8 +82,24 @@ class ScheduleAgent:
             for tool in tools:
                 self._tool_registry.register(tool)
 
+        # kernel 模式下补充核心工具
+        if self._kernel_enabled:
+            if not self._tool_registry.has("search_tools"):
+                self._tool_registry.register(
+                    SearchToolsTool(
+                        registry=self._tool_registry,
+                        working_set=self._working_set,
+                    )
+                )
+            if not self._tool_registry.has("call_tool"):
+                self._tool_registry.register(
+                    CallToolTool(
+                        registry=self._tool_registry,
+                    )
+                )
+
     @property
-    def tool_registry(self) -> ToolRegistry:
+    def tool_registry(self) -> VersionedToolRegistry:
         """获取工具注册表"""
         return self._tool_registry
 
@@ -149,7 +183,13 @@ class ScheduleAgent:
 
             system_prompt = self._build_system_prompt()
             messages = self._context.get_messages()
-            tools_defs = self._tool_registry.get_all_definitions()
+            if self._kernel_enabled:
+                self._last_snapshot = self._working_set.build_snapshot(self._tool_registry)
+                tools_defs = self._last_snapshot.openai_tools
+                self._current_visible_tools = set(self._last_snapshot.tool_names)
+            else:
+                tools_defs = self._tool_registry.get_all_definitions()
+                self._current_visible_tools = set(self._tool_registry.list_names())
 
             if self._session_logger:
                 self._session_logger.on_llm_request(
@@ -233,12 +273,14 @@ class ScheduleAgent:
             系统提示字符串
         """
         time_ctx = get_time_context(self._timezone)
-        return build_prompt(
+        prompt = build_prompt(
             time_context=time_ctx.to_prompt_string(),
             config=self._config,
             has_web_extractor=self._tool_registry.has("extract_web_content"),
             has_file_tools=self._tool_registry.has("read_file"),
+            tool_mode=self._config.agent.tool_mode or "full",
         )
+        return prompt
 
     def _add_assistant_message_with_tool_calls(self, response: LLMResponse) -> None:
         """
@@ -274,6 +316,13 @@ class ScheduleAgent:
         Returns:
             工具执行结果
         """
+        if self._kernel_enabled and tool_call.name not in self._current_visible_tools:
+            return ToolResult(
+                success=False,
+                error="TOOL_NOT_VISIBLE",
+                message=f"工具 '{tool_call.name}' 当前不在可见工作集中",
+            )
+
         # 解析参数
         if isinstance(tool_call.arguments, str):
             try:

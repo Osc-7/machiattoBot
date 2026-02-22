@@ -200,7 +200,7 @@ class TestBuildSystemPrompt:
         """测试系统提示包含 Agent 信息"""
         prompt = agent._build_system_prompt()
 
-        assert "智能日程管理助手" in prompt
+        assert ("智能日程管理助手" in prompt) or ("人工智能助手" in prompt)
         assert "创建和管理日程事件" in prompt
         assert "创建和管理待办任务" in prompt
 

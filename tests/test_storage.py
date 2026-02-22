@@ -503,17 +503,19 @@ class TestTaskRepository:
 
     def test_get_due_this_week(self, task_repo):
         """测试获取本周截止的任务"""
+        today = date.today()
+        week_end = today + timedelta(days=(7 - today.weekday()))
         tasks = [
             Task(
                 id="tsk001",
                 title="本周截止",
-                due_date=date.today() + timedelta(days=2),
+                due_date=today,  # 今天在本周内
                 status=TaskStatus.TODO,
             ),
             Task(
                 id="tsk002",
                 title="下周截止",
-                due_date=date.today() + timedelta(days=10),
+                due_date=week_end + timedelta(days=1),  # 明确为下周
                 status=TaskStatus.TODO,
             ),
         ]

@@ -63,6 +63,10 @@ class TestConfigModels:
         config = AgentConfig()
         assert config.max_iterations == 10
         assert config.enable_debug is False
+        assert config.tool_mode == "full"
+        assert config.working_set_size == 6
+        assert "search_tools" in config.pinned_tools
+        assert "call_tool" in config.pinned_tools
 
     def test_full_config(self):
         """测试完整配置"""
