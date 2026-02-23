@@ -112,6 +112,7 @@ class ScheduleAgent:
             max_tokens=mem_cfg.max_working_tokens,
             threshold=mem_cfg.working_summary_threshold,
             keep_recent=mem_cfg.working_keep_recent,
+            hard_threshold_ratio=mem_cfg.working_summary_hard_ratio,
         )
         self._short_term_memory = ShortTermMemory(
             storage_dir=mem_cfg.short_term_dir,
@@ -260,7 +261,9 @@ class ScheduleAgent:
         if self._memory_enabled and self._working_memory.check_threshold(
             actual_tokens=self._last_prompt_tokens
         ):
-            result = self._working_memory.start_summarize(self._summary_llm_client)
+            result = self._working_memory.start_summarize(
+                self._summary_llm_client, actual_tokens=self._last_prompt_tokens
+            )
             if result:
                 summary_task, summary_recent_start = result
 

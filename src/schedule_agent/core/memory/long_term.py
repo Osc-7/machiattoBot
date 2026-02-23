@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -226,17 +227,62 @@ class LongTermMemory:
         with open(self._memory_md, "w", encoding="utf-8") as f:
             f.write(template)
 
+    def _search_qmd(self, query: str, top_n: int) -> List[MemoryEntry]:
+        """通过 QMD 语义检索长期记忆（仅命中 _md_dir 下的条目）。"""
+        if not self._qmd_enabled or not self._entries:
+            return []
+        try:
+            result = subprocess.run(
+                [self._qmd_command, "query", query, "--json", "-n", str(top_n * 2)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                return []
+            raw = json.loads(result.stdout)
+        except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
+            return []
+        if not isinstance(raw, list):
+            raw = raw.get("results", raw.get("hits", [])) if isinstance(raw, dict) else []
+        entries_by_id = {e.id: e for e in self._entries}
+        seen: set[str] = set()
+        out: List[MemoryEntry] = []
+        for hit in raw:
+            if len(out) >= top_n:
+                break
+            path = hit.get("path") or hit.get("file") or ""
+            eid = Path(path).stem
+            if eid in seen or eid not in entries_by_id:
+                continue
+            seen.add(eid)
+            out.append(entries_by_id[eid])
+        return out
+
     def search(self, query: str, top_n: int = 5) -> List[MemoryEntry]:
-        """关键词搜索长期记忆条目。"""
-        query_lower = query.lower()
-        scored: List[tuple] = []
-        for entry in self._entries:
-            text = f"{entry.content} {' '.join(entry.tags)} {entry.category}"
-            score = sum(1 for w in query_lower.split() if w in text.lower())
-            if score > 0:
-                scored.append((score, entry))
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [entry for _, entry in scored[:top_n]]
+        """搜索长期记忆：QMD 开启时优先语义检索，不足则用关键词补充。"""
+        result: List[MemoryEntry] = []
+        if self._qmd_enabled:
+            result = self._search_qmd(query, top_n)
+        if len(result) < top_n:
+            query_lower = query.lower()
+            scored: List[tuple] = []
+            for entry in self._entries:
+                if entry in result:
+                    continue
+                text = f"{entry.content} {' '.join(entry.tags)} {entry.category}"
+                score = sum(1 for w in query_lower.split() if w in text.lower())
+                if score > 0:
+                    scored.append((score, entry))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            seen_ids = {e.id for e in result}
+            for _, entry in scored:
+                if len(result) >= top_n:
+                    break
+                if entry.id not in seen_ids:
+                    seen_ids.add(entry.id)
+                    result.append(entry)
+        return result
 
     def to_context_string(self, max_entries: int = 10) -> str:
         """将长期记忆格式化为可注入 system prompt 的文本。"""

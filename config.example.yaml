@@ -129,7 +129,8 @@ memory:
   enabled: true
   # 工作记忆
   max_working_tokens: 8000        # 工作记忆窗口最大 token 数
-  working_summary_threshold: 0.8  # 触发总结的阈值比例
+  working_summary_threshold: 0.8  # 软阈值：tokens 达此比例且消息数 > keep_recent*2 时总结
+  working_summary_hard_ratio: null  # 硬阈值：设为数字(如 5)则 tokens >= max_working_tokens*此值时强制总结，不受条数限制
   working_keep_recent: 4          # 总结时保留最近几轮原始消息
   # 短期记忆
   short_term_k: 20                # 保留最近 K 个会话摘要

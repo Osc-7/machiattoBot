@@ -75,12 +75,48 @@ class TestWorkingMemory:
             ctx.add_assistant_message(content=f"收到消息 {i}，让我处理一下")
         assert wm.check_threshold()
 
+    def test_check_threshold_hard(self):
+        """硬阈值：actual_tokens 超过 hard_limit 时即使未超软阈值也触发"""
+        ctx = ConversationContext()
+        # soft = 10000*0.8 = 8000, hard = 10000*5 = 50000
+        wm = WorkingMemory(
+            ctx, max_tokens=10000, threshold=0.8, hard_threshold_ratio=5.0
+        )
+        ctx.add_user_message("短消息")
+        assert not wm.check_threshold(actual_tokens=5000)
+        assert wm.check_threshold(actual_tokens=60000)
+
     def test_get_current_tokens(self):
         ctx = ConversationContext()
         wm = WorkingMemory(ctx)
         assert wm.get_current_tokens() == 0
         ctx.add_user_message("测试消息")
         assert wm.get_current_tokens() > 0
+
+    def test_apply_summary_strips_orphan_tool_messages(self):
+        """合并摘要后保留段若以孤立 tool 开头，应被丢弃，避免 API 400（tool 必须紧跟 assistant+tool_calls）"""
+        ctx = ConversationContext()
+        ctx.add_user_message("之前很多对话")
+        ctx.add_assistant_message(
+            content=None,
+            tool_calls=[
+                {"id": "call_1", "type": "function", "function": {"name": "foo", "arguments": "{}"}},
+            ],
+        )
+        ctx.add_tool_result("call_1", "ok")
+        ctx.add_assistant_message("处理完了")
+        ctx.add_user_message("新问题")
+        messages = ctx.get_messages()
+        # 模拟 recent_start 切在「工具块」中间：保留段 = [tool, assistant, user]
+        recent_start = 2  # 即保留从 index 2 开始：tool, assistant, user
+        wm = WorkingMemory(ctx, keep_recent=4)
+        wm.apply_summary("摘要内容", recent_start)
+        after = ctx.get_messages()
+        # 第一条应为 system（摘要），第二条不能是 tool
+        assert after[0].get("role") == "system"
+        assert "摘要内容" in (after[0].get("content") or "")
+        if len(after) > 1:
+            assert after[1].get("role") != "tool", "合并后不应以孤立 tool 开头"
 
 
 class TestSessionSummary:

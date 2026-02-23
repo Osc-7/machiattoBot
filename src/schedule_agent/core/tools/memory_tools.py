@@ -276,7 +276,6 @@ class MemoryIngestTool(BaseTool):
                 },
             ],
             usage_notes=[
-                "需要安装 markitdown（pip install markitdown）",
                 "转换后的 Markdown 存储在内容记忆库对应分类目录下",
             ],
         )

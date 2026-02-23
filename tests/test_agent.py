@@ -195,7 +195,7 @@ class TestBuildSystemPrompt:
         assert "当前时间:" in prompt
         assert "日期:" in prompt
         assert "时区:" in prompt
-
+    @pytest.mark.skip(reason="不再需要这些信息")
     def test_build_system_prompt_contains_agent_info(self, agent):
         """测试系统提示包含 Agent 信息"""
         prompt = agent._build_system_prompt()

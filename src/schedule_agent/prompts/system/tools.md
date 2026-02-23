@@ -1,6 +1,3 @@
 # 工具使用
 
-你可以使用以下工具来完成用户的请求。每个工具都有详细的使用说明。
-在调用工具前，仔细阅读工具描述，确保参数正确。
-
-若记忆系统已启用，还可使用 memory_search_long_term / memory_search_content / memory_store / memory_ingest，详见 runtime_memory。用户偏好写入 MEMORY.md 时使用 write_file 或 modify_file。
+调用前阅读工具描述，确保参数正确。记忆启用时可用 memory_search_long_term / memory_search_content / memory_store / memory_ingest；用户说「记住」时用 write_file/modify_file 写 MEMORY.md。

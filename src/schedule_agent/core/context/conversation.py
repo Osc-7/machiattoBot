@@ -112,16 +112,58 @@ class ConversationContext:
         self.messages.append(message)
 
         # 如果超出限制，移除旧消息（保留第一条系统消息）
+        # 必须按「块」裁剪，避免产生孤立的 tool 消息（API 要求 tool 必须紧接在 assistant+tool_calls 之后）
         if len(self.messages) > self.max_messages:
-            # 保留系统消息
             system_messages = [m for m in self.messages if m.get("role") == "system"]
             other_messages = [m for m in self.messages if m.get("role") != "system"]
-
-            # 保留最近的消息
             keep_count = self.max_messages - len(system_messages)
-            other_messages = other_messages[-keep_count:]
-
+            other_messages = self._trim_preserving_tool_blocks(other_messages, keep_count)
             self.messages = system_messages + other_messages
+
+    @staticmethod
+    def _trim_preserving_tool_blocks(
+        messages: List[Dict[str, Any]], keep_count: int
+    ) -> List[Dict[str, Any]]:
+        """
+        裁剪消息列表，保持 tool 调用块完整。
+        tool 消息必须紧接在 assistant+tool_calls 之后，否则 API 报错。
+        """
+        if len(messages) <= keep_count:
+            return messages
+        # 按块分割：user | (assistant + tool_calls + 后续 tool 结果)
+        blocks: List[List[Dict[str, Any]]] = []
+        i = 0
+        while i < len(messages):
+            m = messages[i]
+            role = m.get("role", "")
+            if role == "user":
+                blocks.append([m])
+                i += 1
+            elif role == "assistant":
+                block = [m]
+                i += 1
+                if m.get("tool_calls"):
+                    while i < len(messages) and messages[i].get("role") == "tool":
+                        block.append(messages[i])
+                        i += 1
+                blocks.append(block)
+            elif role == "tool":
+                # 孤立的 tool（不应出现），单独成块便于丢弃
+                blocks.append([m])
+                i += 1
+            else:
+                blocks.append([m])
+                i += 1
+        # 保留最后若干块，使总条数 <= keep_count，且不以孤立 tool 开头
+        result: List[Dict[str, Any]] = []
+        for block in reversed(blocks):
+            if len(result) + len(block) > keep_count:
+                break
+            result = block + result
+        # 若开头是孤立的 tool 块，丢弃
+        while result and result[0].get("role") == "tool":
+            result = result[1:]
+        return result
 
     def __len__(self) -> int:
         """返回消息数量"""

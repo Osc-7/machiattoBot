@@ -334,3 +334,37 @@ class TestConversationContext:
         messages = ctx.get_messages()
         assert "消息 5" in messages[0]["content"]
         assert "消息 9" in messages[4]["content"]
+
+    def test_trim_preserves_tool_blocks(self):
+        """裁剪时保持 tool 调用块完整，避免产生孤立的 tool 消息（API 要求 tool 紧接 assistant+tool_calls）"""
+        ctx = ConversationContext(max_messages=8)
+
+        # 构造多轮对话含 tool 调用
+        ctx.add_user_message("创建会议")
+        ctx.add_assistant_message(
+            content=None,
+            tool_calls=[
+                {"id": "c1", "type": "function", "function": {"name": "add_event", "arguments": "{}"}},
+                {"id": "c2", "type": "function", "function": {"name": "add_event", "arguments": "{}"}},
+            ],
+        )
+        ctx.add_tool_result("c1", "ok")
+        ctx.add_tool_result("c2", "ok")
+        ctx.add_assistant_message("已创建")
+        ctx.add_user_message("再创建一个")
+        ctx.add_assistant_message(
+            content=None,
+            tool_calls=[{"id": "c3", "type": "function", "function": {"name": "add_event", "arguments": "{}"}}],
+        )
+        ctx.add_tool_result("c3", "ok")
+        ctx.add_assistant_message("完成")
+
+        messages = ctx.get_messages()
+        # 不能以 tool 开头；每个 tool 前必须是 assistant+tool_calls 或同一块的 tool
+        assert messages[0].get("role") != "tool", "裁剪后首条不能是 tool"
+        for i, m in enumerate(messages):
+            if m.get("role") == "tool":
+                j = i - 1
+                while j >= 0 and messages[j].get("role") == "tool":
+                    j -= 1
+                assert j >= 0 and messages[j].get("role") == "assistant" and "tool_calls" in messages[j]

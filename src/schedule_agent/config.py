@@ -222,7 +222,11 @@ class MemoryConfig(BaseModel):
         default=0.8,
         ge=0.5,
         le=1.0,
-        description="触发工作记忆总结的阈值比例（相对 max_working_tokens）",
+        description="软阈值比例：tokens >= max_working_tokens * 此值且消息数 > keep_recent*2 时触发总结",
+    )
+    working_summary_hard_ratio: Optional[float] = Field(
+        default=None,
+        description="硬阈值比例：为 None 不启用；否则 tokens >= max_working_tokens * 此值时强制总结，不受消息条数限制",
     )
     working_keep_recent: int = Field(
         default=4,
