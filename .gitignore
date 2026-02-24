@@ -53,3 +53,6 @@ Thumbs.db
 # Machiatto - 私有文件夹（日记、笔记等私密内容）
 machiatto/
 memory/
+
+# Agent 自主管理的长期记忆（不纳入版本控制）
+MEMORY.md

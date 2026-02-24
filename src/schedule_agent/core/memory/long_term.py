@@ -1,10 +1,12 @@
 """
 长期记忆 - 提炼持久化经验知识
 
-从短期记忆出队条目中提炼关键信息，写入：
-1. MEMORY.md（人类可读核心）
-2. 长期记忆 JSONL（可检索语义库数据源）
+从短期记忆出队条目中提炼关键信息，仅写入：
+1. 长期记忆 JSONL（entries.jsonl）
+2. markdown 单条文件（data/memory/long_term/markdown/）
 3. QMD collection（可选，语义检索）
+
+MEMORY.md 由 Agent 通过 write_file/modify_file 自主维护，不在此自动更新。
 """
 
 from __future__ import annotations
@@ -57,16 +59,13 @@ _DISTILL_SYSTEM_PROMPT = """\
       "tags": ["标签1", "标签2"],
       "confidence": 0.9
     }
-  ],
-  "memory_md_updates": [
-    "需要更新到 MEMORY.md 的高确信条目（直接可用的 bullet point）"
   ]
 }
 
 规则：
 - 只保留有长期价值的信息（偏好、约束、流程、教训、决策依据）
 - 丢弃临时性、一次性信息
-- confidence 范围 0-1，仅 >= 0.7 的条目才进入 MEMORY.md
+- confidence 范围 0-1
 - 使用中文
 - 只输出合法 JSON，不要包含 markdown 代码块标记"""
 
@@ -169,10 +168,6 @@ class LongTermMemory:
 
         self._save()
 
-        md_updates = result.get("memory_md_updates", [])
-        if md_updates:
-            self._append_to_memory_md(md_updates, now_str, source_ids)
-
         if new_entries:
             self._write_entries_as_markdown(new_entries)
 
@@ -186,17 +181,6 @@ class LongTermMemory:
 
         if self._qmd_enabled:
             _write_to_qmd_collection(self._md_dir, self._qmd_command)
-
-    def _append_to_memory_md(
-        self, bullets: List[str], timestamp: str, source_ids: List[str]
-    ) -> None:
-        """将高确信条目追加到 MEMORY.md。"""
-        self._ensure_memory_md()
-        with open(self._memory_md, "a", encoding="utf-8") as f:
-            f.write(f"\n\n### 自动更新 ({timestamp[:10]})\n")
-            f.write(f"来源: {', '.join(source_ids)}\n\n")
-            for bullet in bullets:
-                f.write(f"- {bullet} *(待人工确认)*\n")
 
     def _ensure_memory_md(self) -> None:
         """确保 MEMORY.md 存在，若不存在则创建初始模板。"""
