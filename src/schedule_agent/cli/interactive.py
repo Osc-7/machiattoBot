@@ -9,6 +9,7 @@ import json
 import sys
 import shutil
 import threading
+import time
 from typing import Any, Optional
 
 from schedule_agent.core import ScheduleAgent
@@ -32,43 +33,38 @@ except ImportError:
     _HAS_PROMPT_TOOLKIT = False
 
 Console: Any = None
+Live: Any = None
 Markdown: Any = None
 try:
     from rich.console import Console
+    from rich.live import Live
     from rich.markdown import Markdown
     _HAS_RICH = True
     _RICH_CONSOLE: Any = Console()
-except Exception:  # pragma: no cover - 极端环境下容错
+except Exception:  # pragma: no cover
     _HAS_RICH = False
     _RICH_CONSOLE = None
 
 
 async def _thinking_spinner(stop_event: asyncio.Event) -> None:
-    """
-    简单的「正在思考」动画。
-
-    使用单行覆盖的方式，不依赖 prompt_toolkit，只在等待 LLM 响应期间运行。
-    """
+    """简单的「正在思考」动画（备用，主循环有内置版本）"""
     frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
     i = 0
     width = shutil.get_terminal_size((80, 20)).columns
     while not stop_event.is_set():
-        prefix = frames[i % len(frames)]
-        msg = f"{prefix}"
-        sys.stdout.write("\r" + msg)
+        sys.stdout.write("\r" + frames[i % len(frames)])
         sys.stdout.flush()
         i += 1
         try:
             await asyncio.sleep(0.1)
         except asyncio.CancelledError:
             break
-
     sys.stdout.write("\r" + " " * width + "\r")
     sys.stdout.flush()
 
 
 def print_welcome():
-    """打印欢迎信息（Markdown 格式，推荐 rich 渲染）"""
+    """打印欢迎信息"""
     md = """
     ╔══════════════════════════════════════════════════════╗
     ║ Greetings!                                           ║
@@ -98,7 +94,7 @@ def print_welcome():
 
 
 def print_help():
-    """打印帮助信息（Markdown 格式，推荐 rich 渲染）"""
+    """打印帮助信息"""
     md = """
 # 帮助信息
 
@@ -142,7 +138,7 @@ def print_help():
 
 
 def print_token_usage(agent: ScheduleAgent):
-    """打印本会话 token 用量统计（Markdown 格式，推荐 rich 渲染）"""
+    """打印本会话 token 用量统计"""
     u = agent.get_token_usage()
     cost_line = f"\n- **预估费用**: `¥{u['cost_yuan']:.4f}`" if u.get("cost_yuan") is not None else ""
     md = f"""
@@ -171,12 +167,7 @@ def print_token_usage(agent: ScheduleAgent):
 
 
 async def run_interactive_loop(agent: ScheduleAgent):
-    """
-    运行交互式对话循环。
-
-    Args:
-        agent: ScheduleAgent 实例
-    """
+    """运行交互式对话循环。"""
     print_welcome()
     print(thin_separator())
 
@@ -236,33 +227,46 @@ async def run_interactive_loop(agent: ScheduleAgent):
             # ── 处理用户输入 ──
             spinner_stop: Optional[asyncio.Event] = None
             spinner_task: Optional[asyncio.Task[Any]] = None
+            stream_started = False
             stream_buffer = ""
+            live: Any = None
+            last_render_ts = 0.0
             reasoning_started = False
             reasoning_buffer = ""
+            io_lock = threading.Lock()
 
             try:
                 spinner_stop = asyncio.Event()
                 width = shutil.get_terminal_size((80, 20)).columns
                 spinner_line_active = False
                 spinner_paused = False
-                io_lock = threading.Lock()
+                last_text_output_ts = time.monotonic()
+                _spinner_stop = spinner_stop
 
-                # ── Spinner: 后台旋转动画 ──
+                # ── Spinner ──
                 async def _run_spinner() -> None:
                     nonlocal spinner_line_active
                     frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
                     i = 0
-                    while not spinner_stop.is_set():
-                        if spinner_paused:
+                    while not _spinner_stop.is_set():
+                        # 有文本连续输出时临时隐藏 spinner，避免“逐帧换行感”
+                        if spinner_paused or (time.monotonic() - last_text_output_ts < 0.35):
+                            with io_lock:
+                                if spinner_line_active:
+                                    _erase_spinner_line()
                             await asyncio.sleep(0.03)
                             continue
                         with io_lock:
+                            # 再次检查，避免 pause 与写入之间竞态导致“漏一帧”
+                            if spinner_paused:
+                                if spinner_line_active:
+                                    _erase_spinner_line()
+                                continue
                             sys.stdout.write("\r" + frames[i % len(frames)])
                             sys.stdout.flush()
                             spinner_line_active = True
                         i += 1
                         await asyncio.sleep(0.1)
-
                     with io_lock:
                         if spinner_line_active:
                             sys.stdout.write("\r" + " " * width + "\r")
@@ -295,13 +299,24 @@ async def run_interactive_loop(agent: ScheduleAgent):
                         spinner_stop.set()
 
                 def _print_with_spinner(text: str = "", end: str = "\n") -> None:
-                    """暂停 spinner → 擦除 → 打印 → 恢复，保证输出原子性"""
+                    """暂停 spinner → 擦除 → 打印 → 恢复"""
+                    nonlocal last_text_output_ts
                     _pause_spinner()
                     with io_lock:
                         _erase_spinner_line()
                         print(text, end=end)
                         sys.stdout.flush()
+                    last_text_output_ts = time.monotonic()
                     _resume_spinner()
+
+                def _print_without_spinner(text: str = "", end: str = "\n") -> None:
+                    """在 spinner 关闭状态下打印（不自动恢复）。"""
+                    nonlocal last_text_output_ts
+                    with io_lock:
+                        _erase_spinner_line()
+                        print(text, end=end)
+                        sys.stdout.flush()
+                    last_text_output_ts = time.monotonic()
 
                 def _short(obj: object, max_len: int = 120) -> str:
                     try:
@@ -316,21 +331,31 @@ async def run_interactive_loop(agent: ScheduleAgent):
                         return text
                     return text[: max_len - 3] + "..."
 
+                # ── Live 管理 ──
+
+                def _teardown_live() -> None:
+                    """拆除 Live 显示（transient=True 会自动清除内容）"""
+                    nonlocal live, stream_started
+                    if live is not None:
+                        try:
+                            live.__exit__(None, None, None)
+                        except Exception:
+                            pass
+                        live = None
+                    stream_started = False
+
                 def _emit_draft_snapshot() -> None:
-                    """将累积的流式内容以 dim 文本输出为草稿（和思维链同级）"""
+                    """将累积的流式内容以 dim 文本输出为草稿"""
                     nonlocal stream_buffer
-                    if show_draft == "off":
-                        stream_buffer = ""
-                        return
                     draft_text = (stream_buffer or "").strip()
                     stream_buffer = ""
-                    if not draft_text:
+                    if show_draft == "off" or not draft_text:
                         return
                     if show_draft == "summary":
                         draft_text = " ".join(draft_text.split())
                         if len(draft_text) > draft_max_chars:
                             draft_text = draft_text[: max(0, draft_max_chars - 3)] + "..."
-                    _print_with_spinner(t(f"  草稿：{draft_text}", dim=True))
+                    _print_without_spinner(t(f"  草稿：{draft_text}", dim=True))
 
                 def _flush_reasoning_buffer() -> None:
                     nonlocal reasoning_buffer, reasoning_started
@@ -343,35 +368,81 @@ async def run_interactive_loop(agent: ScheduleAgent):
                 # ── 流式回调 ──
 
                 def on_stream_delta(delta: str) -> None:
-                    nonlocal stream_buffer
+                    """正式回复：Rich Live Markdown 动态渲染"""
+                    nonlocal stream_started, stream_buffer, live, last_render_ts, last_text_output_ts
                     if not delta:
                         return
                     stream_buffer += delta
 
+                    if not stream_started:
+                        _pause_spinner()
+                        with io_lock:
+                            _erase_spinner_line()
+                        _flush_reasoning_buffer()
+                        stream_started = True
+                        print()
+                        if _HAS_RICH and _RICH_CONSOLE is not None:
+                            live = Live(
+                                Markdown(""),
+                                console=_RICH_CONSOLE,
+                                refresh_per_second=12,
+                                transient=True,
+                            )
+                            live.__enter__()
+
+                    if live is not None:
+                        now = time.monotonic()
+                        if now - last_render_ts >= 0.08:
+                            live.update(Markdown(stream_buffer), refresh=True)
+                            last_render_ts = now
+                            last_text_output_ts = now
+                    else:
+                        sys.stdout.write(delta)
+                        sys.stdout.flush()
+                        last_text_output_ts = time.monotonic()
+
                 def on_reasoning_delta(delta: str) -> None:
-                    nonlocal reasoning_started, reasoning_buffer
-                    if not delta:
+                    """思维链：dim 文本逐行流式输出"""
+                    nonlocal reasoning_buffer
+                    if not delta or stream_started:
                         return
                     reasoning_buffer += delta
-                    if "\n\n" in reasoning_buffer or len(reasoning_buffer) > 300:
+                    while "\n" in reasoning_buffer:
+                        line, reasoning_buffer = reasoning_buffer.split("\n", 1)
+                        if line:
+                            _print_with_spinner(t(line, dim=True))
+                    if len(reasoning_buffer) > 200:
                         _flush_reasoning_buffer()
 
                 def on_trace_event(event: dict) -> None:
-                    nonlocal reasoning_started
+                    nonlocal reasoning_started, last_render_ts
                     event_type = event.get("type")
                     if event_type == "llm_request":
                         _flush_reasoning_buffer()
                         if reasoning_started:
                             _print_with_spinner()
                         reasoning_started = False
-                        _emit_draft_snapshot()
+                        if stream_started:
+                            _pause_spinner()
+                            with io_lock:
+                                _erase_spinner_line()
+                            _teardown_live()
+                            _emit_draft_snapshot()
+                        last_render_ts = 0.0
+                        _resume_spinner()
                         iteration = event.get("iteration")
                         tool_count = event.get("tool_count")
                         _print_with_spinner()
                         _print_with_spinner(hint(f"  第 {iteration} 步: 调用模型（可用工具 {tool_count}）"))
                     elif event_type == "tool_call":
                         _flush_reasoning_buffer()
-                        _emit_draft_snapshot()
+                        if stream_started:
+                            _pause_spinner()
+                            with io_lock:
+                                _erase_spinner_line()
+                            _teardown_live()
+                            _emit_draft_snapshot()
+                            _resume_spinner()
                         name = event.get("name")
                         args = _short(event.get("arguments", {}))
                         _print_with_spinner(hint(f"  → 调用工具: {name}({args})"))
@@ -393,13 +464,25 @@ async def run_interactive_loop(agent: ScheduleAgent):
                 if spinner_task is not None:
                     await spinner_task
 
-                # 最终回复：一次性 Rich Markdown 渲染
-                print()
-                if _HAS_RICH and _RICH_CONSOLE is not None:
-                    _RICH_CONSOLE.print(Markdown(response))
+                # ── 最终回复渲染 ──
+                if stream_started and live is not None:
+                    # Live 正在显示最终回复 → 切为持久化，避免闪烁
+                    live.update(Markdown(response), refresh=True)
+                    live.transient = False
+                    try:
+                        live.__exit__(None, None, None)
+                    except Exception:
+                        pass
+                    live = None
+                    print()
                 else:
-                    print(response)
-                print()
+                    # 无 Live（无 rich 或未进入流式）→ 静态渲染
+                    print()
+                    if _HAS_RICH and _RICH_CONSOLE is not None:
+                        _RICH_CONSOLE.print(Markdown(response))
+                    else:
+                        print(response)
+                    print()
 
                 u = agent.get_token_usage()
                 delta = u["total_tokens"] - prev_total_tokens
@@ -418,6 +501,12 @@ async def run_interactive_loop(agent: ScheduleAgent):
                         await spinner_task
                     except Exception:
                         pass
+                if live is not None:
+                    try:
+                        live.__exit__(None, None, None)
+                    except Exception:
+                        pass
+                    live = None
 
                 print()
                 print(accent("  抱歉，处理您的请求时发生错误: ") + str(e))
