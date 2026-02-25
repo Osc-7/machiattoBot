@@ -380,7 +380,7 @@ async def run_interactive_loop(agent: ScheduleAgent):
                             _erase_spinner_line()
                         # 给 spinner 一点时间完全停下，避免首帧残留
                         try:
-                            time.sleep(0.03)
+                            time.sleep(0.05)
                         except Exception:
                             pass
                         _flush_reasoning_buffer()
