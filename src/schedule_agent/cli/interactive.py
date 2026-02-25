@@ -179,11 +179,6 @@ async def run_interactive_loop(agent: ScheduleAgent):
         pt_prompt = None
 
     prev_total_tokens = 0
-    ui_cfg = getattr(getattr(agent, "config", None), "ui", None)
-    show_draft = str(getattr(ui_cfg, "show_draft", "summary") or "summary").lower()
-    if show_draft not in {"off", "summary", "full"}:
-        show_draft = "summary"
-    draft_max_chars = int(getattr(ui_cfg, "draft_max_chars", 500) or 500)
 
     while True:
         try:
@@ -249,7 +244,6 @@ async def run_interactive_loop(agent: ScheduleAgent):
                     frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
                     i = 0
                     while not _spinner_stop.is_set():
-                        # 有文本连续输出时临时隐藏 spinner，避免“逐帧换行感”
                         if spinner_paused or (time.monotonic() - last_text_output_ts < 0.35):
                             with io_lock:
                                 if spinner_line_active:
@@ -257,7 +251,6 @@ async def run_interactive_loop(agent: ScheduleAgent):
                             await asyncio.sleep(0.03)
                             continue
                         with io_lock:
-                            # 再次检查，避免 pause 与写入之间竞态导致“漏一帧”
                             if spinner_paused:
                                 if spinner_line_active:
                                     _erase_spinner_line()
@@ -299,7 +292,6 @@ async def run_interactive_loop(agent: ScheduleAgent):
                         spinner_stop.set()
 
                 def _print_with_spinner(text: str = "", end: str = "\n") -> None:
-                    """暂停 spinner → 擦除 → 打印 → 恢复"""
                     nonlocal last_text_output_ts
                     _pause_spinner()
                     with io_lock:
@@ -308,15 +300,6 @@ async def run_interactive_loop(agent: ScheduleAgent):
                         sys.stdout.flush()
                     last_text_output_ts = time.monotonic()
                     _resume_spinner()
-
-                def _print_without_spinner(text: str = "", end: str = "\n") -> None:
-                    """在 spinner 关闭状态下打印（不自动恢复）。"""
-                    nonlocal last_text_output_ts
-                    with io_lock:
-                        _erase_spinner_line()
-                        print(text, end=end)
-                        sys.stdout.flush()
-                    last_text_output_ts = time.monotonic()
 
                 def _short(obj: object, max_len: int = 120) -> str:
                     try:
@@ -331,31 +314,28 @@ async def run_interactive_loop(agent: ScheduleAgent):
                         return text
                     return text[: max_len - 3] + "..."
 
-                # ── Live 管理 ──
+                # ── Live 块管理 ──
 
-                def _teardown_live() -> None:
-                    """拆除 Live 显示（transient=True 会自动清除内容）"""
-                    nonlocal live, stream_started
+                def _persist_live_block(final_content: Optional[str] = None) -> None:
+                    """将当前 Live 块持久化（内容留在终端）并重置状态。
+
+                    Args:
+                        final_content: 若提供，用它做最后一次渲染（确保完整）。
+                    """
+                    nonlocal live, stream_started, stream_buffer, last_render_ts
                     if live is not None:
+                        content = final_content or stream_buffer
+                        if content.strip():
+                            live.update(Markdown(content), refresh=True)
+                        live.transient = False
                         try:
                             live.__exit__(None, None, None)
                         except Exception:
                             pass
                         live = None
                     stream_started = False
-
-                def _emit_draft_snapshot() -> None:
-                    """将累积的流式内容以 dim 文本输出为草稿"""
-                    nonlocal stream_buffer
-                    draft_text = (stream_buffer or "").strip()
                     stream_buffer = ""
-                    if show_draft == "off" or not draft_text:
-                        return
-                    if show_draft == "summary":
-                        draft_text = " ".join(draft_text.split())
-                        if len(draft_text) > draft_max_chars:
-                            draft_text = draft_text[: max(0, draft_max_chars - 3)] + "..."
-                    _print_without_spinner(t(f"  草稿：{draft_text}", dim=True))
+                    last_render_ts = 0.0
 
                 def _flush_reasoning_buffer() -> None:
                     nonlocal reasoning_buffer, reasoning_started
@@ -368,7 +348,7 @@ async def run_interactive_loop(agent: ScheduleAgent):
                 # ── 流式回调 ──
 
                 def on_stream_delta(delta: str) -> None:
-                    """正式回复：Rich Live Markdown 动态渲染"""
+                    """每段 LLM 输出都是正式回复，Rich Live Markdown 流式渲染。"""
                     nonlocal stream_started, stream_buffer, live, last_render_ts, last_text_output_ts
                     if not delta:
                         return
@@ -378,9 +358,8 @@ async def run_interactive_loop(agent: ScheduleAgent):
                         _pause_spinner()
                         with io_lock:
                             _erase_spinner_line()
-                        # 给 spinner 一点时间完全停下，避免首帧残留
                         try:
-                            time.sleep(0.05)
+                            time.sleep(0.08)
                         except Exception:
                             pass
                         _flush_reasoning_buffer()
@@ -428,11 +407,7 @@ async def run_interactive_loop(agent: ScheduleAgent):
                             _print_with_spinner()
                         reasoning_started = False
                         if stream_started:
-                            _pause_spinner()
-                            with io_lock:
-                                _erase_spinner_line()
-                            _teardown_live()
-                            _emit_draft_snapshot()
+                            _persist_live_block()
                         last_render_ts = 0.0
                         _resume_spinner()
                         iteration = event.get("iteration")
@@ -442,11 +417,7 @@ async def run_interactive_loop(agent: ScheduleAgent):
                     elif event_type == "tool_call":
                         _flush_reasoning_buffer()
                         if stream_started:
-                            _pause_spinner()
-                            with io_lock:
-                                _erase_spinner_line()
-                            _teardown_live()
-                            _emit_draft_snapshot()
+                            _persist_live_block()
                             _resume_spinner()
                         name = event.get("name")
                         args = _short(event.get("arguments", {}))
@@ -470,18 +441,10 @@ async def run_interactive_loop(agent: ScheduleAgent):
                     await spinner_task
 
                 # ── 最终回复渲染 ──
-                if stream_started and live is not None:
-                    # Live 正在显示最终回复 → 切为持久化，避免闪烁
-                    live.update(Markdown(response), refresh=True)
-                    live.transient = False
-                    try:
-                        live.__exit__(None, None, None)
-                    except Exception:
-                        pass
-                    live = None
+                if live is not None:
+                    _persist_live_block(response)
                     print()
                 else:
-                    # 无 Live（无 rich 或未进入流式）→ 静态渲染
                     print()
                     if _HAS_RICH and _RICH_CONSOLE is not None:
                         _RICH_CONSOLE.print(Markdown(response))
