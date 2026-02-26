@@ -223,6 +223,7 @@ async def main_async(args: Optional[List[str]] = None):
             session_logger=session_logger,
         ) as agent:
             agent_ref = agent
+            should_finalize_session = True
             try:
                 # 检查是否有命令行参数
                 if args and len(args) > 1:
@@ -232,10 +233,11 @@ async def main_async(args: Optional[List[str]] = None):
                     print(response)
                 else:
                     # 运行交互式循环
-                    await run_interactive_loop(agent)
+                    exit_reason = await run_interactive_loop(agent)
+                    should_finalize_session = exit_reason == "quit"
             finally:
                 # 会话结束时触发记忆总结（必须在 LLM close 之前，因为需要调用 LLM）
-                if agent_ref:
+                if agent_ref and should_finalize_session:
                     try:
                         await agent_ref.finalize_session()
                     except Exception:
@@ -252,7 +254,29 @@ async def main_async(args: Optional[List[str]] = None):
 
 def main():
     """CLI 入口点"""
-    asyncio.run(main_async(sys.argv))
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(main_async(sys.argv))
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        # 顶层兜底：避免事件循环边界的中断直接打出 traceback。
+        return
+    finally:
+        try:
+            pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
+            for task in pending:
+                task.cancel()
+            if pending:
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            loop.run_until_complete(loop.shutdown_asyncgens())
+            shutdown_default_executor = getattr(loop, "shutdown_default_executor", None)
+            if callable(shutdown_default_executor):
+                loop.run_until_complete(shutdown_default_executor())
+        except Exception:
+            pass
+        finally:
+            asyncio.set_event_loop(None)
+            loop.close()
 
 
 if __name__ == "__main__":

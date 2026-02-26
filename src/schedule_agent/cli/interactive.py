@@ -6,6 +6,7 @@ CLI 交互式界面
 
 import asyncio
 import json
+import signal
 import sys
 import shutil
 import threading
@@ -166,8 +167,8 @@ def print_token_usage(agent: ScheduleAgent):
         print()
 
 
-async def run_interactive_loop(agent: ScheduleAgent):
-    """运行交互式对话循环。"""
+async def run_interactive_loop(agent: ScheduleAgent) -> str:
+    """运行交互式对话循环，返回退出原因（quit/sigint/eof）。"""
     print_welcome()
     print(thin_separator())
 
@@ -179,15 +180,63 @@ async def run_interactive_loop(agent: ScheduleAgent):
         pt_prompt = None
 
     prev_total_tokens = 0
+    processing_task: Optional[asyncio.Task[str]] = None
+    is_processing = False
+    interrupted_processing = False
 
-    while True:
-        try:
-            if pt_session is not None and pt_prompt is not None:
-                user_input = (
-                    await pt_session.prompt_async(pt_prompt)
-                ).strip()
-            else:
-                user_input = input(prompt_prefix()).strip()
+    prev_sigint_handler: Any = None
+    sigint_handler_installed = False
+    if threading.current_thread() is threading.main_thread():
+        prev_sigint_handler = signal.getsignal(signal.SIGINT)
+
+        def _sigint_handler(signum: int, frame: Any) -> None:
+            nonlocal processing_task, is_processing, interrupted_processing
+            if is_processing:
+                interrupted_processing = True
+                if processing_task is not None and not processing_task.done():
+                    processing_task.cancel()
+                return
+            raise KeyboardInterrupt
+
+        signal.signal(signal.SIGINT, _sigint_handler)
+        sigint_handler_installed = True
+
+    try:
+        while True:
+            try:
+                if pt_session is not None and pt_prompt is not None:
+                    user_input = (
+                        await pt_session.prompt_async(pt_prompt)
+                    ).strip()
+                else:
+                    user_input = input(prompt_prefix()).strip()
+            except KeyboardInterrupt:
+                if interrupted_processing:
+                    interrupted_processing = False
+                    print()
+                    print(hint("检测到中断信号，已中断当前处理。"))
+                    print(thin_separator())
+                    continue
+                print()
+                print(hint("检测到中断信号，正在退出..."))
+                print()
+                return "sigint"
+            except asyncio.CancelledError:
+                if interrupted_processing:
+                    interrupted_processing = False
+                    print()
+                    print(hint("检测到中断信号，已中断当前处理。"))
+                    print(thin_separator())
+                    continue
+                print()
+                print(hint("检测到中断信号，正在退出..."))
+                print()
+                return "sigint"
+            except EOFError:
+                print()
+                print(label("再见！"))
+                print()
+                return "eof"
 
             if not user_input:
                 continue
@@ -199,9 +248,9 @@ async def run_interactive_loop(agent: ScheduleAgent):
                     cost_str = f"，约 ¥{u['cost_yuan']:.4f}" if u.get("cost_yuan") is not None else ""
                     print(hint(f"本会话共调用 LLM {u['call_count']} 次，合计 token: {u['total_tokens']}（输入 {u['prompt_tokens']} + 输出 {u['completion_tokens']}）{cost_str}"))
                 print()
-                print(label("再见！祝你生活愉快！"))
+                print(label("再见！"))
                 print()
-                break
+                return "quit"
 
             if user_input.lower() == "clear":
                 agent.clear_context()
@@ -430,12 +479,16 @@ async def run_interactive_loop(agent: ScheduleAgent):
                         ms = event.get("duration_ms")
                         _print_with_spinner(hint(f"  → 工具结果: {name} {ok}（{ms}ms） {msg}"))
 
-                response = await agent.process_input(
-                    user_input,
-                    on_stream_delta=on_stream_delta,
-                    on_reasoning_delta=on_reasoning_delta,
-                    on_trace_event=on_trace_event,
+                is_processing = True
+                processing_task = asyncio.create_task(
+                    agent.process_input(
+                        user_input,
+                        on_stream_delta=on_stream_delta,
+                        on_reasoning_delta=on_reasoning_delta,
+                        on_trace_event=on_trace_event,
+                    )
                 )
+                response = await processing_task
                 _stop_spinner()
                 _flush_reasoning_buffer()
                 if spinner_task is not None:
@@ -459,7 +512,31 @@ async def run_interactive_loop(agent: ScheduleAgent):
                 cost = u.get("cost_yuan")
                 print(status_bar(u["total_tokens"], u["call_count"], delta, cost))
 
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                interrupted_processing = False
+                if spinner_stop is not None:
+                    spinner_stop.set()
+                with io_lock:
+                    sys.stdout.write("\r" + " " * shutil.get_terminal_size((80, 20)).columns + "\r")
+                    sys.stdout.flush()
+                if spinner_task is not None:
+                    try:
+                        await spinner_task
+                    except Exception:
+                        pass
+                if live is not None:
+                    try:
+                        live.__exit__(None, None, None)
+                    except Exception:
+                        pass
+                    live = None
+
+                print()
+                print(hint("检测到中断信号，已中断当前处理。"))
+                print(thin_separator())
+                continue
             except Exception as e:
+                interrupted_processing = False
                 if spinner_stop is not None:
                     spinner_stop.set()
                 with io_lock:
@@ -481,14 +558,10 @@ async def run_interactive_loop(agent: ScheduleAgent):
                 print(accent("  抱歉，处理您的请求时发生错误: ") + str(e))
                 print(hint("  请重试或换一种方式表达。"))
                 print(thin_separator())
+            finally:
+                is_processing = False
+                processing_task = None
 
-        except KeyboardInterrupt:
-            print()
-            print(hint("检测到中断信号，正在退出..."))
-            print()
-            break
-        except EOFError:
-            print()
-            print(label("再见！"))
-            print()
-            break
+    finally:
+        if sigint_handler_installed:
+            signal.signal(signal.SIGINT, prev_sigint_handler)

@@ -160,24 +160,27 @@ class TestRunInteractiveLoop:
     async def test_exit_command_quit(self, mock_agent):
         """测试退出命令 quit"""
         with patch('builtins.input', side_effect=['quit']):
-            await run_interactive_loop(mock_agent)
+            reason = await run_interactive_loop(mock_agent)
 
+        assert reason == "quit"
         mock_agent.process_input.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_exit_command_exit(self, mock_agent):
         """测试退出命令 exit"""
         with patch('builtins.input', side_effect=['exit']):
-            await run_interactive_loop(mock_agent)
+            reason = await run_interactive_loop(mock_agent)
 
+        assert reason == "quit"
         mock_agent.process_input.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_exit_command_q(self, mock_agent):
         """测试退出命令 q"""
         with patch('builtins.input', side_effect=['q']):
-            await run_interactive_loop(mock_agent)
+            reason = await run_interactive_loop(mock_agent)
 
+        assert reason == "quit"
         mock_agent.process_input.assert_not_called()
 
     @pytest.mark.asyncio
@@ -219,13 +222,31 @@ class TestRunInteractiveLoop:
     async def test_keyboard_interrupt(self, mock_agent):
         """测试键盘中断"""
         with patch('builtins.input', side_effect=KeyboardInterrupt()):
-            await run_interactive_loop(mock_agent)
+            reason = await run_interactive_loop(mock_agent)
+        assert reason == "sigint"
+
+    @pytest.mark.asyncio
+    @pytest.mark.asyncio
+    async def test_cancelled_error_during_processing_returns_to_input(self, mock_agent, capsys):
+        """测试处理阶段 CancelledError 仅中断当前轮并返回输入态"""
+        mock_agent.process_input = AsyncMock(
+            side_effect=[asyncio.CancelledError(), "这是第二次响应"]
+        )
+
+        with patch('builtins.input', side_effect=['测试输入', '再次输入', 'quit']):
+            reason = await run_interactive_loop(mock_agent)
+
+        assert reason == "quit"
+        assert mock_agent.process_input.call_count == 2
+        captured = capsys.readouterr()
+        assert "已中断当前处理" in captured.out
 
     @pytest.mark.asyncio
     async def test_eof_error(self, mock_agent):
         """测试 EOF 错误"""
         with patch('builtins.input', side_effect=EOFError()):
-            await run_interactive_loop(mock_agent)
+            reason = await run_interactive_loop(mock_agent)
+        assert reason == "eof"
 
     @pytest.mark.asyncio
     async def test_process_input_error(self, mock_agent):
@@ -268,11 +289,29 @@ class TestMainAsync:
                 mock_agent_instance = MagicMock()
                 mock_agent_instance.__aenter__ = AsyncMock(return_value=mock_agent_instance)
                 mock_agent_instance.__aexit__ = AsyncMock()
+                mock_agent_instance.finalize_session = AsyncMock()
                 MockAgent.return_value = mock_agent_instance
 
-                with patch('main.run_interactive_loop', new_callable=AsyncMock) as mock_loop:
+                with patch('main.run_interactive_loop', new_callable=AsyncMock, return_value="quit") as mock_loop:
                     await cli_module.main_async([])
                     mock_loop.assert_called_once_with(mock_agent_instance)
+                mock_agent_instance.finalize_session.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_main_async_skip_finalize_on_sigint_exit(self, mock_config):
+        """测试交互循环因 Ctrl+C 退出时不执行 finalize_session"""
+        with patch('main.get_config', return_value=mock_config):
+            with patch('main.ScheduleAgent') as MockAgent:
+                mock_agent_instance = MagicMock()
+                mock_agent_instance.__aenter__ = AsyncMock(return_value=mock_agent_instance)
+                mock_agent_instance.__aexit__ = AsyncMock()
+                mock_agent_instance.finalize_session = AsyncMock()
+                MockAgent.return_value = mock_agent_instance
+
+                with patch('main.run_interactive_loop', new_callable=AsyncMock, return_value="sigint"):
+                    await cli_module.main_async([])
+
+                mock_agent_instance.finalize_session.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_main_async_single_command(self, mock_config):
@@ -364,12 +403,18 @@ class TestMainAsync:
 class TestMain:
     """测试主入口"""
 
-    def test_main_calls_asyncio_run(self):
-        """测试 main 调用 asyncio.run"""
-        with patch('asyncio.run') as mock_run:
+    def test_main_calls_main_async(self):
+        """测试 main 会执行 main_async"""
+        with patch('main.main_async', new_callable=AsyncMock) as mock_main_async:
             with patch('sys.argv', ['main.py']):
                 cli_module.main()
-                mock_run.assert_called_once()
+                mock_main_async.assert_called_once()
+
+    def test_main_handles_keyboard_interrupt_from_main_async(self):
+        """测试 main 在 main_async 中断时不向外传播"""
+        with patch('main.main_async', new_callable=AsyncMock, side_effect=KeyboardInterrupt()):
+            with patch('sys.argv', ['main.py']):
+                cli_module.main()
 
 
 class TestCLIIntegration:
