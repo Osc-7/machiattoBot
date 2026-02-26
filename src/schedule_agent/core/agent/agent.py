@@ -8,14 +8,18 @@
 import asyncio
 import inspect
 import json
+import os
+import sys
 import time
 from datetime import datetime
 from datetime import timezone as dt_timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
-from schedule_agent.config import Config, MemoryConfig, get_config
+from schedule_agent.config import Config, MemoryConfig, MCPServerConfig, get_config
 from schedule_agent.core.context import ConversationContext, get_time_context
 from schedule_agent.utils.billing import compute_cost_from_calls
+from schedule_agent.core.mcp import MCPClientManager
 from schedule_agent.core.orchestrator import ToolSnapshot, ToolWorkingSetManager
 from schedule_agent.prompts import build_system_prompt as build_prompt
 from schedule_agent.core.llm import LLMClient, LLMResponse, ToolCall, TokenUsage
@@ -25,6 +29,8 @@ from schedule_agent.core.tools import (
     SearchToolsTool,
     ToolResult,
     VersionedToolRegistry,
+    WebExtractorTool,
+    WebSearchTool,
 )
 from schedule_agent.core.memory import (
     WorkingMemory,
@@ -157,6 +163,17 @@ class ScheduleAgent:
                     )
                 )
 
+        # MCP 客户端（在 __aenter__ 中连接）
+        self._mcp_manager: Optional[MCPClientManager] = None
+        self._mcp_connected = False
+
+        # 联网工具（基于 Tavily MCP）
+        if self._config.mcp.enabled:
+            if not self._tool_registry.has("web_search"):
+                self._tool_registry.register(WebSearchTool(registry=self._tool_registry))
+            if not self._tool_registry.has("extract_web_content"):
+                self._tool_registry.register(WebExtractorTool(registry=self._tool_registry))
+
     @property
     def config(self) -> Config:
         """获取当前配置"""
@@ -287,126 +304,137 @@ class ScheduleAgent:
         iteration = 0
         while iteration < self._max_iterations:
             iteration += 1
+            # 为本轮创建上下文快照，确保中断或错误时不会留下不完整的 tool 调用块
+            previous_messages = self._context.get_messages()
 
-            system_prompt = self._build_system_prompt()
-            messages = self._context.get_messages()
-            if self._kernel_enabled:
-                self._last_snapshot = self._working_set.build_snapshot(self._tool_registry)
-                tools_defs = self._last_snapshot.openai_tools
-                self._current_visible_tools = set(self._last_snapshot.tool_names)
-            else:
-                tools_defs = self._tool_registry.get_all_definitions()
-                self._current_visible_tools = set(self._tool_registry.list_names())
+            try:
+                system_prompt = self._build_system_prompt()
+                messages = self._context.get_messages()
+                if self._kernel_enabled:
+                    self._last_snapshot = self._working_set.build_snapshot(self._tool_registry)
+                    tools_defs = self._last_snapshot.openai_tools
+                    self._current_visible_tools = set(self._last_snapshot.tool_names)
+                else:
+                    tools_defs = self._tool_registry.get_all_definitions()
+                    self._current_visible_tools = set(self._tool_registry.list_names())
 
-            if self._session_logger:
-                self._session_logger.on_llm_request(
-                    turn_id=turn_id,
-                    iteration=iteration,
-                    message_count=len(messages),
-                    tool_count=len(tools_defs),
-                    system_prompt_len=len(system_prompt),
-                    system_prompt=system_prompt if self._session_logger.enable_detailed_log else None,
-                    messages=messages if self._session_logger.enable_detailed_log else None,
-                )
-            if on_trace_event:
-                maybe_awaitable = on_trace_event(
-                    {
-                        "type": "llm_request",
-                        "turn_id": turn_id,
-                        "iteration": iteration,
-                        "tool_count": len(tools_defs),
-                    }
-                )
-                if inspect.isawaitable(maybe_awaitable):
-                    await maybe_awaitable
-
-            # 2.1 调用 LLM
-            response = await self._llm_client.chat_with_tools(
-                system_message=system_prompt,
-                messages=messages,
-                tools=tools_defs,
-                tool_choice="auto",
-                on_content_delta=on_stream_delta,
-                on_reasoning_delta=on_reasoning_delta,
-            )
-
-            if self._session_logger:
-                self._session_logger.on_llm_response(turn_id, iteration, response)
-
-            # 累计 token 用量（含 per-call 记录用于阶梯计费）
-            if response.usage:
-                pt, ct = response.usage.prompt_tokens, response.usage.completion_tokens
-                self._token_usage["prompt_tokens"] += pt
-                self._token_usage["completion_tokens"] += ct
-                self._token_usage["total_tokens"] += pt + ct
-                self._token_usage["call_count"] += 1
-                self._usage_calls.append((pt, ct))
-                self._last_prompt_tokens = pt
-
-            # 2.2 处理工具调用
-            if response.tool_calls:
-                # 添加助手消息（包含工具调用）
-                self._add_assistant_message_with_tool_calls(response)
-
-                # 执行所有工具调用
-                for tool_call in response.tool_calls:
-                    if on_trace_event:
-                        maybe_awaitable = on_trace_event(
-                            {
-                                "type": "tool_call",
-                                "turn_id": turn_id,
-                                "iteration": iteration,
-                                "tool_call_id": tool_call.id,
-                                "name": tool_call.name,
-                                "arguments": tool_call.arguments,
-                            }
-                        )
-                        if inspect.isawaitable(maybe_awaitable):
-                            await maybe_awaitable
-                    if self._session_logger:
-                        self._session_logger.on_tool_call(turn_id, iteration, tool_call)
-                    t0 = time.perf_counter()
-                    result = await self._execute_tool_call(tool_call)
-                    duration_ms = int((time.perf_counter() - t0) * 1000)
-                    if on_trace_event:
-                        maybe_awaitable = on_trace_event(
-                            {
-                                "type": "tool_result",
-                                "turn_id": turn_id,
-                                "iteration": iteration,
-                                "tool_call_id": tool_call.id,
-                                "name": tool_call.name,
-                                "success": result.success,
-                                "message": result.message,
-                                "duration_ms": duration_ms,
-                                "error": result.error,
-                            }
-                        )
-                        if inspect.isawaitable(maybe_awaitable):
-                            await maybe_awaitable
-                    if self._session_logger:
-                        self._session_logger.on_tool_result(
-                            turn_id, iteration, tool_call.id, result, duration_ms
-                        )
-                    self._context.add_tool_result(tool_call.id, result)
-
-                # 继续循环，让 LLM 处理工具结果
-                continue
-
-            # 2.3 最终响应
-            if response.content:
-                self._context.add_assistant_message(content=response.content)
                 if self._session_logger:
-                    self._session_logger.on_assistant_message(turn_id, response.content)
-                final_response = response.content
-                break
+                    self._session_logger.on_llm_request(
+                        turn_id=turn_id,
+                        iteration=iteration,
+                        message_count=len(messages),
+                        tool_count=len(tools_defs),
+                        system_prompt_len=len(system_prompt),
+                        system_prompt=system_prompt if self._session_logger.enable_detailed_log else None,
+                        messages=messages if self._session_logger.enable_detailed_log else None,
+                    )
+                if on_trace_event:
+                    maybe_awaitable = on_trace_event(
+                        {
+                            "type": "llm_request",
+                            "turn_id": turn_id,
+                            "iteration": iteration,
+                            "tool_count": len(tools_defs),
+                        }
+                    )
+                    if inspect.isawaitable(maybe_awaitable):
+                        await maybe_awaitable
 
-            # 如果没有内容也没有工具调用，返回默认响应
-            fallback = "抱歉，我无法处理您的请求。请重试或换一种方式表达。"
-            if self._session_logger:
-                self._session_logger.on_assistant_message(turn_id, fallback)
-            final_response = fallback
-            break
+                # 2.1 调用 LLM
+                response = await self._llm_client.chat_with_tools(
+                    system_message=system_prompt,
+                    messages=messages,
+                    tools=tools_defs,
+                    tool_choice="auto",
+                    on_content_delta=on_stream_delta,
+                    on_reasoning_delta=on_reasoning_delta,
+                )
+
+                if self._session_logger:
+                    self._session_logger.on_llm_response(turn_id, iteration, response)
+
+                # 累计 token 用量（含 per-call 记录用于阶梯计费）
+                if response.usage:
+                    pt, ct = response.usage.prompt_tokens, response.usage.completion_tokens
+                    self._token_usage["prompt_tokens"] += pt
+                    self._token_usage["completion_tokens"] += ct
+                    self._token_usage["total_tokens"] += pt + ct
+                    self._token_usage["call_count"] += 1
+                    self._usage_calls.append((pt, ct))
+                    self._last_prompt_tokens = pt
+
+                # 2.2 处理工具调用
+                if response.tool_calls:
+                    # 添加助手消息（包含工具调用）
+                    self._add_assistant_message_with_tool_calls(response)
+
+                    # 执行所有工具调用
+                    for tool_call in response.tool_calls:
+                        if on_trace_event:
+                            maybe_awaitable = on_trace_event(
+                                {
+                                    "type": "tool_call",
+                                    "turn_id": turn_id,
+                                    "iteration": iteration,
+                                    "tool_call_id": tool_call.id,
+                                    "name": tool_call.name,
+                                    "arguments": tool_call.arguments,
+                                }
+                            )
+                            if inspect.isawaitable(maybe_awaitable):
+                                await maybe_awaitable
+                        if self._session_logger:
+                            self._session_logger.on_tool_call(turn_id, iteration, tool_call)
+                        t0 = time.perf_counter()
+                        result = await self._execute_tool_call(tool_call)
+                        duration_ms = int((time.perf_counter() - t0) * 1000)
+                        if on_trace_event:
+                            maybe_awaitable = on_trace_event(
+                                {
+                                    "type": "tool_result",
+                                    "turn_id": turn_id,
+                                    "iteration": iteration,
+                                    "tool_call_id": tool_call.id,
+                                    "name": tool_call.name,
+                                    "success": result.success,
+                                    "message": result.message,
+                                    "duration_ms": duration_ms,
+                                    "error": result.error,
+                                }
+                            )
+                            if inspect.isawaitable(maybe_awaitable):
+                                await maybe_awaitable
+                        if self._session_logger:
+                            self._session_logger.on_tool_result(
+                                turn_id, iteration, tool_call.id, result, duration_ms
+                            )
+                        self._context.add_tool_result(tool_call.id, result)
+
+                    # 继续循环，让 LLM 处理工具结果
+                    continue
+
+                # 2.3 最终响应
+                if response.content:
+                    self._context.add_assistant_message(content=response.content)
+                    if self._session_logger:
+                        self._session_logger.on_assistant_message(turn_id, response.content)
+                    final_response = response.content
+                    break
+
+                # 如果没有内容也没有工具调用，返回默认响应
+                fallback = "抱歉，我无法处理您的请求。请重试或换一种方式表达。"
+                if self._session_logger:
+                    self._session_logger.on_assistant_message(turn_id, fallback)
+                final_response = fallback
+                break
+            except asyncio.CancelledError:
+                # 中断时回滚上下文到本轮开始前，避免残留不完整的 tool 调用块
+                self._context.messages = previous_messages
+                raise
+            except Exception:
+                # 其他异常同样回滚，防止留下非法消息序列
+                self._context.messages = previous_messages
+                raise
 
         # 2.4 合并并行总结结果（若已启动）
         if summary_task is not None and summary_recent_start is not None:
@@ -571,11 +599,70 @@ class ScheduleAgent:
         await self._llm_client.close()
         if self._summary_llm_client is not self._llm_client:
             await self._summary_llm_client.close()
+        if self._mcp_manager:
+            await self._mcp_manager.close()
+            self._mcp_manager = None
+            self._mcp_connected = False
 
     async def __aenter__(self) -> "ScheduleAgent":
         """异步上下文管理器入口"""
+        if self._config.mcp.enabled and not self._mcp_connected:
+            self._config.mcp.servers = self._build_runtime_mcp_servers(self._config.mcp.servers)
+            self._mcp_manager = MCPClientManager(self._config.mcp)
+            await self._mcp_manager.connect()
+            self._tool_registry.update_tools(self._mcp_manager.get_proxy_tools())
+            self._mcp_connected = True
         return self
 
+    def _build_runtime_mcp_servers(self, servers: List[MCPServerConfig]) -> List[MCPServerConfig]:
+        """
+        构建运行期 MCP servers：
+        - 保留用户配置
+        - 若缺少本地 schedule_tools server，则自动补充
+        """
+        runtime_servers = [s.model_copy(deep=True) for s in servers]
+
+        script_path = Path(__file__).resolve().parents[4] / "mcp_server.py"
+        script_path_str = str(script_path)
+        project_root = str(script_path.parent)
+        project_src = str(script_path.parent / "src")
+
+        has_local_server = any(
+            (
+                server.name == "schedule_tools"
+                or (server.command in {"python", "python3", sys.executable} and script_path_str in server.args)
+                or ("mcp_server.py" in server.args)
+            )
+            for server in runtime_servers
+        )
+
+        if not has_local_server:
+            runtime_servers.append(
+                MCPServerConfig(
+                    name="schedule_tools",
+                    enabled=True,
+                    transport="stdio",
+                    command=sys.executable,
+                    args=[script_path_str],
+                    env={
+                        "PYTHONPATH": (
+                            f"{project_src}:{os.environ.get('PYTHONPATH', '')}"
+                            if os.environ.get("PYTHONPATH")
+                            else project_src
+                        )
+                    },
+                    cwd=project_root,
+                    tool_name_prefix="mcp_local",
+                    init_timeout_seconds=15,
+                    call_timeout_seconds=self._config.mcp.call_timeout_seconds,
+                )
+            )
+
+        return runtime_servers
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """异步上下文管理器退出"""
+        await self.close()
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         """异步上下文管理器退出"""
         await self.close()

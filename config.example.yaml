@@ -42,10 +42,10 @@ llm:
   stream: true  # 启用流式输出（推荐）
   # 联网搜索配置（仅支持阿里云百炼 Qwen）
   # 参见 https://help.aliyun.com/zh/model-studio/web-search
-  enable_search: false  # 是否启用联网搜索
+  enable_search: false  # 是否启用模型内建联网搜索（推荐保持 false，改用 Tavily MCP 工具）
   enable_thinking: false  # 是否启用思考模式（通过 extra_body 传递）
   thinking_budget: null  # 思考长度上限（可选；仅部分模型支持）
-  enable_web_extractor: false  # 是否启用网页抓取功能（需 enable_search=true 和 enable_thinking=true）
+  enable_web_extractor: false  # 是否启用模型内建网页抓取（推荐保持 false，改用 extract_web_content + Tavily）
   # 参见 https://help.aliyun.com/zh/model-studio/web-extractor
   search_options:
     forced_search: false  # 是否强制联网搜索（默认模型自动判断）
@@ -95,6 +95,7 @@ agent:
     - "search_tools"
     - "call_tool"
     - "load_skill"
+    - "web_search"
     - "read_file"
     - "write_file"
     - "run_command"
@@ -107,21 +108,40 @@ agent:
 # MCP 客户端配置（可选）
 # 用于接入外部 MCP Server，并将远程工具自动注册到 Agent
 mcp:
-  enabled: false
+  enabled: true
   call_timeout_seconds: 30
-  servers: []
-  # 示例：
-  # servers:
-  #   - name: "schedule_tools"
-  #     enabled: true
-  #     transport: "stdio"
-  #     command: "python"
-  #     args: ["mcp_server.py"]
-  #     env: {}
-  #     cwd: "."
-  #     tool_name_prefix: "mcp_local"
-  #     init_timeout_seconds: 15
-  #     call_timeout_seconds: 30
+  servers:
+    # 本地工具 MCP（自动注册到 Agent）
+    - name: "schedule_tools"
+      enabled: true
+      transport: "stdio"
+      command: "python"
+      args: ["mcp_server.py"]
+      env: {}
+      cwd: "."
+      tool_name_prefix: "mcp_local"
+      init_timeout_seconds: 15
+      call_timeout_seconds: 30
+    # Tavily 远程 MCP（用于 web_search / extract_web_content）
+    # 使用方式：
+    #   export TAVILY_API_KEY="tvly-xxxx"  # 从 https://tavily.com 获取 API Key
+    #   # 启动程序，${TAVILY_API_KEY} 会被自动替换为环境变量值
+    - name: "tavily"
+      enabled: false
+      transport: "stdio"
+      command: "npx"
+      args:
+        - "-y"
+        - "mcp-remote"
+        - "https://mcp.tavily.com/mcp/?tavilyApiKey=${TAVILY_API_KEY}"
+      env:
+        # 禁用 mcp-remote 的调试日志输出，避免污染 CLI
+        NODE_NO_WARNINGS: "1"
+        NODE_ENV: "production"
+      cwd: "."
+      tool_name_prefix: "tavily"
+      init_timeout_seconds: 20
+      call_timeout_seconds: 45
 
 # 技能配置（仅从 cli_dir 读取，与 npx skills 统一）
 skills:

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import sys
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -56,15 +58,27 @@ class MCPClientManager:
             if server.transport != "stdio":
                 continue
 
+            # 合并环境变量：确保 stderr 被重定向，避免 MCP server 日志污染 CLI
+            merged_env = {**os.environ, **(server.env or {})}
+            # 使用 NODE_OPTIONS 禁用 Node.js 的警告输出
+            merged_env["NODE_NO_WARNINGS"] = "1"
+            merged_env["NODE_ENV"] = "production"
+
             server_params = StdioServerParameters(
                 command=server.command,
                 args=server.args,
-                env=server.env or None,
+                env=merged_env,
                 cwd=server.cwd,
             )
 
+            # 对 mcp-remote 进程静默 stderr，避免其调试日志污染主 CLI 输出。
+            if server.command == "npx" and any(arg == "mcp-remote" for arg in server.args):
+                errlog = self._exit_stack.enter_context(open(os.devnull, "w"))
+            else:
+                errlog = sys.stderr
+
             read_stream, write_stream = await self._exit_stack.enter_async_context(
-                stdio_client(server_params)
+                stdio_client(server_params, errlog=errlog)
             )
             session = await self._exit_stack.enter_async_context(
                 ClientSession(read_stream, write_stream)

@@ -31,7 +31,6 @@ from schedule_agent.core.tools import (
     ToolResult,
     UpdateEventTool,
     UpdateTaskTool,
-    WebExtractorTool,
     WriteFileTool,
 )
 
@@ -55,9 +54,6 @@ def get_default_mcp_tools(config: Optional[Config] = None) -> List[BaseTool]:
         tools.append(ReadFileTool(config=config))
         tools.append(WriteFileTool(config=config))
         tools.append(ModifyFileTool(config=config))
-
-    if config and config.llm.provider == "qwen":
-        tools.append(WebExtractorTool(config=config))
 
     return tools
 

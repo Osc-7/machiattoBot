@@ -259,7 +259,7 @@ def build_system_prompt(
         time_section = load("runtime_time")
         if time_section:
             _maybe_append(parts, time_section.format(time_context=time_context))
-        if config.llm.enable_search and config.llm.provider == "qwen":
+        if config.mcp.enabled:
             web_capabilities = [
                 "- 当前新闻、热点事件",
                 "- 实时天气信息",

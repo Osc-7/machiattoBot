@@ -20,6 +20,7 @@ from .storage_tools import (
 from .versioned_registry import VersionedToolRegistry
 from .file_tools import ReadFileTool, WriteFileTool, ModifyFileTool
 from .web_extractor_tool import WebExtractorTool
+from .web_search_tool import WebSearchTool
 from .command_tools import RunCommandTool
 from .memory_tools import (
     MemorySearchLongTermTool,
@@ -54,6 +55,7 @@ __all__ = [
     "GetFreeSlotsTool",
     "PlanTasksTool",
     "WebExtractorTool",
+    "WebSearchTool",
     "RunCommandTool",
     "MemorySearchLongTermTool",
     "MemorySearchContentTool",

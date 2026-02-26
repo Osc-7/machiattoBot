@@ -38,5 +38,15 @@ fi
 export PYTHONPATH=$(pwd)/src:$PYTHONPATH
 log_info "PYTHONPATH 已设置: $PYTHONPATH"
 
+# 4. 加载本地环境变量（可选）
+# 若项目根目录存在 .env，则 source 进当前 shell，便于配置 API Key 等。
+# 使用 Tavily 联网搜索时，在 .env 中加入一行即可：
+#   export TAVILY_API_KEY="tvly-你的密钥"
+if [ -f ".env" ]; then
+    set -a
+    source .env
+    set +a
+    log_success "已加载 .env"
+fi
 
 echo -e "${GREEN}✅ 环境就绪 (${PYTHON_BIN})${NC}"

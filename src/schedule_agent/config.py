@@ -335,6 +335,7 @@ class AgentConfig(BaseModel):
             "search_tools",
             "call_tool",
             "load_skill",  # 技能按需加载；仅 skills.enabled 时注册
+            "web_search",
             "read_file",
             "write_file",
             "run_command",
@@ -509,6 +510,28 @@ def load_config(config_path: Optional[Path] = None) -> Config:
 
     # 兼容旧配置：user 已迁移至 prompts/system/user.md
     raw_config.pop("user", None)
+
+    # MCP servers 配置中的环境变量替换（支持 ${ENV_VAR} 语法）
+    if "mcp" in raw_config and "servers" in raw_config["mcp"]:
+        import re
+
+        def expand_env_vars(obj):
+            """递归替换字符串中的 ${ENV_VAR} 为环境变量值"""
+            if isinstance(obj, str):
+                pattern = r"\$\{([^}]+)\}"
+
+                def replacer(match):
+                    var_name = match.group(1)
+                    return os.environ.get(var_name, match.group(0))
+
+                return re.sub(pattern, replacer, obj)
+            elif isinstance(obj, list):
+                return [expand_env_vars(item) for item in obj]
+            elif isinstance(obj, dict):
+                return {k: expand_env_vars(v) for k, v in obj.items()}
+            return obj
+
+        raw_config["mcp"]["servers"] = expand_env_vars(raw_config["mcp"]["servers"])
 
     return Config(**raw_config)
 

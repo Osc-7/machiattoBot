@@ -6,15 +6,12 @@ Schedule Agent CLI 入口
 """
 
 import asyncio
-import os
 import sys
-from pathlib import Path
 from typing import List, Optional
 
-from schedule_agent.config import Config, MCPConfig, MCPServerConfig, get_config
+from schedule_agent.config import Config, get_config
 from schedule_agent.core import ScheduleAgent
 from schedule_agent.cli import run_interactive_loop
-from schedule_agent.core.mcp import MCPClientManager
 from schedule_agent.utils.session_logger import SessionLogger
 from schedule_agent.core.tools import (
     BaseTool,
@@ -32,7 +29,6 @@ from schedule_agent.core.tools import (
     ModifyFileTool,
     GetFreeSlotsTool,
     PlanTasksTool,
-    WebExtractorTool,
     RunCommandTool,
     MemorySearchLongTermTool,
     MemorySearchContentTool,
@@ -78,9 +74,7 @@ def get_default_tools(config: Optional[Config] = None) -> List[BaseTool]:
     if config and config.command_tools.enabled:
         tools.append(RunCommandTool(config=config))
 
-    # 如果配置支持网页抓取（provider=qwen），添加网页抓取工具
-    if config and config.llm.provider == "qwen":
-        tools.append(WebExtractorTool(config=config))
+    # 联网工具（在启用 MCP 时由 Agent 内部注册）
 
     # 技能按需加载工具（skills.enabled 或 skills.cli_dir 时注册）
     if config and ((config.skills.enabled or []) or getattr(config.skills, "cli_dir", None)):
@@ -134,52 +128,6 @@ async def run_single_command(agent: ScheduleAgent, command: str) -> str:
     return await agent.process_input(command)
 
 
-def _build_runtime_mcp_config(config: Config) -> MCPConfig:
-    """
-    构建运行期 MCP 配置。
-
-    当 mcp.enabled=true 时，自动确保本地 mcp_server.py 作为一个 stdio server 被接入。
-    """
-    runtime_mcp = config.mcp.model_copy(deep=True)
-    if not runtime_mcp.enabled:
-        return runtime_mcp
-
-    script_path = Path(__file__).resolve().with_name("mcp_server.py")
-    script_path_str = str(script_path)
-    project_src = str(script_path.parent / "src")
-
-    has_local_server = any(
-        (
-            server.name == "schedule_tools"
-            or (server.command in {"python", "python3", sys.executable} and script_path_str in server.args)
-            or ("mcp_server.py" in server.args)
-        )
-        for server in runtime_mcp.servers
-    )
-    if not has_local_server:
-        runtime_mcp.servers.append(
-            MCPServerConfig(
-                name="schedule_tools",
-                enabled=True,
-                transport="stdio",
-                command=sys.executable,
-                args=[script_path_str],
-                env={
-                    "PYTHONPATH": (
-                        f"{project_src}:{os.environ.get('PYTHONPATH', '')}"
-                        if os.environ.get("PYTHONPATH")
-                        else project_src
-                    )
-                },
-                cwd=str(script_path.parent),
-                tool_name_prefix="mcp_local",
-                init_timeout_seconds=15,
-                call_timeout_seconds=runtime_mcp.call_timeout_seconds,
-            )
-        )
-    return runtime_mcp
-
-
 async def main_async(args: Optional[List[str]] = None):
     """
     异步主函数。
@@ -194,14 +142,6 @@ async def main_async(args: Optional[List[str]] = None):
 
     # 获取默认工具
     tools = get_default_tools(config=config)
-
-    # 按配置接入 MCP 工具
-    mcp_manager: Optional[MCPClientManager] = None
-    if config.mcp.enabled:
-        mcp_runtime_config = _build_runtime_mcp_config(config)
-        mcp_manager = MCPClientManager(mcp_runtime_config)
-        await mcp_manager.connect()
-        tools.extend(mcp_manager.get_proxy_tools())
 
     # 创建 Session 日志记录器（若启用）
     session_logger = None
@@ -243,8 +183,6 @@ async def main_async(args: Optional[List[str]] = None):
                     except Exception:
                         pass  # 静默处理，避免干扰终端
     finally:
-        if mcp_manager:
-            await mcp_manager.close()
         if session_logger:
             turn_count = agent_ref.get_turn_count() if agent_ref else 0
             total_usage = agent_ref.get_token_usage() if agent_ref else None
