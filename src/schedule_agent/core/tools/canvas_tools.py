@@ -87,6 +87,13 @@ class SyncCanvasTool(BaseTool):
         return str(event_id) if event_id else None
 
     async def execute(self, **kwargs) -> ToolResult:
+        if self._config and not self._config.canvas.enabled:
+            return ToolResult(
+                success=False,
+                error="CANVAS_DISABLED",
+                message="Canvas 工具已注册但当前处于禁用状态，请在 config.yaml 中设置 canvas.enabled=true",
+            )
+
         canvas_config = self._build_canvas_config()
         if canvas_config is None:
             return ToolResult(

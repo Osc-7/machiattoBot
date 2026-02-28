@@ -64,6 +64,7 @@ class TestGetDefaultTools:
             "delete_schedule_data",
             "get_free_slots",
             "plan_tasks",
+            "sync_canvas",
         ]
 
         for expected in expected_tools:

@@ -99,9 +99,8 @@ def get_default_tools(config: Optional[Config] = None) -> List[BaseTool]:
     if config and config.multimodal.enabled:
         tools.append(AnalyzeImageTool(config=config))
 
-    # Canvas 同步工具
-    if config and config.canvas.enabled:
-        tools.append(SyncCanvasTool(config=config))
+    # Canvas 同步工具（始终注册，便于 search_tools 发现；启用状态在工具内部校验）
+    tools.append(SyncCanvasTool(config=config))
 
     return tools
 

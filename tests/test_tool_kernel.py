@@ -23,9 +23,15 @@ from schedule_agent.core.tools import (
 
 
 class DummyTool(BaseTool):
-    def __init__(self, name: str = "dummy_tool", description: str = "dummy"):
+    def __init__(
+        self,
+        name: str = "dummy_tool",
+        description: str = "dummy",
+        tags: Optional[list[str]] = None,
+    ):
         self._name = name
         self._description = description
+        self._tags = tags or []
         self.called = False
         self.called_kwargs: Dict[str, Any] = {}
 
@@ -45,6 +51,7 @@ class DummyTool(BaseTool):
                     required=False,
                 )
             ],
+            tags=self._tags,
         )
 
     async def execute(self, **kwargs) -> ToolResult:
@@ -62,6 +69,20 @@ class TestVersionedRegistry:
         results = registry.search("日程", limit=5)
         names = [item["name"] for item in results]
         assert "add_event" in names
+
+    def test_search_tags_case_insensitive(self):
+        registry = VersionedToolRegistry()
+        registry.register(
+            DummyTool(
+                name="sync_canvas",
+                description="同步 canvas 作业",
+                tags=["canvas", "同步"],
+            )
+        )
+
+        results = registry.search(query="", tags=["Canvas"], limit=5)
+        names = [item["name"] for item in results]
+        assert "sync_canvas" in names
 
 
 class TestKernelTools:

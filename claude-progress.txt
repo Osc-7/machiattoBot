@@ -927,3 +927,21 @@ tests/                   # 测试目录
 ### 备注:
 - `tests/test_canvas_connection.py` 为真实 Canvas API 集成测试，默认跳过，避免在 CI/本地无密钥环境误失败。
 - 通过 `config.canvas.enabled` 控制是否向 Agent 暴露 `sync_canvas`，默认关闭。
+
+## 2026-02-28 - 任务: USR-CANVAS-TOOL-002 修复 search_tools 无法发现 sync_canvas
+
+### 完成内容:
+- 修复工具可发现性：`main.py` 中 `sync_canvas` 改为始终注册，确保 `search_tools` 可检索到
+- 增加禁用态保护：`SyncCanvasTool.execute()` 在 `canvas.enabled=false` 时返回 `CANVAS_DISABLED`
+- 修复标签匹配问题：`VersionedToolRegistry.search()` 标签筛选改为大小写不敏感
+- 更新测试：
+  - `tests/test_canvas_tool.py` 增加 `CANVAS_DISABLED` 与缺失 API Key 场景
+  - `tests/test_cli.py` 默认工具断言包含 `sync_canvas`
+  - `tests/test_tool_kernel.py` 增加 tags 大小写不敏感检索测试
+
+### 测试:
+- 运行 `pytest tests/ -v`
+- 结果：`515 passed, 5 skipped`
+
+### 备注:
+- `canvas_implementation_plan.md` 与 `canvas_integration_task.md` 按用户确认已删除并纳入提交。

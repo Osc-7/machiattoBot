@@ -66,9 +66,23 @@ class _FakeCanvasSync:
 
 
 @pytest.mark.asyncio
-async def test_sync_canvas_missing_api_key(monkeypatch):
+async def test_sync_canvas_disabled(monkeypatch):
     monkeypatch.delenv("CANVAS_API_KEY", raising=False)
     config = Config(llm=LLMConfig(api_key="x", model="x"))
+    tool = SyncCanvasTool(config=config)
+
+    result = await tool.execute()
+    assert result.success is False
+    assert result.error == "CANVAS_DISABLED"
+
+
+@pytest.mark.asyncio
+async def test_sync_canvas_missing_api_key(monkeypatch):
+    monkeypatch.delenv("CANVAS_API_KEY", raising=False)
+    config = Config(
+        llm=LLMConfig(api_key="x", model="x"),
+        canvas=CanvasIntegrationConfig(enabled=True, api_key=None),
+    )
     tool = SyncCanvasTool(config=config)
 
     result = await tool.execute()

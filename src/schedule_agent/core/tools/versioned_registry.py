@@ -174,7 +174,7 @@ class VersionedToolRegistry:
         exclude = set(exclude_names or [])
         q = (query or "").strip().lower()
         tokens = [t for t in re.split(r"[\s,，。:：;；/\\|]+", q) if t]
-        tag_filter = set(tags) if tags else set()
+        tag_filter = {str(tag).strip().lower() for tag in (tags or []) if str(tag).strip()}
         items: List[ToolSearchItem] = []
 
         for name, tool in tools.items():
@@ -183,7 +183,8 @@ class VersionedToolRegistry:
             definition = tool.get_definition()
             
             # 标签过滤
-            if tag_filter and not tag_filter.intersection(definition.tags):
+            def_tags = {str(tag).strip().lower() for tag in (definition.tags or []) if str(tag).strip()}
+            if tag_filter and not tag_filter.intersection(def_tags):
                 continue
             
             text_parts: List[str] = [name, definition.description]
@@ -212,7 +213,7 @@ class VersionedToolRegistry:
             
             # 标签匹配加分
             if tag_filter:
-                matched_tags = tag_filter.intersection(definition.tags)
+                matched_tags = tag_filter.intersection(def_tags)
                 score += len(matched_tags) * 0.5
 
             if score <= 0:
