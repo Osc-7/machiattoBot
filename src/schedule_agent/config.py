@@ -509,6 +509,61 @@ class UIConfig(BaseModel):
     )
 
 
+class AutomationJobConfig(BaseModel):
+    """单个自动化定时任务配置。
+
+    这是一个高层配置入口，供用户在 config.yaml 中用以下几种方式声明后台定时任务：
+    1. “任务描述 + 间隔时间”（interval）
+    2. “任务描述 + 每天单个时刻”（daily_time）
+    3. “任务描述 + 每天多个时刻”（times）
+    4. “任务描述 + 起始时刻 + 间隔时间”（start_time + interval）
+    加载时会被转换为 automation 子系统中的 JobDefinition。
+    """
+
+    description: str = Field(
+        ...,
+        description="任务触发时给 Agent 的自然语言指令，例如“请调用 sync_sources(source='email') 并输出操作+结果”。",
+    )
+    interval_minutes: int = Field(
+        default=60,
+        ge=1,
+        description="任务执行间隔（分钟）。用于 interval 模式，或与 start_time 搭配表示“从某个时刻起按间隔滚动触发”。",
+    )
+    daily_time: Optional[str] = Field(
+        default=None,
+        description="可选：每天触发的本地时间（HH:MM，采用 time.timezone 时区）。设置后语义为“每天这个时间点执行一次”。",
+    )
+    times: Optional[List[str]] = Field(
+        default=None,
+        description="可选：每天多个固定触发时间（HH:MM）列表，例如 [\"08:00\", \"14:00\", \"20:00\"]。若设置则优先于 daily_time。",
+    )
+    start_time: Optional[str] = Field(
+        default=None,
+        description="可选：起始时间（HH:MM），与 interval_minutes 搭配，表示“从 start_time 开始，每隔 interval_minutes 分钟触发一次”。",
+    )
+    job_type: str = Field(
+        default="agent.custom",
+        description="任务类型标识，用于区分不同类的定时任务。",
+    )
+    user_id: str = Field(
+        default="default",
+        description="逻辑用户 ID，用于区分不同用户的后台任务。",
+    )
+    enabled: bool = Field(
+        default=True,
+        description="是否启用该任务。",
+    )
+
+
+class AutomationConfig(BaseModel):
+    """自动化定时任务整体配置。"""
+
+    jobs: List[AutomationJobConfig] = Field(
+        default_factory=list,
+        description="通过配置声明的自动化定时任务列表。",
+    )
+
+
 class Config(BaseModel):
     """应用配置"""
 
@@ -556,6 +611,12 @@ class Config(BaseModel):
     sjtu_jw: SjtuJwConfig = Field(
         default_factory=SjtuJwConfig,
         description="上海交通大学教学信息服务网课表同步配置",
+    )
+    # 注意：当前 automation.jobs 只作为高层声明入口，
+    # 实际调度仍以 data/automation/job_definitions.json 为准。
+    automation: AutomationConfig = Field(
+        default_factory=AutomationConfig,
+        description="自动化定时任务配置（声明式配置 job_definitions）。",
     )
 
 

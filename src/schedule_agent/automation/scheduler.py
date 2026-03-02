@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Dict, Optional
 
 from .event_bus import AsyncEventBus
@@ -60,6 +60,10 @@ class AutomationScheduler:
         self._task_queue = task_queue
         self._tasks: Dict[str, asyncio.Task] = {}
         self._running = False
+        # 周期性检查 job_definitions 是否有新增/禁用的任务，默认 60s 刷新一次。
+        # 仅在队列模式下实际有意义，但在 event_bus 模式下开启也无害。
+        self._reload_interval: float = 60.0
+        self._watch_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
         if self._running:
@@ -69,6 +73,10 @@ class AutomationScheduler:
         for job in self._job_def_repo.get_enabled():
             self._tasks[job.job_id] = asyncio.create_task(self._run_loop(job), name=f"scheduler:{job.job_id}")
 
+        # 队列驱动模式下，支持在运行期通过修改 job_definitions.json 添加/禁用任务，
+        # 由后台 watcher 周期性刷新内存中的任务列表，避免必须重启 agent_worker。
+        self._watch_task = asyncio.create_task(self._watch_job_definitions(), name="scheduler:watcher")
+
     async def stop(self) -> None:
         self._running = False
         for task in self._tasks.values():
@@ -76,6 +84,14 @@ class AutomationScheduler:
         if self._tasks:
             await asyncio.gather(*self._tasks.values(), return_exceptions=True)
         self._tasks.clear()
+
+        if self._watch_task is not None:
+            self._watch_task.cancel()
+            try:
+                await self._watch_task
+            except Exception:
+                pass
+            self._watch_task = None
 
     async def run_job_once(self, job: JobDefinition) -> JobRun:
         run = JobRun(
@@ -103,7 +119,123 @@ class AutomationScheduler:
     async def _run_loop(self, job: JobDefinition) -> None:
         while self._running:
             await self.run_job_once(job)
-            await asyncio.sleep(job.interval_seconds)
+            await asyncio.sleep(self._compute_sleep_seconds(job))
+
+    def _compute_sleep_seconds(self, job: JobDefinition) -> float:
+        """根据 JobDefinition 计算下一次调度前应 sleep 的秒数。
+
+        优先顺序：
+        1. payload['times']: 每天多个闹钟时间点（HH:MM 列表）
+        2. payload['start_time'] + job.interval_seconds: 起始时刻 + 间隔
+        3. payload['daily_time']: 每天单个闹钟时间点
+        4. 退回简单的 interval_seconds 间隔
+        """
+        delay = float(job.interval_seconds)
+        payload = job.payload_template or {}
+
+        # 1) 多个闹钟时间点：payload['times'] = ["08:00", "14:00", ...]
+        times_raw = payload.get("times")
+        times_list: list[str] = []
+        if isinstance(times_raw, list):
+            times_list = [str(t).strip() for t in times_raw if str(t).strip()]
+        elif isinstance(times_raw, str):
+            times_list = [s.strip() for s in times_raw.split(",") if s.strip()]
+        if times_list:
+            candidates: list[int] = []
+            for t in times_list:
+                try:
+                    h_str, m_str = t.split(":", 1)
+                    h = int(h_str)
+                    m = int(m_str)
+                    if 0 <= h <= 23 and 0 <= m <= 59:
+                        candidates.append(h * 3600 + m * 60)
+                except Exception:
+                    continue
+            if candidates:
+                now = datetime.now()
+                now_sec = now.hour * 3600 + now.minute * 60 + now.second
+                today_future = [c for c in candidates if c > now_sec]
+                if today_future:
+                    next_sec = min(today_future)
+                    seconds = next_sec - now_sec
+                else:
+                    # 今天都过了，选明天的最早一个
+                    first = min(candidates)
+                    seconds = (24 * 3600 - now_sec) + first
+                return max(1.0, float(seconds))
+
+        # 2) 起始时刻 + 间隔：payload['start_time'] + job.interval_seconds
+        start_time = payload.get("start_time")
+        if start_time:
+            try:
+                h_str, m_str = str(start_time).split(":", 1)
+                h = int(h_str)
+                m = int(m_str)
+                if 0 <= h <= 23 and 0 <= m <= 59:
+                    period = max(1.0, delay)
+                    now = datetime.now()
+                    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                    first = midnight + timedelta(hours=h, minutes=m)
+                    t = first
+                    # 沿着时间线按 interval 向前推进，直到超过当前时间
+                    while t <= now:
+                        t = t + timedelta(seconds=period)
+                    seconds = (t - now).total_seconds()
+                    return max(1.0, seconds)
+            except Exception:
+                # 配置非法时回退其他语义
+                pass
+
+        # 3) 单个 daily_time 闹钟
+        daily_time = payload.get("daily_time")
+        if daily_time:
+            try:
+                # daily_time: "HH:MM"
+                hour_str, minute_str = str(daily_time).split(":", 1)
+                hour = int(hour_str)
+                minute = int(minute_str)
+                if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                    return max(1.0, delay)
+            except Exception:
+                # 配置非法时回退 interval 语义
+                return max(1.0, delay)
+
+            # 使用系统本地时间计算下一次触发时刻
+            now = datetime.now()
+            target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if target <= now:
+                target = target + timedelta(days=1)
+
+            seconds = (target - now).total_seconds()
+            return max(1.0, seconds)
+
+        # 4) 退回简单 interval 语义
+        return max(1.0, delay)
+
+    async def _watch_job_definitions(self) -> None:
+        """后台刷新 job_definitions，支持运行时新增/禁用定时任务."""
+        while self._running:
+            await asyncio.sleep(self._reload_interval)
+            try:
+                enabled_jobs = self._job_def_repo.get_enabled()
+                enabled_ids = {job.job_id for job in enabled_jobs}
+
+                # 新增的 enabled 任务：启动对应调度协程
+                for job in enabled_jobs:
+                    if job.job_id not in self._tasks:
+                        self._tasks[job.job_id] = asyncio.create_task(
+                            self._run_loop(job),
+                            name=f"scheduler:{job.job_id}",
+                        )
+
+                # 已被删除或禁用的任务：取消并移除调度协程
+                for job_id in list(self._tasks.keys()):
+                    if job_id not in enabled_ids:
+                        task = self._tasks.pop(job_id)
+                        task.cancel()
+            except Exception:
+                # 防御性：不让 watcher 异常影响主循环。
+                continue
 
     async def _dispatch_job(self, job: JobDefinition) -> None:
         # 队列模式：推送 AgentTask，由 agent_worker 消费执行
@@ -132,14 +264,19 @@ class AutomationScheduler:
         """构造 AgentTask 并推送到队列，session_id 含日期保证当天唯一。"""
         from .agent_task import make_cron_task
 
-        instruction = _JOB_INSTRUCTIONS.get(job.job_type)
-        if instruction is None:
+        payload = job.payload_template or {}
+        # 优先使用 job.payload_template 中显式配置的 instruction；
+        # 若缺失则回退到内置的 _JOB_INSTRUCTIONS 映射以兼容旧行为。
+        instruction = payload.get("instruction") or _JOB_INSTRUCTIONS.get(job.job_type)
+        if not instruction:
             return
+
+        user_id = str(payload.get("user_id") or "default")
 
         task = make_cron_task(
             job_type=job.job_type,
             instruction=instruction,
-            user_id=job.payload_template.get("user_id", "default") if job.payload_template else "default",
+            user_id=user_id,
         )
         self._task_queue.push(task)  # type: ignore[union-attr]
 

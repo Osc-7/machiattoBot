@@ -6,9 +6,14 @@ from datetime import datetime
 import json
 from typing import Any, Optional
 
-from schedule_agent.automation.repositories import AutomationPolicyRepository, _automation_base_dir
+from schedule_agent.automation.repositories import (
+    AutomationPolicyRepository,
+    JobDefinitionRepository,
+    _automation_base_dir,
+)
 from schedule_agent.automation.runtime import get_runtime
-from schedule_agent.automation.types import AutomationPolicy
+from schedule_agent.automation.types import AutomationPolicy, JobDefinition
+from schedule_agent.config import get_config
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 
@@ -276,4 +281,189 @@ class GetAutomationActivityTool(BaseTool):
             success=True,
             message=f"共返回 {len(activities)} 条自动化活动简报",
             data={"activities": activities},
+        )
+
+
+class CreateScheduledJobTool(BaseTool):
+    def __init__(self, base_dir: Optional[str] = None):
+        self._repo = JobDefinitionRepository(base_dir=base_dir)
+
+    @property
+    def name(self) -> str:
+        return "create_scheduled_job"
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name=self.name,
+            description=(
+                "创建一个新的定时自动化任务。\n\n"
+                "典型用法：当用户用自然语言描述“每隔多久做什么事情”或“每天几点/几点做什么事情”时，"
+                "使用本工具将其注册为后台定时任务，由 agent_worker 在后台以 ephemeral 会话周期性执行。\n\n"
+                "支持三种主要语义：\n"
+                "1）interval：基于 interval_minutes/interval_seconds 的固定间隔执行；\n"
+                "2）daily_time/times：基于每天一个或多个固定时间点（HH:MM，本地时区）执行；\n"
+                "3）start_time + interval：从某个起始时间开始，按给定间隔滚动触发。"
+            ),
+            parameters=[
+                ToolParameter(
+                    name="instruction",
+                    type="string",
+                    description="定时任务触发时给 Agent 的自然语言指令，例如“请调用 sync_sources(source='email') 并输出操作+结果”。",
+                    required=True,
+                ),
+                ToolParameter(
+                    name="interval_minutes",
+                    type="integer",
+                    description="任务执行间隔（分钟）。可与 interval_seconds 二选一，若都提供则以 interval_seconds 为准。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="interval_seconds",
+                    type="integer",
+                    description="任务执行间隔（秒）。优先于 interval_minutes。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="daily_time",
+                    type="string",
+                    description="可选：每天固定触发时间（HH:MM，采用配置中的 time.timezone）。设置后语义为每天这个时间点执行一次。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="times",
+                    type="string",
+                    description="可选：每天多个触发时间，逗号分隔的 HH:MM 列表，例如 \"08:00,14:00,20:00\"。设置后优先于 daily_time。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="start_time",
+                    type="string",
+                    description="可选：起始时间（HH:MM），与 interval_minutes/interval_seconds 搭配，表示“从此时起按间隔滚动触发”。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="job_type",
+                    type="string",
+                    description="任务类型标识，默认 agent.custom。可用于区分不同类的自定义任务。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="user_id",
+                    type="string",
+                    description="逻辑用户 ID，用于区分不同用户的后台任务，默认 default。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="enabled",
+                    type="boolean",
+                    description="是否启用该任务，默认 true。",
+                    required=False,
+                ),
+            ],
+            tags=["自动化", "定时任务", "调度"],
+        )
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        instruction = str(kwargs.get("instruction") or "").strip()
+        if not instruction:
+            return ToolResult(
+                success=False,
+                error="MISSING_INSTRUCTION",
+                message="缺少定时任务指令（instruction）。",
+            )
+
+        interval_seconds_raw = kwargs.get("interval_seconds")
+        interval_minutes_raw = kwargs.get("interval_minutes")
+        daily_time_raw = kwargs.get("daily_time")
+        times_raw = kwargs.get("times")
+        start_time_raw = kwargs.get("start_time")
+
+        interval_seconds: Optional[int] = None
+        # daily_time / times / start_time 语义配置
+        daily_time: Optional[str] = None
+        if daily_time_raw:
+            daily_time = str(daily_time_raw).strip() or None
+
+        times: list[str] = []
+        if times_raw:
+            if isinstance(times_raw, list):
+                times = [str(t).strip() for t in times_raw if str(t).strip()]
+            else:
+                times = [s.strip() for s in str(times_raw).split(",") if s.strip()]
+
+        start_time: Optional[str] = None
+        if start_time_raw:
+            start_time = str(start_time_raw).strip() or None
+
+        # 解析 interval_seconds
+        if interval_seconds_raw is not None:
+            try:
+                interval_seconds = int(interval_seconds_raw)
+            except (TypeError, ValueError):
+                return ToolResult(
+                    success=False,
+                    error="INVALID_INTERVAL_SECONDS",
+                    message="interval_seconds 必须是正整数（秒）。",
+                )
+        elif interval_minutes_raw is not None:
+            try:
+                minutes = int(interval_minutes_raw)
+            except (TypeError, ValueError):
+                return ToolResult(
+                    success=False,
+                    error="INVALID_INTERVAL_MINUTES",
+                    message="interval_minutes 必须是正整数（分钟）。",
+                )
+            interval_seconds = minutes * 60
+
+        # times / daily_time 模式未显式提供间隔时，默认按 24 小时周期。
+        if (times or daily_time) and (interval_seconds is None or interval_seconds <= 0):
+            interval_seconds = 24 * 3600
+
+        # start_time + interval 语义需要有效的 interval
+        if start_time is not None and (interval_seconds is None or interval_seconds <= 0):
+            return ToolResult(
+                success=False,
+                error="MISSING_INTERVAL_FOR_START_TIME",
+                message="使用 start_time 时必须提供 interval_minutes 或 interval_seconds，且为正数。",
+            )
+
+        # 完全没有任何时间语义且没有间隔
+        if interval_seconds is None or interval_seconds <= 0:
+            return ToolResult(
+                success=False,
+                error="MISSING_INTERVAL",
+                message="必须至少提供 interval_minutes 或 interval_seconds，或设置 daily_time/times/start_time。",
+            )
+
+        job_type = str(kwargs.get("job_type") or "agent.custom")
+        user_id = str(kwargs.get("user_id") or "default")
+        enabled = bool(kwargs.get("enabled", True))
+
+        try:
+            cfg = get_config()
+            timezone = cfg.time.timezone
+        except Exception:
+            timezone = "UTC"
+
+        job = JobDefinition(
+            job_type=job_type,
+            enabled=enabled,
+            interval_seconds=interval_seconds,
+            timezone=timezone,
+            payload_template={
+                "instruction": instruction,
+                "user_id": user_id,
+                **({"daily_time": daily_time} if daily_time is not None else {}),
+                **({"times": times} if times else {}),
+                **({"start_time": start_time} if start_time is not None else {}),
+            },
+        )
+
+        self._repo.create(job)
+
+        return ToolResult(
+            success=True,
+            message="定时任务已创建。",
+            data={"job": job.model_dump(mode="json")},
         )

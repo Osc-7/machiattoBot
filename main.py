@@ -44,6 +44,7 @@ from schedule_agent.core.tools import (
     ConfigureAutomationPolicyTool,
     GetAutomationActivityTool,
     FetchSjtuUndergradScheduleTool,
+    CreateScheduledJobTool,
 )
 from schedule_agent.core.memory import (
     ContentMemory,
@@ -127,6 +128,7 @@ def get_default_tools(config: Optional[Config] = None) -> List[BaseTool]:
     tools.append(AckNotificationTool())
     tools.append(ConfigureAutomationPolicyTool())
     tools.append(GetAutomationActivityTool())
+    tools.append(CreateScheduledJobTool())
 
     return tools
 

@@ -34,6 +34,7 @@ from .automation_tools import (
     AckNotificationTool,
     ConfigureAutomationPolicyTool,
     GetAutomationActivityTool,
+    CreateScheduledJobTool,
 )
 from .sjtu_jw_tools import FetchSjtuUndergradScheduleTool
 
@@ -78,5 +79,6 @@ __all__ = [
     "AckNotificationTool",
     "ConfigureAutomationPolicyTool",
     "GetAutomationActivityTool",
+    "CreateScheduledJobTool",
     "FetchSjtuUndergradScheduleTool",
 ]

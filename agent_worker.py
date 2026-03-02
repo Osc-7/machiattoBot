@@ -40,6 +40,107 @@ logger = logging.getLogger("agent_worker")
 POLL_INTERVAL_SECONDS = 5
 
 
+def _sync_jobs_from_config(config, job_def_repo: JobDefinitionRepository) -> None:
+    """根据 config.automation.jobs 确保对应 JobDefinition 存在/更新。
+
+    设计原则：
+    - 只新增或更新由配置声明的任务，不删除任何已有任务（包括默认内置任务和历史任务）。
+    - 通过 (job_type, user_id, instruction) 三元组匹配已有记录，若存在则更新 interval 和 enabled。
+    """
+    automation_cfg = getattr(config, "automation", None)
+    if not automation_cfg or not getattr(automation_cfg, "jobs", None):
+        return
+
+    existing = job_def_repo.get_all()
+
+    for job_cfg in automation_cfg.jobs:
+        times = getattr(job_cfg, "times", None) or []
+        has_times = bool(times)
+        has_daily_time = bool(getattr(job_cfg, "daily_time", None))
+
+        # times / daily_time 模式：每天固定时刻执行一次，interval 仅作为回退与文档提示。
+        if has_times or has_daily_time:
+            interval_seconds = 24 * 3600
+        else:
+            try:
+                interval_seconds = int(job_cfg.interval_minutes) * 60
+            except Exception:
+                # 跳过非法配置，避免影响其他任务。
+                continue
+
+            if interval_seconds <= 0:
+                continue
+
+        target_job_type = job_cfg.job_type
+        target_user_id = job_cfg.user_id
+        target_instruction = job_cfg.description
+
+        matched = None
+        for job in existing:
+            payload = job.payload_template or {}
+            if (
+                job.job_type == target_job_type
+                and str(payload.get("user_id", "default")) == target_user_id
+                and str(payload.get("instruction", "")) == target_instruction
+            ):
+                matched = job
+                break
+
+        if matched is not None:
+            changed = False
+            if matched.interval_seconds != interval_seconds:
+                matched.interval_seconds = interval_seconds
+                changed = True
+            # 同步 enabled 状态
+            if matched.enabled != job_cfg.enabled:
+                matched.enabled = job_cfg.enabled
+                changed = True
+            # 同步 payload 配置（daily_time / times / start_time 等）
+            payload = matched.payload_template or {}
+            if has_daily_time and payload.get("daily_time") != job_cfg.daily_time:
+                payload["daily_time"] = job_cfg.daily_time
+                changed = True
+            if has_times and payload.get("times") != times:
+                payload["times"] = list(times)
+                changed = True
+            if getattr(job_cfg, "start_time", None) and payload.get("start_time") != job_cfg.start_time:
+                payload["start_time"] = job_cfg.start_time
+                changed = True
+            if changed:
+                matched.payload_template = payload
+            if changed:
+                job_def_repo.update(matched)
+        else:
+            from schedule_agent.automation.types import JobDefinition
+
+            job = JobDefinition(
+                job_type=target_job_type,
+                enabled=job_cfg.enabled,
+                interval_seconds=interval_seconds,
+                timezone=config.time.timezone,
+                payload_template={
+                    "instruction": target_instruction,
+                    "user_id": target_user_id,
+                    **(
+                        {"daily_time": job_cfg.daily_time}
+                        if has_daily_time
+                        else {}
+                    ),
+                    **(
+                        {"times": list(times)}
+                        if has_times
+                        else {}
+                    ),
+                    **(
+                        {"start_time": job_cfg.start_time}
+                        if getattr(job_cfg, "start_time", None)
+                        else {}
+                    ),
+                },
+            )
+            job_def_repo.create(job)
+
+
 async def _consume_loop(
     queue: AgentTaskQueue,
     session_manager: SessionManager,
@@ -120,11 +221,12 @@ async def _main() -> None:
         tools_factory=lambda: get_default_tools(config),
     )
 
-    scheduler = AutomationScheduler(
-        job_def_repo=JobDefinitionRepository(),
-        job_run_repo=JobRunRepository(),
-        task_queue=queue,
-    )
+    job_def_repo = JobDefinitionRepository()
+    # 先将 config.automation.jobs 中声明的任务同步到 JobDefinitionRepository，
+    # 再补齐内置默认任务，确保默认 job_type 仍然存在。
+    _sync_jobs_from_config(config, job_def_repo)
+
+    scheduler = AutomationScheduler(job_def_repo=job_def_repo, job_run_repo=JobRunRepository(), task_queue=queue)
     scheduler.ensure_default_jobs()
     await scheduler.start()
 
