@@ -369,6 +369,90 @@ class TestProcessInput:
         assert result == "工具执行成功！"
 
     @pytest.mark.asyncio
+    async def test_process_input_injects_media_next_call_when_flagged(self, mock_config):
+        """当工具结果声明 embed_in_next_call 时，下一轮请求应携带多模态内容。"""
+        media_tool = MockTool(
+            name="tool_a",
+            execute_result=ToolResult(
+                success=True,
+                message="媒体已就绪",
+                data={"path": "user_file/page_1.png"},
+                metadata={"embed_in_next_call": True},
+            ),
+        )
+        agent = ScheduleAgent(config=mock_config, tools=[media_tool], max_iterations=5)
+
+        response1 = LLMResponse(
+            content=None,
+            tool_calls=[ToolCall(id="call_1", name="tool_a", arguments={"input": "x"})],
+        )
+        response2 = LLMResponse(content="已根据图片继续分析。", tool_calls=[])
+
+        with (
+            patch(
+                "schedule_agent.core.agent.agent.resolve_media_to_content_item",
+                return_value=(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "data:image/png;base64,AAA"},
+                    },
+                    None,
+                ),
+            ),
+            patch.object(
+                agent._llm_client,
+                "chat_with_tools",
+                new_callable=AsyncMock,
+                side_effect=[response1, response2],
+            ) as mocked_chat,
+        ):
+            result = await agent.process_input("请继续")
+
+        assert result == "已根据图片继续分析。"
+        assert mocked_chat.await_count == 2
+        second_call_messages = mocked_chat.await_args_list[1].kwargs["messages"]
+        injected = second_call_messages[-1]
+        assert injected["role"] == "user"
+        assert isinstance(injected["content"], list)
+        assert injected["content"][1]["type"] == "image_url"
+
+    @pytest.mark.asyncio
+    async def test_process_input_does_not_inject_media_without_flag(self, mock_config):
+        """工具结果未声明 embed_in_next_call 时，不应注入多模态消息。"""
+        plain_tool = MockTool(
+            name="tool_a",
+            execute_result=ToolResult(
+                success=True,
+                message="ok",
+                data={"path": "user_file/page_1.png"},
+                metadata={},
+            ),
+        )
+        agent = ScheduleAgent(config=mock_config, tools=[plain_tool], max_iterations=5)
+
+        response1 = LLMResponse(
+            content=None,
+            tool_calls=[ToolCall(id="call_1", name="tool_a", arguments={"input": "x"})],
+        )
+        response2 = LLMResponse(content="done", tool_calls=[])
+
+        with patch.object(
+            agent._llm_client,
+            "chat_with_tools",
+            new_callable=AsyncMock,
+            side_effect=[response1, response2],
+        ) as mocked_chat:
+            result = await agent.process_input("请继续")
+
+        assert result == "done"
+        second_call_messages = mocked_chat.await_args_list[1].kwargs["messages"]
+        assert not (
+            second_call_messages
+            and second_call_messages[-1].get("role") == "user"
+            and isinstance(second_call_messages[-1].get("content"), list)
+        )
+
+    @pytest.mark.asyncio
     async def test_process_input_multiple_tool_calls(self, agent):
         """测试多次工具调用"""
         # 第一次：工具调用 A

@@ -58,6 +58,9 @@ llm:
     # assigned_site_list: []  # 限定搜索来源站点列表（最多25个）
 
 # 多模态识图配置（调用多模态大模型，不依赖本地 OCR 模型）
+# 注意：原先通过 analyze_image 工具单独发起识图调用的路径已标记为「弃用」，
+# 现在推荐使用 attach_media 工具声明需要在下一轮附带的图片/视频，
+# 由运行时在下一次 LLM 调用前，将这些媒体编码为多模态 messages 的一部分。
 multimodal:
   enabled: false
   model: null   # 例如: "qwen-vl-max-latest"；null 表示复用 llm.model
@@ -159,7 +162,7 @@ agent:
     - "write_file"
     - "run_command"
     - "extract_web_content"
-    - "analyze_image"
+    - "attach_media"
     - "memory_search_long_term"
     - "memory_search_content"
     - "memory_store"

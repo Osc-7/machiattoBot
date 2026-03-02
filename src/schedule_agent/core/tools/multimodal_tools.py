@@ -15,7 +15,12 @@ from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 
 
 class AnalyzeImageTool(BaseTool):
-    """调用多模态大模型分析图片内容。"""
+    """【已弃用】调用多模态大模型分析图片内容。
+
+    注意：推荐直接在主对话消息中附带图片，由多模态大模型统一处理，
+    而不是通过单独的 analyze_image 工具再发起一次 LLM 调用。
+    本工具仅为兼容已有对话与工具调用保留，后续版本可能移除。
+    """
 
     def __init__(
         self,
@@ -32,7 +37,12 @@ class AnalyzeImageTool(BaseTool):
     def get_definition(self) -> ToolDefinition:
         return ToolDefinition(
             name="analyze_image",
-            description="""使用多模态大模型分析图片内容。
+            description="""【已弃用】本工具仅为兼容历史用法保留。
+
+推荐直接在对话消息中附带图片（如截图、照片），让多模态大模型在同一条
+推理链中同时理解文字与图像内容，而不是通过单独的 analyze_image 工具。
+
+使用多模态大模型分析图片内容。
 
 当用户想要：
 - 识别截图或照片中的文字
@@ -90,6 +100,7 @@ class AnalyzeImageTool(BaseTool):
                 "image_path 和 image_url 必须且只能提供一个",
                 "建议在 prompt 中明确提取目标，结果会更稳定",
                 "本工具走多模态 LLM，不依赖本地 OCR 模型推理速度",
+                "本工具已标记为弃用；请优先直接在主对话中附带图片，让模型多模态理解。",
             ],
             tags=["多模态", "识图", "OCR"],
         )

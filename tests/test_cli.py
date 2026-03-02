@@ -92,15 +92,15 @@ class TestGetDefaultTools:
         tool_names = [t.name for t in tools]
         assert "run_command" in tool_names
 
-    def test_get_default_tools_includes_analyze_image_when_enabled(self):
-        """当 multimodal.enabled 时，应包含 analyze_image"""
+    def test_get_default_tools_includes_attach_media_when_enabled(self):
+        """当 multimodal.enabled 时，应包含 attach_media"""
         config = Config(
             llm=LLMConfig(api_key="x", model="x"),
             multimodal=MultimodalConfig(enabled=True),
         )
         tools = cli_module.get_default_tools(config=config)
         tool_names = [t.name for t in tools]
-        assert "analyze_image" in tool_names
+        assert "attach_media" in tool_names
 
     def test_get_default_tools_includes_canvas_tool_when_enabled(self):
         """当 canvas.enabled 时，应包含 sync_canvas"""

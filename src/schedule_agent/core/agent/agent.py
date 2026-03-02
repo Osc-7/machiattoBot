@@ -23,6 +23,7 @@ from schedule_agent.core.mcp import MCPClientManager
 from schedule_agent.core.orchestrator import ToolSnapshot, ToolWorkingSetManager
 from schedule_agent.prompts import build_system_prompt as build_prompt
 from schedule_agent.core.llm import LLMClient, LLMResponse, ToolCall, TokenUsage
+from schedule_agent.utils.media import resolve_media_to_content_item
 from schedule_agent.core.tools import (
     BaseTool,
     CallToolTool,
@@ -99,6 +100,7 @@ class ScheduleAgent:
         )
         self._last_snapshot = ToolSnapshot(version=-1, tool_names=[], openai_tools=[])
         self._current_visible_tools: set[str] = set()
+        self._pending_multimodal_items: List[Dict[str, Any]] = []
         # 本会话 token 用量累计
         self._token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "call_count": 0}
         # 每次调用的 (prompt_tokens, completion_tokens)，用于阶梯计费
@@ -310,6 +312,9 @@ class ScheduleAgent:
             try:
                 system_prompt = self._build_system_prompt()
                 messages = self._context.get_messages()
+                if self._pending_multimodal_items:
+                    messages = self._append_pending_multimodal_messages(messages)
+                    self._pending_multimodal_items.clear()
                 if self._kernel_enabled:
                     self._last_snapshot = self._working_set.build_snapshot(self._tool_registry)
                     tools_defs = self._last_snapshot.openai_tools
@@ -409,6 +414,7 @@ class ScheduleAgent:
                                 turn_id, iteration, tool_call.id, result, duration_ms
                             )
                         self._context.add_tool_result(tool_call.id, result)
+                        self._queue_media_for_next_call(result)
 
                     # 继续循环，让 LLM 处理工具结果
                     continue
@@ -599,6 +605,61 @@ class ScheduleAgent:
 
         # 执行工具
         return await self._tool_registry.execute(tool_call.name, **kwargs)
+
+    def _queue_media_for_next_call(self, result: ToolResult) -> None:
+        """将工具结果中声明的媒体挂载到下一次 LLM 调用。"""
+        if not result.success:
+            return
+        if not isinstance(result.metadata, dict):
+            return
+        if not result.metadata.get("embed_in_next_call"):
+            return
+
+        candidate_paths: List[str] = []
+        data = result.data
+        if isinstance(data, dict):
+            path = data.get("path")
+            if isinstance(path, str) and path.strip():
+                candidate_paths.append(path.strip())
+            paths = data.get("paths")
+            if isinstance(paths, list):
+                for item in paths:
+                    if isinstance(item, str) and item.strip():
+                        candidate_paths.append(item.strip())
+
+        meta_path = result.metadata.get("path")
+        if isinstance(meta_path, str) and meta_path.strip():
+            candidate_paths.append(meta_path.strip())
+        meta_paths = result.metadata.get("paths")
+        if isinstance(meta_paths, list):
+            for item in meta_paths:
+                if isinstance(item, str) and item.strip():
+                    candidate_paths.append(item.strip())
+
+        for media_path in candidate_paths:
+            content_item, _err = resolve_media_to_content_item(media_path)
+            if content_item:
+                self._pending_multimodal_items.append(content_item)
+
+    def _append_pending_multimodal_messages(
+        self, messages: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        将待挂载媒体作为一条新的 user 多模态消息追加到当前请求。
+
+        注意：这是一次性注入，不写入长期对话上下文，避免 data URL 污染历史消息。
+        """
+        if not self._pending_multimodal_items:
+            return messages
+
+        content: List[Dict[str, Any]] = [
+            {
+                "type": "text",
+                "text": "以下是你在上一轮工具调用中请求附加的媒体，请结合当前任务继续分析。",
+            }
+        ]
+        content.extend(self._pending_multimodal_items)
+        return [*messages, {"role": "user", "content": content}]
 
     async def finalize_session(self) -> Optional[SessionSummary]:
         """

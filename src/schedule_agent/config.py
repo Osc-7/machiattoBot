@@ -102,7 +102,13 @@ class LLMConfig(BaseModel):
 
 
 class MultimodalConfig(BaseModel):
-    """多模态（识图）配置"""
+    """多模态（识图）配置。
+
+    现在推荐的用法是：
+    - 使用 attach_media 工具声明需要在下一轮对话中附带的图片/视频
+    - 由运行时在下一次 LLM 调用前，将这些媒体编码为多模态 messages 的一部分，
+      让当前主模型在同一条推理链中同时理解文字与图像/视频内容。
+    """
 
     enabled: bool = Field(
         default=False,
@@ -453,13 +459,13 @@ class AgentConfig(BaseModel):
             "write_file",
             "run_command",
             "extract_web_content",
-            "analyze_image",
+            "attach_media",
             "memory_search_long_term",
             "memory_search_content",
             "memory_store",
             "memory_ingest",
         ],
-        description="kernel 模式下始终暴露给 LLM 的工具名列表（核心+已注册的 pinned）",
+        description="kernel 模式下始终暴露给 LLM 的工具名列表",
     )
 
 
