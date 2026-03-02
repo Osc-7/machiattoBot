@@ -283,8 +283,6 @@ class AutomationScheduler:
     def ensure_default_jobs(self) -> None:
         existing = {job.job_type for job in self._job_def_repo.get_all()}
         defaults = [
-            JobDefinition(job_type="sync.course", interval_seconds=6 * 3600),
-            JobDefinition(job_type="sync.email", interval_seconds=2 * 3600),
             JobDefinition(job_type="summary.daily", interval_seconds=24 * 3600),
             JobDefinition(job_type="summary.weekly", interval_seconds=7 * 24 * 3600),
         ]

@@ -29,7 +29,8 @@ class JobDefinition(BaseModel):
     job_type: str
     enabled: bool = True
     interval_seconds: int = Field(default=3600, ge=1)
-    timezone: str = "UTC"
+    # 统一默认时区为上海（与 Config.time.timezone 保持一致）。
+    timezone: str = "Asia/Shanghai"
     payload_template: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

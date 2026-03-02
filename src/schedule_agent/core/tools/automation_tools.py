@@ -444,7 +444,8 @@ class CreateScheduledJobTool(BaseTool):
             cfg = get_config()
             timezone = cfg.time.timezone
         except Exception:
-            timezone = "UTC"
+            # 回退时也统一使用上海时区，避免混用 UTC。
+            timezone = "Asia/Shanghai"
 
         job = JobDefinition(
             job_type=job_type,

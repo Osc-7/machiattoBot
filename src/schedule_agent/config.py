@@ -740,7 +740,21 @@ def load_config(config_path: Optional[Path] = None) -> Config:
 
         raw_config["mcp"]["servers"] = expand_env_vars(raw_config["mcp"]["servers"])
 
-    return Config(**raw_config)
+    cfg = Config(**raw_config)
+
+    # 统一进程级时区到配置的 time.timezone（默认 Asia/Shanghai），
+    # 确保 logging、datetime.now() 等使用一致的本地时间。
+    try:
+        import time as _time
+
+        os.environ["TZ"] = cfg.time.timezone
+        if hasattr(_time, "tzset"):
+            _time.tzset()
+    except Exception:
+        # 在不支持 tzset 的平台上静默回退，不影响主流程。
+        pass
+
+    return cfg
 
 
 # 全局配置实例（延迟加载）
