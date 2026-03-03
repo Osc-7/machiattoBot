@@ -388,10 +388,23 @@ class MemoryConfig(BaseModel):
         description="核心人类可读记忆文件路径",
     )
 
+    # 对话历史数据库
+    chat_history_db_path: str = Field(
+        default="./data/memory/chat_history.db",
+        description="ChatHistoryDB SQLite 数据库文件路径",
+    )
+
     # 内容记忆
     content_dir: str = Field(
         default="./data/memory/content",
         description="内容记忆存储目录（Markdown 文档）",
+    )
+
+    # Session 切分
+    idle_timeout_minutes: int = Field(
+        default=30,
+        ge=1,
+        description="用户无操作超过此分钟数后，下次输入前自动切分 session",
     )
 
     # 检索策略

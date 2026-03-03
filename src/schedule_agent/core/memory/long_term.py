@@ -282,3 +282,50 @@ class LongTermMemory:
         """读取 MEMORY.md 全文。"""
         self._ensure_memory_md()
         return self._memory_md.read_text(encoding="utf-8")
+
+    def add_recent_topic(
+        self,
+        summary: str,
+        session_id: str,
+        tags: Optional[List[str]] = None,
+    ) -> MemoryEntry:
+        """
+        添加一条「最近话题」条目（category=recent_topic）到 entries.jsonl。
+
+        与 distill() 不同，此方法直接存储会话摘要，不经过 LLM 提炼，
+        适合在 session 切分时快速记录最近发生的事。
+
+        Args:
+            summary: 会话摘要文本
+            session_id: 来源会话 ID
+            tags: 可选标签列表
+
+        Returns:
+            新创建的 MemoryEntry
+        """
+        now_str = datetime.now(timezone.utc).isoformat()
+        entry = MemoryEntry(
+            id=f"topic-{uuid.uuid4().hex[:8]}",
+            created_at=now_str,
+            source_session_ids=[session_id],
+            content=summary,
+            category="recent_topic",
+            tags=tags or [],
+            confidence=1.0,
+        )
+        self._entries.append(entry)
+        self._save()
+        return entry
+
+    def get_recent_topics(self, n: int = 10) -> List[MemoryEntry]:
+        """
+        获取最近 n 条 category=recent_topic 的条目，按时间从旧到新排序。
+
+        Args:
+            n: 最多返回条数
+
+        Returns:
+            最近话题条目列表
+        """
+        topics = [e for e in self._entries if e.category == "recent_topic"]
+        return topics[-n:]

@@ -11,6 +11,7 @@ import sys
 import shutil
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from schedule_agent.core import ScheduleAgent
@@ -187,6 +188,50 @@ async def run_interactive_loop(agent: ScheduleAgent) -> str:
     is_processing = False
     interrupted_processing = False
 
+    # Session 切分：记录上次用户活动时间
+    _last_activity_time: datetime = datetime.now(timezone.utc)
+
+    def _should_cut_session(idle_timeout_minutes: int) -> bool:
+        """
+        检查是否需要切分 session。
+
+        条件（满足任一即切分）：
+        1. idle 超时：距上次活动超过 idle_timeout_minutes 分钟
+        2. 每日 4am 切分：跨越了本地 04:00（上次活动在 4am 之前，现在已过 4am）
+        """
+        nonlocal _last_activity_time
+        now = datetime.now(timezone.utc)
+        idle_seconds = (now - _last_activity_time).total_seconds()
+        if idle_seconds >= idle_timeout_minutes * 60:
+            return True
+
+        # 每日 4am 切分：使用本地时间判断
+        try:
+            import zoneinfo
+            tz = zoneinfo.ZoneInfo("Asia/Shanghai")
+        except Exception:
+            return False
+        local_now = now.astimezone(tz)
+        local_last = _last_activity_time.astimezone(tz)
+        # 如果上次活动是"昨天"或更早，且现在已过 04:00
+        if local_last.date() < local_now.date() and local_now.hour >= 4:
+            return True
+        # 同一天但上次在 04:00 之前、现在在 04:00 之后
+        if local_last.date() == local_now.date() and local_last.hour < 4 <= local_now.hour:
+            return True
+        return False
+
+    async def _do_session_cut(hint_fn: Any) -> None:
+        """执行 session 切分：finalize → reset。"""
+        try:
+            await agent.finalize_session()
+        except Exception:
+            pass
+        agent.reset_session()
+        print()
+        print(hint_fn("  [Session] 已自动切分新会话。"))
+        print()
+
     prev_sigint_handler: Any = None
     sigint_handler_installed = False
     if threading.current_thread() is threading.main_thread():
@@ -333,6 +378,15 @@ async def run_interactive_loop(agent: ScheduleAgent) -> str:
 
             if not user_input:
                 continue
+
+            # 在处理用户输入前检查 session 切分
+            try:
+                idle_timeout = int(agent.config.memory.idle_timeout_minutes)
+            except Exception:
+                idle_timeout = 30
+            if _should_cut_session(idle_timeout):
+                await _do_session_cut(hint)
+            _last_activity_time = datetime.now(timezone.utc)
 
             if user_input.lower() in ("quit", "exit", "q"):
                 u = agent.get_token_usage()

@@ -116,13 +116,15 @@ class TestScheduleAgentInit:
         assert agent._config is mock_config
         assert agent._max_iterations == 10
         assert agent._timezone == "America/New_York"
-        assert len(agent.tool_registry) == 2
+        # 2 custom tools + 3 chat history tools (memory enabled by default)
+        assert len(agent.tool_registry) == 5
 
     def test_init_without_tools(self, mock_config):
         """测试不传入工具时初始化"""
         agent = ScheduleAgent(config=mock_config)
 
-        assert len(agent.tool_registry) == 0
+        # 3 chat history tools are auto-registered when memory is enabled
+        assert len(agent.tool_registry) == 3
         assert isinstance(agent.context, ConversationContext)
 
     def test_tool_registry_property(self, agent):
@@ -148,7 +150,8 @@ class TestToolRegistration:
         agent.register_tool(new_tool)
 
         assert agent.tool_registry.has("tool_c")
-        assert len(agent.tool_registry) == 3
+        # 2 original + 1 new + 3 chat history tools
+        assert len(agent.tool_registry) == 6
 
     def test_unregister_tool(self, agent):
         """测试注销工具"""
@@ -156,7 +159,8 @@ class TestToolRegistration:
 
         assert result is True
         assert not agent.tool_registry.has("tool_a")
-        assert len(agent.tool_registry) == 1
+        # 2 original - 1 removed + 3 chat history tools
+        assert len(agent.tool_registry) == 4
 
     def test_unregister_nonexistent_tool(self, agent):
         """测试注销不存在的工具"""

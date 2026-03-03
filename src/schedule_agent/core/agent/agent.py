@@ -33,6 +33,11 @@ from schedule_agent.core.tools import (
     WebExtractorTool,
     WebSearchTool,
 )
+from schedule_agent.core.tools.chat_history_tools import (
+    ChatSearchTool,
+    ChatContextTool,
+    ChatScrollTool,
+)
 from schedule_agent.core.memory import (
     WorkingMemory,
     ShortTermMemory,
@@ -41,6 +46,7 @@ from schedule_agent.core.memory import (
     RecallPolicy,
     RecallResult,
     SessionSummary,
+    ChatHistoryDB,
 )
 
 if TYPE_CHECKING:
@@ -111,6 +117,8 @@ class ScheduleAgent:
         self._current_turn_id = 0
         # 会话起始时间
         self._session_start_time = datetime.now(dt_timezone.utc).isoformat()
+        # 会话 ID（用于 ChatHistoryDB 写入分组）
+        self._session_id = f"sess-{int(time.time())}"
 
         # 四层记忆系统
         mem_cfg: MemoryConfig = self._config.memory
@@ -143,11 +151,22 @@ class ScheduleAgent:
             top_n=mem_cfg.recall_top_n,
             score_threshold=mem_cfg.recall_score_threshold,
         )
+        self._chat_history_db = ChatHistoryDB(mem_cfg.chat_history_db_path)
 
         # 注册工具
         if tools:
             for tool in tools:
                 self._tool_registry.register(tool)
+
+        # 注册对话历史检索工具
+        if self._memory_enabled:
+            for chat_tool in [
+                ChatSearchTool(self._chat_history_db),
+                ChatContextTool(self._chat_history_db),
+                ChatScrollTool(self._chat_history_db),
+            ]:
+                if not self._tool_registry.has(chat_tool.name):
+                    self._tool_registry.register(chat_tool)
 
         # kernel 模式下补充核心工具
         if self._kernel_enabled:
@@ -289,6 +308,14 @@ class ScheduleAgent:
         if self._session_logger:
             self._session_logger.on_user_message(turn_id, user_input)
 
+        # 写入 ChatHistoryDB
+        if self._memory_enabled:
+            self._chat_history_db.write_message(
+                session_id=self._session_id,
+                role="user",
+                content=user_input,
+            )
+
         # 1.5 工作记忆：若超阈值则启动并行总结（与 LLM 对话同时执行，结束后合并）
         summary_task: Optional[asyncio.Task] = None
         summary_recent_start: Optional[int] = None
@@ -415,6 +442,14 @@ class ScheduleAgent:
                             )
                         self._context.add_tool_result(tool_call.id, result)
                         self._queue_media_for_next_call(result)
+                        # 写入 ChatHistoryDB（工具内容截断到 500 字）
+                        if self._memory_enabled:
+                            self._chat_history_db.write_message(
+                                session_id=self._session_id,
+                                role="tool",
+                                content=result.to_json(),
+                                tool_name=tool_call.name,
+                            )
 
                     # 继续循环，让 LLM 处理工具结果
                     continue
@@ -424,6 +459,13 @@ class ScheduleAgent:
                     self._context.add_assistant_message(content=response.content)
                     if self._session_logger:
                         self._session_logger.on_assistant_message(turn_id, response.content)
+                    # 写入 ChatHistoryDB
+                    if self._memory_enabled:
+                        self._chat_history_db.write_message(
+                            session_id=self._session_id,
+                            role="assistant",
+                            content=response.content,
+                        )
                     final_response = response.content
                     break
 
@@ -481,14 +523,16 @@ class ScheduleAgent:
         # 记忆上下文
         if self._memory_enabled:
             parts: List[str] = []
-            # 短期会话和 MEMORY.md 直接加载，无需检索
-            short_recent = self._short_term_memory.get_recent(
+            # 最近话题（来自 entries.jsonl 中 category=recent_topic 的最近 N 条）
+            recent_topics = self._long_term_memory.get_recent_topics(
                 self._config.memory.recall_top_n
             )
-            if short_recent:
-                parts.append("## 近期会话记忆")
-                for s in reversed(short_recent):
-                    parts.append(f"- [{s.session_id}] {s.summary}")
+            if recent_topics:
+                parts.append("## 最近话题")
+                for topic in recent_topics:
+                    ts = topic.created_at[:10] if topic.created_at else ""
+                    ts_prefix = f"[{ts}] " if ts else ""
+                    parts.append(f"- {ts_prefix}{topic.content}")
             md_content = self._long_term_memory.read_memory_md()
             if md_content and len(md_content) > 50:
                 excerpt = md_content if len(md_content) <= 1000 else md_content[:1000] + "\n..."
@@ -663,7 +707,7 @@ class ScheduleAgent:
 
     async def finalize_session(self) -> Optional[SessionSummary]:
         """
-        会话结束时调用：总结会话并写入短期记忆，触发出队提炼。
+        会话结束时调用：总结会话并写入 recent_topic，不再使用 ShortTermMemory。
 
         Returns:
             生成的 SessionSummary，若记忆系统未启用或会话为空则返回 None
@@ -674,11 +718,10 @@ class ScheduleAgent:
         summary_data = await self._working_memory.summarize_session(
             self._summary_llm_client
         )
-        session_id = f"sess-{int(time.time())}"
         now_str = datetime.now(dt_timezone.utc).isoformat()
 
         session_summary = SessionSummary(
-            session_id=session_id,
+            session_id=self._session_id,
             time_start=self._session_start_time,
             time_end=now_str,
             summary=summary_data.get("summary", ""),
@@ -690,12 +733,33 @@ class ScheduleAgent:
             token_usage=dict(self._token_usage),
         )
 
-        evicted = self._short_term_memory.add(session_summary)
-
-        if evicted:
-            await self._long_term_memory.distill(evicted, self._summary_llm_client)
+        # 将本次会话摘要写入 recent_topic（替代旧的 ShortTermMemory → distill 流程）
+        self._long_term_memory.add_recent_topic(
+            summary=session_summary.summary,
+            session_id=self._session_id,
+            tags=session_summary.tags,
+        )
 
         return session_summary
+
+    def reset_session(self) -> None:
+        """
+        重置会话状态（用于 session 切分）：清空对话上下文，生成新的 session_id。
+        调用方应先调用 finalize_session()，再调用此方法。
+        """
+        self._context.clear()
+        self._session_id = f"sess-{int(time.time())}"
+        self._session_start_time = datetime.now(dt_timezone.utc).isoformat()
+        self._current_turn_id = 0
+        self.reset_token_usage()
+        # 清空工作记忆
+        self._working_memory = WorkingMemory(
+            context=self._context,
+            max_tokens=self._config.memory.max_working_tokens,
+            threshold=self._config.memory.working_summary_threshold,
+            keep_recent=self._config.memory.working_keep_recent,
+            hard_threshold_ratio=self._config.memory.working_summary_hard_ratio,
+        )
 
     async def close(self) -> None:
         """关闭 Agent，释放资源"""
@@ -706,6 +770,7 @@ class ScheduleAgent:
             await self._mcp_manager.close()
             self._mcp_manager = None
             self._mcp_connected = False
+        self._chat_history_db.close()
 
     async def __aenter__(self) -> "ScheduleAgent":
         """异步上下文管理器入口"""
@@ -763,9 +828,6 @@ class ScheduleAgent:
 
         return runtime_servers
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """异步上下文管理器退出"""
-        await self.close()
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         """异步上下文管理器退出"""
         await self.close()

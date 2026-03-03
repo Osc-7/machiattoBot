@@ -1044,3 +1044,34 @@ tests/                   # 测试目录
 ### 备注:
 - 当前实现仅做「读取 + 归一化」并返回给 Agent/对话，不直接写入本地日程或自动化流水线。
 - 后续如需将课表自动写入 `Event` 模型，需要额外配置学期起始日期与节次时间表，以便展开为具体日期时间段。
+
+## 2026-03-03 - 任务: 记忆架构重构
+
+### 完成内容:
+
+**新建文件：**
+- `src/schedule_agent/core/memory/chat_history_db.py`: ChatHistoryDB 类，SQLite + FTS5 全文索引，实现 write_message / search / get_context / scroll 方法；工具消息截断到 500 字
+- `src/schedule_agent/core/tools/chat_history_tools.py`: 3 个 LLM 可调用工具——ChatSearchTool (chat_search)、ChatContextTool (chat_context)、ChatScrollTool (chat_scroll)
+
+**修改文件：**
+- `src/schedule_agent/core/memory/__init__.py`: 导出 ChatHistoryDB
+- `src/schedule_agent/core/memory/long_term.py`: 添加 add_recent_topic() / get_recent_topics() 方法，写入 category=recent_topic 条目到 entries.jsonl
+- `src/schedule_agent/core/agent/agent.py`:
+  - 初始化 ChatHistoryDB 并注册 3 个 chat_history 工具
+  - 在 process_input 中写入 user/assistant/tool 消息到 ChatHistoryDB
+  - 重写 finalize_session()：不再用 ShortTermMemory→distill 流程，改为 add_recent_topic()
+  - 新增 reset_session() 方法供 session 切分使用
+  - 重写 _build_system_prompt()：用 get_recent_topics() 替代近期会话记忆注入
+  - 修复重复的 __aexit__ 方法
+- `src/schedule_agent/cli/interactive.py`: 添加 session 切分逻辑（idle 超时 + 每日 4am）
+- `src/schedule_agent/config.py`: MemoryConfig 新增 chat_history_db_path、idle_timeout_minutes 字段
+- `config.yaml`: memory 段新增 chat_history_db_path、idle_timeout_minutes 配置项
+- `tests/test_agent.py`: 更新工具数量断言（+3 chat history 工具）
+
+### 测试:
+- 运行 `pytest tests/ -v`：539 passed, 5 skipped
+
+### 备注:
+- ShortTermMemory 类保留不删（避免破坏测试），仅从 agent 初始化流程中移除其使用
+- session 切分触发条件：idle 超时（可配）OR 跨越每日 04:00（本地时间）
+- ChatHistoryDB 使用 executescript() 初始化 DDL，避免分号分割问题

@@ -10,6 +10,7 @@ from .short_term import ShortTermMemory
 from .long_term import LongTermMemory
 from .content_memory import ContentMemory
 from .recall import RecallPolicy, RecallResult
+from .chat_history_db import ChatHistoryDB
 
 __all__ = [
     "MemoryEntry",
@@ -20,4 +21,5 @@ __all__ = [
     "ContentMemory",
     "RecallPolicy",
     "RecallResult",
+    "ChatHistoryDB",
 ]
