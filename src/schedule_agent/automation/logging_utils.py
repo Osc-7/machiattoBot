@@ -41,12 +41,11 @@ class AutomationTaskLogger:
     used_tools: Set[str] = field(default_factory=set, init=False)
     operation_details: List[Dict[str, Any]] = field(default_factory=list, init=False)
     _tool_alias_by_call_id: Dict[str, str] = field(default_factory=dict, init=False)
-    started_at: datetime = field(default_factory=datetime.utcnow, init=False)
+    started_at: datetime = field(default_factory=datetime.now, init=False)
     finished_at: Optional[datetime] = field(default=None, init=False)
 
     def __post_init__(self) -> None:
-        # 与 session 日志保持同风格：基于 UTC 时间命名，task_id 仅用于防重名
-        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.log_path = _logs_base_dir() / f"automation-{ts}-{self.task.task_id}.jsonl"
         self.activity_path = _activity_file_path()
 
@@ -56,7 +55,7 @@ class AutomationTaskLogger:
 
     def _append_json_line(self, payload: Dict[str, Any]) -> None:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        payload.setdefault("timestamp", datetime.utcnow().isoformat())
+        payload.setdefault("timestamp", datetime.now().isoformat())
         with self.log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
@@ -170,7 +169,7 @@ class AutomationTaskLogger:
         }
 
     def log_task_end(self, status: TaskStatus, result: Optional[str], error: Optional[str]) -> None:
-        self.finished_at = datetime.utcnow()
+        self.finished_at = datetime.now()
         self._append_json_line(
             {
                 "type": "task_end",
@@ -198,7 +197,7 @@ class AutomationTaskLogger:
         """Write a compact (operation + result) summary to automation_activity.jsonl."""
         activity_summary = self.build_agent_activity_summary()
         record: Dict[str, Any] = {
-            "timestamp": (self.finished_at or datetime.utcnow()).isoformat(),
+            "timestamp": (self.finished_at or datetime.now()).isoformat(),
             "task_id": self.task.task_id,
             "source": self.task.source,
             "session_id": self.task.session_id,

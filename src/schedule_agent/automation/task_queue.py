@@ -92,7 +92,7 @@ class AgentTaskQueue:
 
             task = AgentTask.model_validate_json(row["data"])
             task.status = TaskStatus.RUNNING
-            task.started_at = datetime.utcnow()
+            task.started_at = datetime.now()
             conn.execute(
                 "UPDATE agent_tasks SET status = 'running', data = ? WHERE task_id = ?",
                 (task.model_dump_json(), task.task_id),
@@ -116,7 +116,7 @@ class AgentTaskQueue:
                 return
             task = AgentTask.model_validate_json(row["data"])
             task.status = status
-            task.finished_at = datetime.utcnow()
+            task.finished_at = datetime.now()
             if result is not None:
                 task.result = result
             if error is not None:

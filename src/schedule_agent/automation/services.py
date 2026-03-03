@@ -73,7 +73,7 @@ class SyncIngestionService:
                 },
             )
 
-        next_cursor = result.next_cursor or datetime.utcnow().isoformat()
+        next_cursor = result.next_cursor or datetime.now().isoformat()
         cursor_model = SyncCursor(source_type=source_type, account_id=account_id, cursor=next_cursor)
         if cursor is None:
             self._cursor_repo.create(cursor_model)
@@ -392,7 +392,7 @@ class NotificationOutboxService:
             template=template,
             payload={"digest_id": digest_id},
             status=NotificationStatus.SENT,
-            sent_at=datetime.utcnow(),
+            sent_at=datetime.now(),
         )
         self._outbox_repo.create(outbox)
 
@@ -410,6 +410,6 @@ class NotificationOutboxService:
         if outbox is None:
             return None
         outbox.status = NotificationStatus.ACKED
-        outbox.acked_at = datetime.utcnow()
+        outbox.acked_at = datetime.now()
         self._outbox_repo.update(outbox)
         return outbox

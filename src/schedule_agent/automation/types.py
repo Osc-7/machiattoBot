@@ -32,8 +32,8 @@ class JobDefinition(BaseModel):
     # 统一默认时区为上海（与 Config.time.timezone 保持一致）。
     timezone: str = "Asia/Shanghai"
     payload_template: Dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
     @property
     def id(self) -> str:
@@ -44,7 +44,7 @@ class JobRun(BaseModel):
     run_id: str = Field(default_factory=lambda: f"run-{uuid4().hex[:10]}")
     job_id: str
     job_type: str
-    triggered_at: datetime = Field(default_factory=datetime.utcnow)
+    triggered_at: datetime = Field(default_factory=datetime.now)
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     status: JobStatus = JobStatus.PENDING
@@ -61,7 +61,7 @@ class SourceAccount(BaseModel):
     account_id: str = "default"
     auth_ref: Optional[str] = None
     status: str = "active"
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
     @property
     def id(self) -> str:
@@ -72,7 +72,7 @@ class SyncCursor(BaseModel):
     source_type: str
     account_id: str = "default"
     cursor: Optional[str] = None
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
     @property
     def id(self) -> str:
@@ -86,7 +86,7 @@ class ExternalItem(BaseModel):
     occurred_at: datetime
     raw_payload: Dict[str, Any] = Field(default_factory=dict)
     normalized_payload: Dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.now)
 
     @property
     def id(self) -> str:
@@ -100,7 +100,7 @@ class Digest(BaseModel):
     period_end: date
     content_md: str
     highlights: list[str] = Field(default_factory=list)
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=datetime.now)
 
     @property
     def id(self) -> str:
@@ -116,7 +116,7 @@ class NotificationOutbox(BaseModel):
     status: NotificationStatus = NotificationStatus.PENDING
     retry_count: int = 0
     next_retry_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.now)
     sent_at: Optional[datetime] = None
     acked_at: Optional[datetime] = None
 
@@ -131,7 +131,7 @@ class AutomationPolicy(BaseModel):
     quiet_hours_start: Optional[str] = None
     quiet_hours_end: Optional[str] = None
     min_confidence_for_silent_apply: float = Field(default=0.8, ge=0.0, le=1.0)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
     @property
     def id(self) -> str:

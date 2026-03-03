@@ -16,7 +16,7 @@ EventHandler = Callable[[dict], Awaitable[None]]
 class BusEvent:
     topic: str
     payload: Dict[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=datetime.now)
 
 
 class AsyncEventBus:

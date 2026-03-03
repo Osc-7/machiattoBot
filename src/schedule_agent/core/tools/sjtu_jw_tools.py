@@ -362,7 +362,7 @@ class FetchSjtuUndergradScheduleTool(BaseTool):
             data={
                 "year": year,
                 "term": term,
-                "fetched_at": datetime.utcnow().isoformat(),
+                "fetched_at": datetime.now().isoformat(),
                 "course_count": len(normalized),
                 "courses": normalized,
             },

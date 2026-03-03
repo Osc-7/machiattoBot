@@ -220,7 +220,7 @@ class ConfigureAutomationPolicyTool(BaseTool):
         if kwargs.get("min_confidence_for_silent_apply") is not None:
             policy.min_confidence_for_silent_apply = float(kwargs["min_confidence_for_silent_apply"])
 
-        policy.updated_at = datetime.utcnow()
+        policy.updated_at = datetime.now()
         self._repo.update(policy)
 
         # 兼容首次创建后 update 失败的场景

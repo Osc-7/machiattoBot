@@ -29,7 +29,7 @@ from schedule_agent.automation.scheduler import AutomationScheduler
 from schedule_agent.automation.session_manager import SessionManager
 from schedule_agent.automation.task_queue import AgentTaskQueue
 from schedule_agent.automation.logging_utils import AutomationTaskLogger
-from schedule_agent.config import get_config
+from schedule_agent.config import find_config_file, get_config, load_config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,6 +38,18 @@ logging.basicConfig(
 logger = logging.getLogger("agent_worker")
 
 POLL_INTERVAL_SECONDS = 5
+CONFIG_SYNC_INTERVAL_SECONDS = 60.0  # 与 scheduler 的 _reload_interval 对齐
+
+
+async def _watch_config_and_sync_jobs(job_def_repo: JobDefinitionRepository, config_path) -> None:
+    """周期性从 config.yaml 重载 automation.jobs 并同步到 job_definitions.json。"""
+    while True:
+        await asyncio.sleep(CONFIG_SYNC_INTERVAL_SECONDS)
+        try:
+            config = load_config(config_path)
+            _sync_jobs_from_config(config, job_def_repo)
+        except Exception as exc:
+            logger.debug("Config sync skipped: %s", exc)
 
 
 def _sync_jobs_from_config(config, job_def_repo: JobDefinitionRepository) -> None:
@@ -45,7 +57,7 @@ def _sync_jobs_from_config(config, job_def_repo: JobDefinitionRepository) -> Non
 
     设计原则：
     - 只新增或更新由配置声明的任务，不删除任何已有任务（包括默认内置任务和历史任务）。
-    - 通过 (job_type, user_id, instruction) 三元组匹配已有记录，若存在则更新 interval 和 enabled。
+    - 通过 (job_type, user_id, name) 三元组匹配已有记录，若存在则更新 interval / enabled / 调度相关 payload。
     """
     automation_cfg = getattr(config, "automation", None)
     if not automation_cfg or not getattr(automation_cfg, "jobs", None):
@@ -58,14 +70,16 @@ def _sync_jobs_from_config(config, job_def_repo: JobDefinitionRepository) -> Non
         has_times = bool(times)
         has_daily_time = bool(getattr(job_cfg, "daily_time", None))
 
-        # times / daily_time 模式：每天固定时刻执行一次，interval 仅作为回退与文档提示。
+        # times / daily_time 模式：每天固定时刻执行一次，interval_minutes 可以省略。
         if has_times or has_daily_time:
             interval_seconds = 24 * 3600
         else:
+            # 纯 interval 或 start_time + interval 模式：需要合法的 interval_minutes
+            minutes = getattr(job_cfg, "interval_minutes", None)
             try:
-                interval_seconds = int(job_cfg.interval_minutes) * 60
+                interval_seconds = int(minutes) * 60
             except Exception:
-                # 跳过非法配置，避免影响其他任务。
+                # 缺少或非法的 interval 配置时，跳过该任务，避免影响其他任务。
                 continue
 
             if interval_seconds <= 0:
@@ -73,18 +87,30 @@ def _sync_jobs_from_config(config, job_def_repo: JobDefinitionRepository) -> Non
 
         target_job_type = job_cfg.job_type
         target_user_id = job_cfg.user_id
+        target_name = getattr(job_cfg, "name", "").strip()
         target_instruction = job_cfg.description
 
         matched = None
         for job in existing:
             payload = job.payload_template or {}
-            if (
-                job.job_type == target_job_type
-                and str(payload.get("user_id", "default")) == target_user_id
-                and str(payload.get("instruction", "")) == target_instruction
-            ):
-                matched = job
-                break
+            # 优先按 (job_type, user_id, name) 三元组匹配
+            if target_name:
+                if (
+                    job.job_type == target_job_type
+                    and str(payload.get("user_id", "default")) == target_user_id
+                    and str(payload.get("name", "")) == target_name
+                ):
+                    matched = job
+                    break
+            # 回退兼容：旧数据没有 name 时，使用 description 作为匹配键，并在命中后写回 name
+            else:
+                if (
+                    job.job_type == target_job_type
+                    and str(payload.get("user_id", "default")) == target_user_id
+                    and str(payload.get("instruction", "")) == target_instruction
+                ):
+                    matched = job
+                    break
 
         if matched is not None:
             changed = False
@@ -97,6 +123,10 @@ def _sync_jobs_from_config(config, job_def_repo: JobDefinitionRepository) -> Non
                 changed = True
             # 同步 payload 配置（daily_time / times / start_time 等）
             payload = matched.payload_template or {}
+            # 写回 name，保证后续可以稳定通过 name 识别
+            if target_name and payload.get("name") != target_name:
+                payload["name"] = target_name
+                changed = True
             if has_daily_time and payload.get("daily_time") != job_cfg.daily_time:
                 payload["daily_time"] = job_cfg.daily_time
                 changed = True
@@ -119,6 +149,7 @@ def _sync_jobs_from_config(config, job_def_repo: JobDefinitionRepository) -> Non
                 interval_seconds=interval_seconds,
                 timezone=config.time.timezone,
                 payload_template={
+                    "name": target_name or target_instruction,
                     "instruction": target_instruction,
                     "user_id": target_user_id,
                     **(
@@ -222,12 +253,17 @@ async def _main() -> None:
     )
 
     job_def_repo = JobDefinitionRepository()
-    # 先将 config.automation.jobs 中声明的任务同步到 JobDefinitionRepository，
-    # 再补齐内置默认任务，确保默认 job_type 仍然存在。
+    # 将 config.automation.jobs 中声明的任务同步到 JobDefinitionRepository。
+    # 不再自动补充任何「默认」任务，所有调度均由配置或 Agent 工具创建。
     _sync_jobs_from_config(config, job_def_repo)
 
+    config_path = find_config_file()
+    config_watch_task = asyncio.create_task(
+        _watch_config_and_sync_jobs(job_def_repo, config_path),
+        name="config_sync",
+    )
+
     scheduler = AutomationScheduler(job_def_repo=job_def_repo, job_run_repo=JobRunRepository(), task_queue=queue)
-    scheduler.ensure_default_jobs()
     await scheduler.start()
 
     stop_event = asyncio.Event()
@@ -240,6 +276,11 @@ async def _main() -> None:
     try:
         await _consume_loop(queue, session_manager, stop_event)
     finally:
+        config_watch_task.cancel()
+        try:
+            await config_watch_task
+        except asyncio.CancelledError:
+            pass
         await scheduler.stop()
         await session_manager.close_all()
         logger.info("Agent worker stopped.")

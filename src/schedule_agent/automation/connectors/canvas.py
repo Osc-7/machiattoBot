@@ -68,7 +68,7 @@ class CanvasConnector(BaseConnector):
         del since_cursor  # Canvas API currently uses time windows, not cursor-based incremental sync.
 
         if not self.is_available:
-            return ConnectorFetchResult(items=[], next_cursor=datetime.utcnow().isoformat())
+            return ConnectorFetchResult(items=[], next_cursor=datetime.now().isoformat())
 
         assert self._canvas_config is not None
 
@@ -88,7 +88,7 @@ class CanvasConnector(BaseConnector):
             if event_item is not None:
                 items.append(event_item)
 
-        return ConnectorFetchResult(items=items, next_cursor=datetime.utcnow().isoformat())
+        return ConnectorFetchResult(items=items, next_cursor=datetime.now().isoformat())
 
     def _assignment_items(self, assignment: CanvasAssignment) -> list[ConnectorFetchItem]:
         now = datetime.now(timezone.utc)

@@ -89,13 +89,15 @@ sjtu_jw:
 automation:
   jobs:
     # 示例：每 6 小时同步课程（Canvas/course_stub）并生成系统级活动记录
-    - description: "这是自动化定时任务。请调用 sync_canvas(days_ahead=30, write_tasks=true, write_deadline_events=true)，然后仅输出“操作 + 结果”。"
+    - name: "sync_course_canvas"
+      description: "这是自动化定时任务。请调用 sync_canvas(days_ahead=30, write_tasks=true, write_deadline_events=true)，然后仅输出“操作 + 结果”。"
       interval_minutes: 360   # 或使用 daily_time: "08:00" 表示每天早上 8 点执行
       job_type: "sync.course"
       user_id: "default"
       enabled: true
     # 示例：每 2 小时同步邮件
-    - description: "这是自动化定时任务。请调用 sync_sources(source='email')，然后仅输出“操作 + 结果”。"
+    - name: "sync_email_sources"
+      description: "这是自动化定时任务。请调用 sync_sources(source='email')，然后仅输出“操作 + 结果”。"
       interval_minutes: 120
       job_type: "sync.email"
       user_id: "default"

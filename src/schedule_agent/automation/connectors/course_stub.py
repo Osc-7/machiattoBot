@@ -11,7 +11,7 @@ class CourseConnectorStub(BaseConnector):
     source_type = "course"
 
     async def fetch(self, since_cursor: str | None, account_id: str = "default") -> ConnectorFetchResult:
-        now = datetime.utcnow()
+        now = datetime.now()
         external_id = f"course-{now.strftime('%Y%m%d')}"
         item = ConnectorFetchItem(
             external_id=external_id,

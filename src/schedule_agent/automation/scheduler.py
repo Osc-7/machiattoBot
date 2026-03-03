@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Dict, Optional
+from zoneinfo import ZoneInfo
 
 from .event_bus import AsyncEventBus
 from .repositories import JobDefinitionRepository, JobRunRepository
@@ -58,7 +59,10 @@ class AutomationScheduler:
         self._job_def_repo = job_def_repo or JobDefinitionRepository()
         self._job_run_repo = job_run_repo or JobRunRepository()
         self._task_queue = task_queue
+        # job_id -> 调度协程任务
         self._tasks: Dict[str, asyncio.Task] = {}
+        # job_id -> 最近一次用于调度的 JobDefinition 快照（用于检测配置变更）
+        self._job_snapshots: Dict[str, JobDefinition] = {}
         self._running = False
         # 周期性检查 job_definitions 是否有新增/禁用的任务，默认 60s 刷新一次。
         # 仅在队列模式下实际有意义，但在 event_bus 模式下开启也无害。
@@ -71,7 +75,15 @@ class AutomationScheduler:
         self._running = True
 
         for job in self._job_def_repo.get_enabled():
-            self._tasks[job.job_id] = asyncio.create_task(self._run_loop(job), name=f"scheduler:{job.job_id}")
+            self._tasks[job.job_id] = asyncio.create_task(
+                self._run_loop(job),
+                name=f"scheduler:{job.job_id}",
+            )
+            # 记录一份快照，后续用于检测配置是否发生变化
+            try:
+                self._job_snapshots[job.job_id] = job.model_copy(deep=True)
+            except Exception:  # pragma: no cover - 理论上不会触发
+                self._job_snapshots[job.job_id] = job
 
         # 队列驱动模式下，支持在运行期通过修改 job_definitions.json 添加/禁用任务，
         # 由后台 watcher 周期性刷新内存中的任务列表，避免必须重启 agent_worker。
@@ -84,6 +96,7 @@ class AutomationScheduler:
         if self._tasks:
             await asyncio.gather(*self._tasks.values(), return_exceptions=True)
         self._tasks.clear()
+        self._job_snapshots.clear()
 
         if self._watch_task is not None:
             self._watch_task.cancel()
@@ -97,8 +110,8 @@ class AutomationScheduler:
         run = JobRun(
             job_id=job.job_id,
             job_type=job.job_type,
-            triggered_at=datetime.utcnow(),
-            started_at=datetime.utcnow(),
+            triggered_at=datetime.now(),
+            started_at=datetime.now(),
             status=JobStatus.RUNNING,
         )
         self._job_run_repo.create(run)
@@ -112,14 +125,25 @@ class AutomationScheduler:
             run.status = JobStatus.FAILED
             run.error = str(exc)
         finally:
-            run.finished_at = datetime.utcnow()
+            run.finished_at = datetime.now()
             self._job_run_repo.update(run)
         return run
 
     async def _run_loop(self, job: JobDefinition) -> None:
+        """持续调度单个 Job。
+
+        注意：首次执行前会先等待到下一次计划触发时间，
+        避免在 scheduler / agent_worker 启动瞬间就立刻跑一遍。
+        """
         while self._running:
+            delay = self._compute_sleep_seconds(job)
+            try:
+                await asyncio.sleep(delay)
+            except asyncio.CancelledError:
+                break
+            if not self._running:
+                break
             await self.run_job_once(job)
-            await asyncio.sleep(self._compute_sleep_seconds(job))
 
     def _compute_sleep_seconds(self, job: JobDefinition) -> float:
         """根据 JobDefinition 计算下一次调度前应 sleep 的秒数。
@@ -132,6 +156,12 @@ class AutomationScheduler:
         """
         delay = float(job.interval_seconds)
         payload = job.payload_template or {}
+
+        # 使用 job 指定的时区，脱离全局 TZ 环境变量
+        try:
+            tz = ZoneInfo(job.timezone or "Asia/Shanghai")
+        except Exception:
+            tz = ZoneInfo("Asia/Shanghai")
 
         # 1) 多个闹钟时间点：payload['times'] = ["08:00", "14:00", ...]
         times_raw = payload.get("times")
@@ -152,7 +182,7 @@ class AutomationScheduler:
                 except Exception:
                     continue
             if candidates:
-                now = datetime.now()
+                now = datetime.now(tz)
                 now_sec = now.hour * 3600 + now.minute * 60 + now.second
                 today_future = [c for c in candidates if c > now_sec]
                 if today_future:
@@ -173,7 +203,7 @@ class AutomationScheduler:
                 m = int(m_str)
                 if 0 <= h <= 23 and 0 <= m <= 59:
                     period = max(1.0, delay)
-                    now = datetime.now()
+                    now = datetime.now(tz)
                     midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
                     first = midnight + timedelta(hours=h, minutes=m)
                     t = first
@@ -200,8 +230,7 @@ class AutomationScheduler:
                 # 配置非法时回退 interval 语义
                 return max(1.0, delay)
 
-            # 使用系统本地时间计算下一次触发时刻
-            now = datetime.now()
+            now = datetime.now(tz)
             target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
             if target <= now:
                 target = target + timedelta(days=1)
@@ -212,6 +241,18 @@ class AutomationScheduler:
         # 4) 退回简单 interval 语义
         return max(1.0, delay)
 
+    def _job_changed(self, old: JobDefinition, new: JobDefinition) -> bool:
+        """检测 JobDefinition 是否发生了会影响调度的配置变更。"""
+        if old.enabled != new.enabled:
+            return True
+        if old.interval_seconds != new.interval_seconds:
+            return True
+        if (old.timezone or "") != (new.timezone or ""):
+            return True
+        if (old.payload_template or {}) != (new.payload_template or {}):
+            return True
+        return False
+
     async def _watch_job_definitions(self) -> None:
         """后台刷新 job_definitions，支持运行时新增/禁用定时任务."""
         while self._running:
@@ -220,19 +261,41 @@ class AutomationScheduler:
                 enabled_jobs = self._job_def_repo.get_enabled()
                 enabled_ids = {job.job_id for job in enabled_jobs}
 
-                # 新增的 enabled 任务：启动对应调度协程
+                # 新增或配置发生变化的 enabled 任务：启动/重启对应调度协程
                 for job in enabled_jobs:
-                    if job.job_id not in self._tasks:
+                    existing_task = self._tasks.get(job.job_id)
+                    snapshot = self._job_snapshots.get(job.job_id)
+
+                    # 1) 全新任务：还没有调度协程
+                    if existing_task is None:
                         self._tasks[job.job_id] = asyncio.create_task(
                             self._run_loop(job),
                             name=f"scheduler:{job.job_id}",
                         )
+                        try:
+                            self._job_snapshots[job.job_id] = job.model_copy(deep=True)
+                        except Exception:  # pragma: no cover
+                            self._job_snapshots[job.job_id] = job
+                        continue
+
+                    # 2) 已有任务，但配置发生了变化（例如 daily_time 从 13:45 改为 14:00）
+                    if snapshot is not None and self._job_changed(snapshot, job):
+                        existing_task.cancel()
+                        self._tasks[job.job_id] = asyncio.create_task(
+                            self._run_loop(job),
+                            name=f"scheduler:{job.job_id}",
+                        )
+                        try:
+                            self._job_snapshots[job.job_id] = job.model_copy(deep=True)
+                        except Exception:  # pragma: no cover
+                            self._job_snapshots[job.job_id] = job
 
                 # 已被删除或禁用的任务：取消并移除调度协程
                 for job_id in list(self._tasks.keys()):
                     if job_id not in enabled_ids:
                         task = self._tasks.pop(job_id)
                         task.cancel()
+                        self._job_snapshots.pop(job_id, None)
             except Exception:
                 # 防御性：不让 watcher 异常影响主循环。
                 continue
@@ -279,13 +342,3 @@ class AutomationScheduler:
             user_id=user_id,
         )
         self._task_queue.push(task)  # type: ignore[union-attr]
-
-    def ensure_default_jobs(self) -> None:
-        existing = {job.job_type for job in self._job_def_repo.get_all()}
-        defaults = [
-            JobDefinition(job_type="summary.daily", interval_seconds=24 * 3600),
-            JobDefinition(job_type="summary.weekly", interval_seconds=7 * 24 * 3600),
-        ]
-        for job in defaults:
-            if job.job_type not in existing:
-                self._job_def_repo.create(job)

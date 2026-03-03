@@ -520,14 +520,18 @@ class AutomationJobConfig(BaseModel):
     加载时会被转换为 automation 子系统中的 JobDefinition。
     """
 
+    name: str = Field(
+        ...,
+        description="任务的稳定标识名，用于作为 job_definitions 中的主键之一（与 job_type、user_id 组合）。建议一旦确定就不要随意修改。",
+    )
     description: str = Field(
         ...,
         description="任务触发时给 Agent 的自然语言指令，例如“请调用 sync_sources(source='email') 并输出操作+结果”。",
     )
-    interval_minutes: int = Field(
-        default=60,
+    interval_minutes: Optional[int] = Field(
+        default=None,
         ge=1,
-        description="任务执行间隔（分钟）。用于 interval 模式，或与 start_time 搭配表示“从某个时刻起按间隔滚动触发”。",
+        description="任务执行间隔（分钟）。仅在 interval 模式或与 start_time 搭配时必填；若已配置 daily_time/times，则可以省略。",
     )
     daily_time: Optional[str] = Field(
         default=None,

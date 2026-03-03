@@ -46,7 +46,7 @@ class AutomationRuntime:
         self.bus.subscribe("weekly_digest.ready", self.notification_service.handle_digest_ready)
 
         if start_scheduler:
-            self.scheduler.ensure_default_jobs()
+            # 不再自动注入默认定时任务，调度配置全部来自持久化仓库 / config / Agent 工具。
             await self.scheduler.start()
 
     async def stop(self) -> None:
