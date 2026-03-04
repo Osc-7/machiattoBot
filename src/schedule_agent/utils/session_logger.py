@@ -10,7 +10,7 @@ Session 日志记录器
 import json
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -42,7 +42,8 @@ class SessionLogger:
 
     def __post_init__(self) -> None:
         Path(self.log_dir).mkdir(parents=True, exist_ok=True)
-        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        # 使用本地时间生成文件名；时区由全局 TZ 配置控制（在 config.load_config 中统一设置）。
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         self._session_id = f"sess-{int(time.time())}"
         self._file_path = Path(self.log_dir) / f"session-{ts}.jsonl"
 
@@ -55,8 +56,9 @@ class SessionLogger:
             f.write(line)
 
     def _timestamp(self) -> str:
-        """ISO 8601 时间戳"""
-        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        """ISO 8601 时间戳（本地时区，精确到毫秒）。"""
+        dt = datetime.now().astimezone()
+        return dt.isoformat(timespec="milliseconds")
 
     def on_session_start(self) -> None:
         """会话开始"""

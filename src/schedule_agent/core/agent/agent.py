@@ -69,17 +69,20 @@ def _namespace_file(path: str, user_id: str) -> str:
 
 
 def _resolve_memory_owner_paths(mem_cfg: MemoryConfig, user_id: str) -> Dict[str, str]:
-    mem_md = Path(mem_cfg.memory_md_path)
-    if mem_md.name.lower() == "memory.md":
-        memory_md_path = str(Path(mem_cfg.long_term_dir) / user_id / "MEMORY.md")
-    else:
-        memory_md_path = _namespace_file(mem_cfg.memory_md_path, user_id)
+    """
+    根据 user_id 计算各类记忆存储路径。
+
+    注意：
+    - 短期 / 长期 / 内容记忆以及 chat_history DB 仍按 user_id 做命名空间隔离；
+    - MEMORY.md 保持使用全局配置路径（通常是项目根的 ./MEMORY.md），
+      避免出现多份「长期偏好」副本，当前阶段不做多用户级别的 MEMORY.md 拆分。
+    """
     return {
         "short_term_dir": _namespace_dir(mem_cfg.short_term_dir, user_id),
         "long_term_dir": _namespace_dir(mem_cfg.long_term_dir, user_id),
         "content_dir": _namespace_dir(mem_cfg.content_dir, user_id),
         "chat_history_db_path": _namespace_file(mem_cfg.chat_history_db_path, user_id),
-        "memory_md_path": memory_md_path,
+        "memory_md_path": mem_cfg.memory_md_path,
     }
 
 

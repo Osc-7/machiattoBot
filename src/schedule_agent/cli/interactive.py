@@ -53,23 +53,6 @@ except Exception:  # pragma: no cover
     _RICH_CONSOLE = None
 
 
-async def _thinking_spinner(stop_event: asyncio.Event) -> None:
-    """简单的「正在思考」动画（备用，主循环有内置版本）"""
-    frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-    i = 0
-    width = shutil.get_terminal_size((80, 20)).columns
-    while not stop_event.is_set():
-        sys.stdout.write("\r" + frames[i % len(frames)])
-        sys.stdout.flush()
-        i += 1
-        try:
-            await asyncio.sleep(0.1)
-        except asyncio.CancelledError:
-            break
-    sys.stdout.write("\r" + " " * width + "\r")
-    sys.stdout.flush()
-
-
 def print_welcome():
     """打印欢迎信息"""
     md = """
@@ -401,7 +384,6 @@ async def run_interactive_loop(agent: Any) -> str:
                 continue
 
     automation_task: Optional[asyncio.Task[Any]] = asyncio.create_task(_automation_notifier_loop())
-    session_cut_task: Optional[asyncio.Task[Any]] = None
 
     # patch_stdout 让所有 print() 通过 prompt_toolkit 渲染，
     # 避免后台通知直接写 stdout 破坏输入提示符的显示。
@@ -708,7 +690,8 @@ async def run_interactive_loop(agent: Any) -> str:
                         agent.run_turn(AgentRunInput(text=user_input), hooks=hooks)
                     )
                     _raw_result = await processing_task
-                    response = _raw_result.output_text if hasattr(_raw_result, "output_text") else str(_raw_result)
+                    resp_text = getattr(_raw_result, "output_text", None)
+                    response = resp_text if isinstance(resp_text, str) else str(_raw_result)
                 else:
                     processing_task = asyncio.create_task(
                         agent.process_input(
@@ -806,10 +789,5 @@ async def run_interactive_loop(agent: Any) -> str:
             automation_stop_event.set()
             try:
                 await automation_task
-            except Exception:
-                pass
-        if session_cut_task is not None:
-            try:
-                await session_cut_task
             except Exception:
                 pass

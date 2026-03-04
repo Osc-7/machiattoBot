@@ -8,6 +8,7 @@ Schedule Agent CLI 入口
 import asyncio
 import os
 import sys
+from pathlib import Path
 from typing import Any, Callable, Awaitable, List, Optional, cast
 
 from schedule_agent.config import Config, get_config
@@ -99,12 +100,25 @@ def get_default_tools(config: Optional[Config] = None) -> List[BaseTool]:
     if config and ((config.skills.enabled or []) or getattr(config.skills, "cli_dir", None)):
         tools.append(LoadSkillTool(config=config))
 
-    # 记忆系统工具
+    # 记忆系统工具（与 Agent 使用相同的按 user_id 命名空间路径；
+    # MEMORY.md 本身保持使用全局路径，避免出现多份长期偏好副本）
     if config and config.memory.enabled:
         mem_cfg = config.memory
-        long_term = LongTermMemory(mem_cfg.long_term_dir, mem_cfg.memory_md_path)
+        user_id = os.getenv("SCHEDULE_USER_ID", "root").strip() or "root"
+
+        long_term_dir = str(Path(mem_cfg.long_term_dir) / user_id)
+        content_dir = str(Path(mem_cfg.content_dir) / user_id)
+
+        long_term = LongTermMemory(
+            storage_dir=long_term_dir,
+            memory_md_path=mem_cfg.memory_md_path,
+            qmd_enabled=mem_cfg.qmd_enabled,
+            qmd_command=mem_cfg.qmd_command,
+        )
         content = ContentMemory(
-            mem_cfg.content_dir, mem_cfg.qmd_enabled, mem_cfg.qmd_command
+            content_dir=content_dir,
+            qmd_enabled=mem_cfg.qmd_enabled,
+            qmd_command=mem_cfg.qmd_command,
         )
         top_n = mem_cfg.recall_top_n
         tools.append(MemorySearchLongTermTool(long_term, top_n))
@@ -194,15 +208,7 @@ async def main_async(args: Optional[List[str]] = None):
     source = os.getenv("SCHEDULE_SOURCE", "cli").strip() or "cli"
     default_session_id = f"{source}:default"
 
-    # 创建 Session 日志记录器（若启用）
     session_logger = None
-    if config.logging.enable_session_log:
-        session_logger = SessionLogger(
-            log_dir=config.logging.session_log_dir,
-            enable_detailed_log=config.logging.enable_detailed_log,
-            max_system_prompt_log_len=config.logging.max_system_prompt_log_len,
-        )
-        session_logger.on_session_start()
 
     agent_ref = None
     use_ipc_mode = (os.getenv("SCHEDULE_AUTOMATION_IPC", "auto").strip() or "auto").lower()
@@ -231,6 +237,15 @@ async def main_async(args: Optional[List[str]] = None):
                 print(f"错误: 未连接到 automation daemon ({ipc_socket})")
                 print("请先运行: python automation_daemon.py")
                 sys.exit(1)
+
+        # 本地直连模式下才创建 Session 日志记录器
+        if config.logging.enable_session_log:
+            session_logger = SessionLogger(
+                log_dir=config.logging.session_log_dir,
+                enable_detailed_log=config.logging.enable_detailed_log,
+                max_system_prompt_log_len=config.logging.max_system_prompt_log_len,
+            )
+            session_logger.on_session_start()
 
         async with ScheduleAgent(
             config=config,

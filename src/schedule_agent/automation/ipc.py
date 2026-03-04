@@ -167,10 +167,11 @@ class AutomationIPCServer:
             on_reasoning_delta=_on_reasoning_delta,
         )
         try:
+            meta_dict: Dict[str, Any] = metadata if isinstance(metadata, dict) else {}
             result = await self._gateway.inject_message(
                 InjectMessageCommand(
                     session_id=active_session,
-                    input=AgentRunInput(text=text, metadata=metadata if isinstance(metadata, dict) else None),
+                    input=AgentRunInput(text=text, metadata=meta_dict),
                 ),
                 hooks=hooks,
             )
@@ -276,10 +277,11 @@ class AutomationIPCServer:
                 trace_events.append(evt)
 
             hooks = AgentHooks(on_trace_event=_on_trace_event)
+            meta_dict: Dict[str, Any] = metadata if isinstance(metadata, dict) else {}
             result = await self._gateway.inject_message(
                 InjectMessageCommand(
                     session_id=active_session,
-                    input=AgentRunInput(text=text, metadata=metadata if isinstance(metadata, dict) else None),
+                    input=AgentRunInput(text=text, metadata=meta_dict),
                 ),
                 hooks=hooks,
             )
@@ -478,7 +480,9 @@ class AutomationIPCClient:
             self._turn_count_cache = int(data.get("turn_count", self._turn_count_cache))
         except Exception:
             pass
+        meta = data.get("metadata")
+        meta_dict: Dict[str, Any] = meta if isinstance(meta, dict) else {}
         return AgentRunResult(
             output_text=str(data.get("output_text") or ""),
-            metadata=data.get("metadata") if isinstance(data.get("metadata"), dict) else {},
+            metadata=meta_dict,
         )

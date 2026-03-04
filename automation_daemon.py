@@ -32,6 +32,7 @@ from schedule_agent.automation.logging_utils import AutomationTaskLogger
 from schedule_agent.automation.repositories import JobDefinitionRepository, JobRunRepository
 from schedule_agent.config import get_config
 from schedule_agent.core import ScheduleAgent, ScheduleAgentAdapter
+from schedule_agent.utils.session_logger import SessionLogger
 
 from main import get_default_tools
 
@@ -98,6 +99,16 @@ async def _main() -> None:
     source = (sys.argv[2].strip() if len(sys.argv) > 2 else "cli") or "cli"
     default_session_id = f"{source}:default"
 
+    # 会话日志记录器（daemon 级别）
+    session_logger: SessionLogger | None = None
+    if cfg.logging.enable_session_log:
+        session_logger = SessionLogger(
+            log_dir=cfg.logging.session_log_dir,
+            enable_detailed_log=cfg.logging.enable_detailed_log,
+            max_system_prompt_log_len=cfg.logging.max_system_prompt_log_len,
+        )
+        session_logger.on_session_start()
+
     queue = AgentTaskQueue()
     recovered = queue.recover_stale_running()
     if recovered:
@@ -119,6 +130,7 @@ async def _main() -> None:
         timezone=cfg.time.timezone,
         user_id=owner_id,
         source=source,
+        session_logger=session_logger,
     ) as core_agent:
         core_adapter = ScheduleAgentAdapter(core_agent)
 
@@ -130,6 +142,7 @@ async def _main() -> None:
                 timezone=cfg.time.timezone,
                 user_id=owner_id,
                 source=source,
+                session_logger=session_logger,
             )
             await created_agent.__aenter__()
             adapter = ScheduleAgentAdapter(created_agent)
@@ -177,6 +190,11 @@ async def _main() -> None:
     await session_manager.close_all()
     consumer_task.cancel()
     await asyncio.gather(consumer_task, return_exceptions=True)
+
+    if session_logger is not None:
+        # Daemon 维度无法准确统计 turn_count / total_usage，这里仅记录会话结束事件。
+        session_logger.on_session_end(turn_count=0, total_usage=None)
+        session_logger.close()
 
 
 def main() -> None:
