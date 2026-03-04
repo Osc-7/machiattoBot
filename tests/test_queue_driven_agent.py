@@ -314,6 +314,7 @@ class TestSessionManager:
         manager = SessionManager(tools_factory=lambda: [])
         core_session = AsyncMock()
         core_session.run_turn = AsyncMock(return_value=AgentRunResult(output_text="ok"))
+        core_session.activate_session = AsyncMock(return_value=None)
         core_session.close = AsyncMock()
 
         with patch.object(manager, "_create_session", return_value=core_session):
@@ -324,6 +325,7 @@ class TestSessionManager:
             )
 
         assert result == "ok"
+        core_session.activate_session.assert_awaited_once_with("cli:default")
         core_session.run_turn.assert_awaited_once()
         call_args = core_session.run_turn.await_args
         assert call_args.args[0].text == "你好"

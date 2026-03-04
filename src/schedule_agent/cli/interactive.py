@@ -107,15 +107,16 @@ def print_help():
 
 ## 可用命令
 
-- `quit` / `exit` &nbsp;&nbsp;退出程序
-- `clear` &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;清空对话历史
-- `help` &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;显示此帮助
-- `usage` / `stats` &nbsp;&nbsp;本会话 token 用量
-- `session` &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;显示当前会话
-- `session whoami` &nbsp;显示当前 user/source/session
-- `session list` &nbsp;列出当前已加载会话
-- `session switch <id>` &nbsp;切换到指定会话（已存在）
-- `session new [id]` &nbsp;创建并切换到新会话
+- `/quit` / `exit` &nbsp;&nbsp;退出程序
+- `/clear` &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;清空对话历史
+- `/help` &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;显示此帮助
+- `/usage` / `/stats` &nbsp;&nbsp;本会话 token 用量
+- `/session` &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;显示当前会话
+- `/session whoami` &nbsp;显示当前 user/source/session
+- `/session list` &nbsp;列出当前已加载会话
+- `/session switch <id>` &nbsp;切换到指定会话（已存在）
+- `/session new [id]` &nbsp;创建并切换到新会话
+- `/session delete <id>` &nbsp;删除会话记录（仅从会话列表移除，不删历史）
 
 ## 示例对话
 
@@ -134,15 +135,16 @@ def print_help():
         print("=" * 50)
         print()
         print("可用命令:")
-        print("  quit / exit  退出程序")
-        print("  clear       清空对话历史")
-        print("  help        显示此帮助")
-        print("  usage/stats 本会话 token 用量")
-        print("  session     查看当前会话")
-        print("  session whoami")
-        print("  session list")
-        print("  session switch <id>")
-        print("  session new [id]")
+        print("  /quit 或 exit        退出程序")
+        print("  /clear               清空对话历史")
+        print("  /help                显示此帮助")
+        print("  /usage 或 /stats     本会话 token 用量")
+        print("  /session             查看当前会话")
+        print("  /session whoami")
+        print("  /session list")
+        print("  /session switch <id>")
+        print("  /session new [id]")
+        print("  /session delete <id> 删除会话记录")
         print()
         print("示例对话:")
         print("  • 明天下午3点有个团队会议")
@@ -283,7 +285,20 @@ async def run_interactive_loop(agent: Any) -> str:
                 print(hint(f"  会话已存在，已切换: {session_id}"))
             print(thin_separator())
             return True
-        print(hint("  用法: session | session whoami | session list | session switch <id> | session new [id]"))
+        if sub == "delete":
+            if len(parts) < 3 or not parts[2].strip():
+                print(hint("  用法: session delete <id>"))
+                print(thin_separator())
+                return True
+            target = parts[2].strip()
+            ok = await _call_method("delete_session", target)
+            if ok:
+                print(hint(f"  已删除会话记录: {target}"))
+            else:
+                print(hint(f"  无法删除会话: {target}（可能是当前活跃会话或不存在）"))
+            print(thin_separator())
+            return True
+        print(hint("  用法: session | session whoami | session list | session switch <id> | session new [id] | session delete <id>"))
         print(thin_separator())
         return True
 
@@ -399,9 +414,7 @@ async def run_interactive_loop(agent: Any) -> str:
         while True:
             try:
                 if pt_session is not None and pt_prompt is not None:
-                    user_input = (
-                        await pt_session.prompt_async(pt_prompt)
-                    ).strip()
+                    user_input = (await pt_session.prompt_async(pt_prompt)).strip()
                 else:
                     user_input = input(prompt_prefix()).strip()
             except KeyboardInterrupt:
@@ -435,7 +448,13 @@ async def run_interactive_loop(agent: Any) -> str:
             if not user_input:
                 continue
 
-            if user_input.lower() in ("quit", "exit", "q"):
+            # 支持以 `/` 前缀显式区分指令；指令匹配时忽略这一前缀。
+            raw_input = user_input
+            is_slash_cmd = raw_input.startswith("/")
+            cmd_text = raw_input[1:].lstrip() if is_slash_cmd else raw_input
+            cmd_lower = cmd_text.lower()
+
+            if cmd_lower in ("quit", "exit", "q"):
                 u = await _get_token_usage()
                 if u["call_count"] > 0:
                     print()
@@ -446,23 +465,23 @@ async def run_interactive_loop(agent: Any) -> str:
                 print()
                 return "quit"
 
-            if user_input.lower() == "clear":
+            if cmd_lower == "clear":
                 await _call_method("clear_context")
                 print(hint("  对话历史已清空。"))
                 print(thin_separator())
                 continue
 
-            if user_input.lower() == "help":
+            if cmd_lower == "help":
                 print_help()
                 print(thin_separator())
                 continue
 
-            if user_input.lower() in ("usage", "stats", "tokens"):
+            if cmd_lower in ("usage", "stats", "tokens"):
                 print_token_usage_data(await _get_token_usage())
                 print(thin_separator())
                 continue
 
-            if await _handle_session_command(user_input):
+            if await _handle_session_command(cmd_text):
                 continue
 
             # ── 处理用户输入 ──

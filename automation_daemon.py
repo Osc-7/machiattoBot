@@ -14,6 +14,7 @@ import logging
 import signal
 import sys
 from pathlib import Path
+from typing import Any
 
 from schedule_agent.automation import (
     AgentTaskQueue,
@@ -132,7 +133,8 @@ async def _main() -> None:
             )
             await created_agent.__aenter__()
             adapter = ScheduleAgentAdapter(created_agent)
-            await adapter.activate_session(session_key)
+            # 不在 factory 里调用 activate_session，由 gateway._create_session 根据
+            # is_expired 状态决定 replay_messages_limit，避免全量历史被错误加载。
             return adapter
 
         gateway = AutomationCoreGateway(
@@ -147,7 +149,7 @@ async def _main() -> None:
             source=source,
             session_registry=SessionRegistry(),
         )
-        await core_adapter.activate_session(default_session_id)
+        await gateway.activate_primary_session()
 
         ipc = AutomationIPCServer(
             gateway,
@@ -182,6 +184,21 @@ def main() -> None:
     asyncio.set_event_loop(loop)
     stop_event = asyncio.Event()
 
+    def _loop_exception_handler(loop_obj: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
+        # 屏蔽 anyio/mcp 在 shutdown_asyncgens 阶段偶发的已知噪音：
+        # RuntimeError: Attempted to exit cancel scope in a different task than it was entered in
+        message = str(context.get("message") or "")
+        exc = context.get("exception")
+        if (
+            "an error occurred during closing of asynchronous generator" in message
+            and isinstance(exc, RuntimeError)
+            and "Attempted to exit cancel scope in a different task" in str(exc)
+        ):
+            return
+        loop_obj.default_exception_handler(context)
+
+    loop.set_exception_handler(_loop_exception_handler)
+
     def _signal_handler(*_args: object) -> None:
         if not stop_event.is_set():
             stop_event.set()
@@ -199,14 +216,27 @@ def main() -> None:
     try:
         loop.run_until_complete(_runner())
     finally:
-        pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
-        for t in pending:
-            t.cancel()
-        if pending:
-            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-        loop.run_until_complete(loop.shutdown_asyncgens())
-        asyncio.set_event_loop(None)
-        loop.close()
+        try:
+            pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
+            for t in pending:
+                t.cancel()
+            if pending:
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception:
+                pass
+            shutdown_default_executor = getattr(loop, "shutdown_default_executor", None)
+            if shutdown_default_executor is not None:
+                try:
+                    loop.run_until_complete(shutdown_default_executor())
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        finally:
+            asyncio.set_event_loop(None)
+            loop.close()
 
 
 if __name__ == "__main__":

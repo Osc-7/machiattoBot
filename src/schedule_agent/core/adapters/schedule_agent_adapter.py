@@ -91,10 +91,14 @@ class ScheduleAgentAdapter:
     async def close(self) -> None:
         await self._agent.close()
 
-    async def activate_session(self, session_id: str) -> None:
+    async def activate_session(
+        self,
+        session_id: str,
+        replay_messages_limit: Optional[int] = None,
+    ) -> None:
         activate = getattr(self._agent, "activate_session", None)
         if callable(activate):
-            maybe = activate(session_id)
+            maybe = activate(session_id, replay_messages_limit=replay_messages_limit)
             if inspect.isawaitable(maybe):
                 await maybe
 
@@ -116,6 +120,12 @@ class ScheduleAgentAdapter:
 
     def get_turn_count(self) -> int:
         return self._agent.get_turn_count()
+
+    def delete_session_history(self, session_id: str) -> int:
+        fn = getattr(self._agent, "delete_session_history", None)
+        if callable(fn):
+            return fn(session_id)
+        return 0
 
     @property
     def config(self):

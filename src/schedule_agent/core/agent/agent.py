@@ -281,6 +281,18 @@ class ScheduleAgent:
         """清空对话上下文"""
         self._context.clear()
 
+    def delete_session_history(self, session_id: Optional[str] = None) -> int:
+        """
+        删除指定 session 的对话历史。
+
+        仅删除 ChatHistoryDB 中该 session + source 的消息记录，不影响长期记忆。
+        默认使用当前 Agent 的 session_id。
+        """
+        sid = (session_id or self._session_id or "").strip()
+        if not sid or not self._memory_enabled:
+            return 0
+        return self._chat_history_db.delete_session_messages(sid, source=self._source)
+
     def get_token_usage(self) -> dict:
         """
         获取本会话累计的 token 用量。
@@ -795,7 +807,7 @@ class ScheduleAgent:
 
         return session_summary
 
-    async def activate_session(self, session_id: str, replay_messages_limit: Optional[int] = None) -> None:
+    async def activate_session(self, session_id: str, replay_messages_limit: Optional[int] = 0) -> None:
         """
         激活指定会话并尝试从持久化历史恢复上下文。
 
@@ -840,9 +852,10 @@ class ScheduleAgent:
                 self._context.add_assistant_message(content=content)
         self._current_turn_id = sum(1 for r in replay_rows if r.get("role") == "user")
         self._last_history_id = max(int(r.get("id", 0)) for r in history)
-        first_ts = replay_rows[0].get("timestamp")
-        if isinstance(first_ts, str) and first_ts.strip():
-            self._session_start_time = first_ts
+        if replay_rows:
+            first_ts = replay_rows[0].get("timestamp")
+            if isinstance(first_ts, str) and first_ts.strip():
+                self._session_start_time = first_ts
 
     async def _sync_external_session_updates(self) -> None:
         """同步其他终端在同一 session 里新增的 user/assistant 消息。"""

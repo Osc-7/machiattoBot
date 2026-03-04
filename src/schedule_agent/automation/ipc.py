@@ -222,6 +222,19 @@ class AutomationIPCServer:
             self._gateway.mark_activity(session_id)
             return {"created": created, "active_session_id": session_id}
 
+        if method == "session_delete":
+            session_id = str(params.get("session_id") or "").strip()
+            if not session_id:
+                raise ValueError("session_id 不能为空")
+            # 任一客户端仍将此会话作为 active 时，不允许删除，避免并发使用中的状态错乱。
+            if session_id in set(self._client_active_session.values()):
+                return {"deleted": False, "active_session_id": self._client_active_session.get(client_id)}
+            ok = await self._gateway.delete_session(session_id)
+            # 如果客户端当前活跃会话被删除，则回退到默认会话标识；实际 CoreSession 需按需显式切换。
+            if ok and self._client_active_session.get(client_id) == session_id:
+                self._client_active_session[client_id] = f"{self._source}:default"
+            return {"deleted": ok, "active_session_id": self._client_active_session.get(client_id)}
+
         if method == "clear_context":
             await self._gateway.clear_context_for_session(active_session)
             return {"ok": True}
@@ -349,6 +362,17 @@ class AutomationIPCClient:
         )
         self.active_session_id = str(data.get("active_session_id") or session_id)
         return bool(data.get("created", False))
+
+    async def delete_session(self, session_id: str) -> bool:
+        data = await self._request(
+            "session_delete",
+            {"session_id": session_id},
+        )
+        # 如果服务器端将 active_session_id 回退，这里也同步一下。
+        maybe_active = data.get("active_session_id")
+        if isinstance(maybe_active, str) and maybe_active:
+            self.active_session_id = maybe_active
+        return bool(data.get("deleted", False))
 
     async def clear_context(self) -> None:
         await self._request("clear_context", {})

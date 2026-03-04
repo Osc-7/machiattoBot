@@ -675,3 +675,16 @@ class TestAgentIntegration:
         call_args = mock_threshold.call_args
         assert call_args is not None
         assert call_args.kwargs.get("actual_tokens") is None
+
+    @pytest.mark.asyncio
+    async def test_activate_session_with_zero_replay_does_not_crash_with_existing_history(self, mock_config):
+        """当有历史且 replay_messages_limit=0 时，不应触发索引异常。"""
+        agent = ScheduleAgent(config=mock_config, source="cli", user_id="root")
+        sid = "cli:replay-zero"
+        agent._chat_history_db.write_message(session_id=sid, role="user", content="u1", source="cli")
+        agent._chat_history_db.write_message(session_id=sid, role="assistant", content="a1", source="cli")
+
+        await agent.activate_session(sid, replay_messages_limit=0)
+
+        assert len(agent.context) == 0
+        assert agent.get_turn_count() == 0

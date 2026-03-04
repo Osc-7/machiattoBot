@@ -255,7 +255,8 @@ async def main_async(args: Optional[List[str]] = None):
                 )
                 await created_agent.__aenter__()
                 adapter = ScheduleAgentAdapter(created_agent)
-                await adapter.activate_session(session_key)
+                # 不在 factory 里调用 activate_session，由 gateway._create_session 根据
+                # is_expired 状态决定 replay_messages_limit，避免全量历史被错误加载。
                 return adapter
             try:
                 idle_timeout = int(config.memory.idle_timeout_minutes)
@@ -272,7 +273,7 @@ async def main_async(args: Optional[List[str]] = None):
                 owner_id=user_id,
                 source=source,
             )
-            await core_session.activate_session(default_session_id)
+            await gateway.activate_primary_session()
             agent_ref = gateway
             try:
                 # 检查是否有命令行参数

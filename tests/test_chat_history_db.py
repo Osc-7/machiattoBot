@@ -62,3 +62,18 @@ def test_chat_history_db_get_session_messages_after_with_role_filter(tmp_path):
 
     assert [r["role"] for r in rows] == ["assistant", "user"]
     assert [r["content"] for r in rows] == ["a1", "u2"]
+
+
+def test_chat_history_db_delete_session_messages_can_filter_source(tmp_path):
+    db_path = tmp_path / "chat_history.db"
+    db = ChatHistoryDB(str(db_path))
+    db.write_message(session_id="shared:s1", role="user", content="from cli", source="cli")
+    db.write_message(session_id="shared:s1", role="user", content="from qq", source="qq")
+
+    deleted = db.delete_session_messages("shared:s1", source="cli")
+    remain = db.get_session_messages("shared:s1")
+    db.close()
+
+    assert deleted == 1
+    assert len(remain) == 1
+    assert remain[0]["source"] == "qq"

@@ -9,6 +9,7 @@ Manages ScheduleAgent instance lifecycles based on context_policy:
 
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
@@ -112,6 +113,11 @@ class SessionManager:
         """每次新建 Agent，执行完立即关闭。不持久化任何对话记忆。"""
         session = self._create_session()
         try:
+            activate = getattr(session, "activate_session", None)
+            if callable(activate):
+                maybe = activate(command.session_id)
+                if inspect.isawaitable(maybe):
+                    await maybe
             run_result = await session.run_turn(
                 command.input,
                 hooks=AgentHooks(on_trace_event=on_trace_event),
@@ -128,7 +134,13 @@ class SessionManager:
         """复用同一 Agent 实例，保持对话上下文。启动时会自动加载 LongTermMemory（由 Agent 内部处理）。"""
         session_id = command.session_id
         if session_id not in self._sessions:
-            self._sessions[session_id] = self._create_session()
+            session = self._create_session()
+            activate = getattr(session, "activate_session", None)
+            if callable(activate):
+                maybe = activate(session_id)
+                if inspect.isawaitable(maybe):
+                    await maybe
+            self._sessions[session_id] = session
             logger.debug("Created persistent session: %s", session_id)
 
         run_result = await self._sessions[session_id].run_turn(

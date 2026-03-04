@@ -364,6 +364,35 @@ class ChatHistoryDB:
             rows = cur.fetchall()
         return [_row_to_dict(r) for r in rows]
 
+    def delete_session_messages(self, session_id: str, *, source: Optional[str] = None) -> int:
+        """删除某个 session 的所有历史消息。
+
+        仅影响对话历史数据库，不影响长期记忆等其他存储。
+        """
+        sid = str(session_id or "").strip()
+        if not sid:
+            return 0
+        source_filter = str(source).strip() if source is not None else self._default_source
+        with self._cursor() as cur:
+            if source_filter:
+                cur.execute(
+                    """
+                    DELETE FROM messages
+                    WHERE session_id = ?
+                      AND source = ?
+                    """,
+                    (sid, source_filter),
+                )
+            else:
+                cur.execute(
+                    """
+                    DELETE FROM messages
+                    WHERE session_id = ?
+                    """,
+                    (sid,),
+                )
+            return cur.rowcount
+
     def close(self) -> None:
         """关闭数据库连接。"""
         if self._conn is not None:

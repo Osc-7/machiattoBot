@@ -89,6 +89,7 @@ class LongTermMemory:
         self._md_dir = self._dir / "markdown"
         self._md_dir.mkdir(parents=True, exist_ok=True)
         self._entries: List[MemoryEntry] = self._load()
+        self._entries_mtime: float = self._entries_file.stat().st_mtime if self._entries_file.exists() else 0.0
 
     def _load(self) -> List[MemoryEntry]:
         if not self._entries_file.exists():
@@ -109,9 +110,26 @@ class LongTermMemory:
         with open(self._entries_file, "w", encoding="utf-8") as f:
             for entry in self._entries:
                 f.write(json.dumps(entry.to_dict(), ensure_ascii=False) + "\n")
+        self._entries_mtime = self._entries_file.stat().st_mtime if self._entries_file.exists() else 0.0
+
+    def _append_entry(self, entry: MemoryEntry) -> None:
+        with open(self._entries_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry.to_dict(), ensure_ascii=False) + "\n")
+        self._entries_mtime = self._entries_file.stat().st_mtime if self._entries_file.exists() else 0.0
+
+    def _refresh_entries_if_needed(self) -> None:
+        if not self._entries_file.exists():
+            self._entries_mtime = 0.0
+            return
+        mtime = self._entries_file.stat().st_mtime
+        if mtime <= self._entries_mtime:
+            return
+        self._entries = self._load()
+        self._entries_mtime = mtime
 
     @property
     def entries(self) -> List[MemoryEntry]:
+        self._refresh_entries_if_needed()
         return list(self._entries)
 
     async def distill(
@@ -164,9 +182,8 @@ class LongTermMemory:
                 confidence=item.get("confidence", 0.5),
             )
             self._entries.append(entry)
+            self._append_entry(entry)
             new_entries.append(entry)
-
-        self._save()
 
         if new_entries:
             self._write_entries_as_markdown(new_entries)
@@ -245,6 +262,7 @@ class LongTermMemory:
 
     def search(self, query: str, top_n: int = 5) -> List[MemoryEntry]:
         """搜索长期记忆：QMD 开启时优先语义检索，不足则用关键词补充。"""
+        self._refresh_entries_if_needed()
         result: List[MemoryEntry] = []
         if self._qmd_enabled:
             result = self._search_qmd(query, top_n)
@@ -270,6 +288,7 @@ class LongTermMemory:
 
     def to_context_string(self, max_entries: int = 10) -> str:
         """将长期记忆格式化为可注入 system prompt 的文本。"""
+        self._refresh_entries_if_needed()
         if not self._entries:
             return ""
         recent = self._entries[-max_entries:]
@@ -314,7 +333,7 @@ class LongTermMemory:
             confidence=1.0,
         )
         self._entries.append(entry)
-        self._save()
+        self._append_entry(entry)
         return entry
 
     def get_recent_topics(self, n: int = 10) -> List[MemoryEntry]:
@@ -327,5 +346,6 @@ class LongTermMemory:
         Returns:
             最近话题条目列表
         """
+        self._refresh_entries_if_needed()
         topics = [e for e in self._entries if e.category == "recent_topic"]
         return topics[-n:]

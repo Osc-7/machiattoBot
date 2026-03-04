@@ -117,3 +117,46 @@ async def test_ipc_server_client_run_turn_and_session_commands(tmp_path: Path):
         await client.close()
         await server.stop()
         await gateway.close()
+
+
+@pytest.mark.asyncio
+async def test_ipc_session_delete_rejected_when_session_is_active_for_any_client(tmp_path: Path):
+    default_core = AsyncMock()
+    default_core.run_turn = AsyncMock(return_value=AgentRunResult(output_text="default"))
+    default_core.get_session_state = MagicMock(return_value=MagicMock(turn_count=0))
+    default_core.get_token_usage = MagicMock(return_value={})
+    default_core.close = AsyncMock()
+
+    work_core = AsyncMock()
+    work_core.get_session_state = MagicMock(return_value=MagicMock(turn_count=0))
+    work_core.activate_session = AsyncMock(return_value=None)
+    work_core.delete_session_history = MagicMock(return_value=1)
+    work_core.close = AsyncMock()
+    factory = AsyncMock(return_value=work_core)
+
+    gateway = AutomationCoreGateway(
+        default_core,
+        session_id="cli:default",
+        session_factory=factory,
+        session_registry=SessionRegistry(str(tmp_path / "sessions.db")),
+    )
+    socket_path = str(tmp_path / "automation.sock")
+    server = AutomationIPCServer(gateway, owner_id="root", source="cli", socket_path=socket_path)
+    await server.start()
+    client_a = AutomationIPCClient(owner_id="root", source="cli", socket_path=socket_path)
+    client_b = AutomationIPCClient(owner_id="root", source="cli", socket_path=socket_path)
+    try:
+        await client_a.connect()
+        await client_b.connect()
+        await client_a.switch_session("cli:work", create_if_missing=True)
+        await client_b.switch_session("cli:work", create_if_missing=True)
+
+        deleted = await client_a.delete_session("cli:work")
+
+        assert deleted is False
+        work_core.delete_session_history.assert_not_called()
+    finally:
+        await client_a.close()
+        await client_b.close()
+        await server.stop()
+        await gateway.close()

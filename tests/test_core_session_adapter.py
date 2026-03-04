@@ -103,4 +103,4 @@ async def test_activate_session_passthrough():
     adapter = ScheduleAgentAdapter(agent)
     await adapter.activate_session("cli:shared")
 
-    agent.activate_session.assert_awaited_once_with("cli:shared")
+    agent.activate_session.assert_awaited_once_with("cli:shared", replay_messages_limit=None)
