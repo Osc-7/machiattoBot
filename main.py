@@ -7,10 +7,12 @@ Schedule Agent CLI 入口
 
 import asyncio
 import sys
-from typing import Callable, Awaitable, List, Optional, cast
+from typing import Any, Callable, Awaitable, List, Optional, cast
 
 from schedule_agent.config import Config, get_config
-from schedule_agent.core import ScheduleAgent
+from schedule_agent.automation import AutomationCoreGateway, SessionCutPolicy
+from schedule_agent.core import ScheduleAgent, ScheduleAgentAdapter
+from schedule_agent.core.interfaces import AgentHooks, AgentRunInput
 from schedule_agent.cli import run_interactive_loop
 from schedule_agent.utils.session_logger import SessionLogger
 from schedule_agent.core.tools import (
@@ -151,7 +153,7 @@ def _load_config() -> Optional[Config]:
         sys.exit(1)
 
 
-async def run_single_command(agent: ScheduleAgent, command: str) -> str:
+async def run_single_command(agent: Any, command: str) -> str:
     """
     执行单条命令。
 
@@ -162,6 +164,9 @@ async def run_single_command(agent: ScheduleAgent, command: str) -> str:
     Returns:
         Agent 的响应
     """
+    if hasattr(agent, "run_turn"):
+        result = await agent.run_turn(AgentRunInput(text=command), hooks=AgentHooks())
+        return result.output_text
     return await agent.process_input(command)
 
 
@@ -199,18 +204,31 @@ async def main_async(args: Optional[List[str]] = None):
             timezone=config.time.timezone,
             session_logger=session_logger,
         ) as agent:
-            agent_ref = agent
+            core_session = ScheduleAgentAdapter(agent)
+            try:
+                idle_timeout = int(config.memory.idle_timeout_minutes)
+            except Exception:
+                idle_timeout = 30
+            gateway = AutomationCoreGateway(
+                core_session,
+                session_id="cli:default",
+                policy=SessionCutPolicy(
+                    idle_timeout_minutes=idle_timeout,
+                    daily_cutoff_hour=4,
+                ),
+            )
+            agent_ref = gateway
             should_finalize_session = True
             try:
                 # 检查是否有命令行参数
                 if args and len(args) > 1:
                     # 执行单条命令
                     command = " ".join(args[1:])
-                    response = await run_single_command(agent, command)
+                    response = await run_single_command(gateway, command)
                     print(response)
                 else:
                     # 运行交互式循环
-                    exit_reason = await run_interactive_loop(agent)
+                    exit_reason = await run_interactive_loop(gateway)
                     # 仅用户主动 quit/exit/q 时写 summary；Ctrl+C/EOF 不写（调试后门）
                     should_finalize_session = exit_reason == "quit"
             finally:

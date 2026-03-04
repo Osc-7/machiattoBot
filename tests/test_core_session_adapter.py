@@ -1,0 +1,89 @@
+"""CoreSession 适配器测试。"""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from schedule_agent.core.adapters import ScheduleAgentAdapter
+from schedule_agent.core.interfaces import AgentHooks, AgentRunInput
+
+
+@pytest.mark.asyncio
+async def test_run_turn_forwards_callbacks_and_events():
+    agent = MagicMock()
+
+    async def _process_input(text, on_stream_delta=None, on_reasoning_delta=None, on_trace_event=None):
+        assert text == "hello"
+        if on_stream_delta:
+            await on_stream_delta("A")
+        if on_reasoning_delta:
+            await on_reasoning_delta("R")
+        if on_trace_event:
+            await on_trace_event({"type": "tool_call", "name": "x"})
+            await on_trace_event({"type": "tool_result", "name": "x", "success": True})
+        return "done"
+
+    agent.process_input = AsyncMock(side_effect=_process_input)
+    agent.finalize_session = AsyncMock()
+    agent.reset_session = MagicMock()
+    agent.close = AsyncMock()
+    agent.get_turn_count = MagicMock(return_value=3)
+    agent.get_token_usage = MagicMock(return_value={"total_tokens": 10})
+    agent._session_id = "sess-1"
+
+    adapter = ScheduleAgentAdapter(agent)
+
+    stream_cb = AsyncMock()
+    reasoning_cb = AsyncMock()
+    trace_cb = AsyncMock()
+    event_cb = AsyncMock()
+    hooks = AgentHooks(
+        on_assistant_delta=stream_cb,
+        on_reasoning_delta=reasoning_cb,
+        on_trace_event=trace_cb,
+        on_event=event_cb,
+    )
+
+    result = await adapter.run_turn(AgentRunInput(text="hello"), hooks=hooks)
+
+    assert result.output_text == "done"
+    stream_cb.assert_awaited()
+    reasoning_cb.assert_awaited()
+    assert trace_cb.await_count == 2
+    event_names = [call.args[0].name for call in event_cb.await_args_list]
+    assert "agent_start" in event_names
+    assert "turn_start" in event_names
+    assert "assistant_delta" in event_names
+    assert "reasoning_delta" in event_names
+    assert "tool_call" in event_names
+    assert "tool_result" in event_names
+    assert "assistant_final" in event_names
+    assert "turn_end" in event_names
+
+
+@pytest.mark.asyncio
+async def test_session_lifecycle_passthrough():
+    agent = MagicMock()
+    agent.process_input = AsyncMock(return_value="ok")
+    agent.finalize_session = AsyncMock(return_value="summary")
+    agent.reset_session = MagicMock()
+    agent.close = AsyncMock()
+    agent.get_turn_count = MagicMock(return_value=2)
+    agent.get_token_usage = MagicMock(return_value={"total_tokens": 5})
+    agent._session_id = "sess-2"
+
+    adapter = ScheduleAgentAdapter(agent)
+
+    summary = await adapter.finalize_session()
+    adapter.reset_session()
+    state = adapter.get_session_state()
+    await adapter.close()
+
+    assert summary == "summary"
+    agent.reset_session.assert_called_once()
+    assert state.session_id == "sess-2"
+    assert state.turn_count == 2
+    assert state.token_usage["total_tokens"] == 5
+    agent.close.assert_awaited_once()

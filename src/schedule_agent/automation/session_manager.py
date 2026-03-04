@@ -10,9 +10,11 @@ Manages ScheduleAgent instance lifecycles based on context_policy:
 from __future__ import annotations
 
 import logging
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from schedule_agent.config import Config, get_config
+from schedule_agent.core.adapters import ScheduleAgentAdapter
+from schedule_agent.core.interfaces import AgentHooks, AgentRunInput, CoreSession, RunTurnCommand
 from schedule_agent.core.tools import BaseTool
 
 from .agent_task import ContextPolicy
@@ -43,7 +45,7 @@ class SessionManager:
     ):
         self._config = config or get_config()
         self._tools_factory = tools_factory
-        self._sessions: Dict[str, object] = {}
+        self._sessions: Dict[str, CoreSession] = {}
 
     # ------------------------------------------------------------------
     # 公开接口
@@ -62,10 +64,10 @@ class SessionManager:
         - ephemeral: 新建临时 Agent，执行完立即关闭，不保留对话历史。
         - persistent: 按 session_id 复用 Agent 实例，保留对话历史和长期记忆。
         """
+        command = RunTurnCommand(session_id=session_id, input=AgentRunInput(text=instruction))
         if context_policy == ContextPolicy.EPHEMERAL:
-            return await self._run_ephemeral(instruction, on_trace_event=on_trace_event)
-        else:
-            return await self._run_persistent(session_id, instruction, on_trace_event=on_trace_event)
+            return await self._run_ephemeral(command, on_trace_event=on_trace_event)
+        return await self._run_persistent(command, on_trace_event=on_trace_event)
 
     async def close_session(self, session_id: str) -> None:
         """关闭并移除指定的 persistent session。"""
@@ -99,30 +101,38 @@ class SessionManager:
         )
         return agent
 
+    def _create_session(self) -> CoreSession:
+        return ScheduleAgentAdapter(self._create_agent())
+
     async def _run_ephemeral(
         self,
-        instruction: str,
+        command: RunTurnCommand,
         on_trace_event: Optional[Callable[[Dict[str, Any]], Any]] = None,
     ) -> str:
         """每次新建 Agent，执行完立即关闭。不持久化任何对话记忆。"""
-        agent = self._create_agent()
+        session = self._create_session()
         try:
-            result = await agent.process_input(instruction, on_trace_event=on_trace_event)
-            return result
+            run_result = await session.run_turn(
+                command.input,
+                hooks=AgentHooks(on_trace_event=on_trace_event),
+            )
+            return run_result.output_text
         finally:
-            await agent.close()
+            await session.close()
 
     async def _run_persistent(
         self,
-        session_id: str,
-        instruction: str,
+        command: RunTurnCommand,
         on_trace_event: Optional[Callable[[Dict[str, Any]], Any]] = None,
     ) -> str:
         """复用同一 Agent 实例，保持对话上下文。启动时会自动加载 LongTermMemory（由 Agent 内部处理）。"""
+        session_id = command.session_id
         if session_id not in self._sessions:
-            agent = self._create_agent()
-            self._sessions[session_id] = agent
+            self._sessions[session_id] = self._create_session()
             logger.debug("Created persistent session: %s", session_id)
 
-        agent = self._sessions[session_id]
-        return await agent.process_input(instruction, on_trace_event=on_trace_event)
+        run_result = await self._sessions[session_id].run_turn(
+            command.input,
+            hooks=AgentHooks(on_trace_event=on_trace_event),
+        )
+        return run_result.output_text

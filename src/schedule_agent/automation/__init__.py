@@ -1,6 +1,7 @@
 """Automation subsystem exports."""
 
 from .agent_task import AgentTask, ContextPolicy, TaskStatus, make_cron_task, make_user_task
+from .core_gateway import AutomationCoreGateway, SessionCutPolicy
 from .event_bus import AsyncEventBus
 from .runtime import AutomationRuntime, get_runtime, reset_runtime
 from .scheduler import AutomationScheduler
@@ -34,6 +35,8 @@ __all__ = [
     "make_cron_task",
     "make_user_task",
     "SessionManager",
+    "AutomationCoreGateway",
+    "SessionCutPolicy",
     # Event-driven runtime (existing)
     "AsyncEventBus",
     "AutomationRuntime",

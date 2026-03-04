@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from schedule_agent.core.interfaces import AgentRunResult
 from schedule_agent.automation.agent_task import (
     AgentTask,
     ContextPolicy,
@@ -305,6 +306,27 @@ class TestSessionManager:
         for ag in agents:
             ag.close.assert_awaited_once()
         assert manager.active_sessions() == []
+
+    @pytest.mark.asyncio
+    async def test_run_task_uses_core_session_run_turn(self):
+        from schedule_agent.automation.session_manager import SessionManager
+
+        manager = SessionManager(tools_factory=lambda: [])
+        core_session = AsyncMock()
+        core_session.run_turn = AsyncMock(return_value=AgentRunResult(output_text="ok"))
+        core_session.close = AsyncMock()
+
+        with patch.object(manager, "_create_session", return_value=core_session):
+            result = await manager.run_task(
+                session_id="cli:default",
+                instruction="你好",
+                context_policy=ContextPolicy.PERSISTENT,
+            )
+
+        assert result == "ok"
+        core_session.run_turn.assert_awaited_once()
+        call_args = core_session.run_turn.await_args
+        assert call_args.args[0].text == "你好"
 
 
 # ---------------------------------------------------------------------------

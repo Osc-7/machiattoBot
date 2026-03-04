@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any, List, Optional
 
 from schedule_agent.core import ScheduleAgent
+from schedule_agent.core.interfaces import AgentHooks, AgentRunInput
 from schedule_agent.automation.repositories import _automation_base_dir
 from schedule_agent.utils.cli_style import (
     hint,
@@ -142,7 +143,7 @@ def print_help():
         print()
 
 
-def print_token_usage(agent: ScheduleAgent):
+def print_token_usage(agent: Any):
     """打印本会话 token 用量统计"""
     u = agent.get_token_usage()
     cost_line = f"\n- **预估费用**: `¥{u['cost_yuan']:.4f}`" if u.get("cost_yuan") is not None else ""
@@ -171,7 +172,7 @@ def print_token_usage(agent: ScheduleAgent):
         print()
 
 
-async def run_interactive_loop(agent: ScheduleAgent) -> str:
+async def run_interactive_loop(agent: Any) -> str:
     """运行交互式对话循环，返回退出原因（quit/sigint/eof）。"""
     print_welcome()
     print(thin_separator())
@@ -188,7 +189,8 @@ async def run_interactive_loop(agent: ScheduleAgent) -> str:
     is_processing = False
     interrupted_processing = False
 
-    # Session 切分：用 list 存上次活动时间，供主循环与后台 timer 共享
+    # Session 切分（兼容回退）：本地记录上次活动时间。
+    # 若传入 Automation gateway，会优先使用 gateway 的策略与指令。
     _last_activity_ref: List[datetime] = [datetime.now()]
 
     def _should_cut_session(idle_timeout_minutes: int) -> bool:
@@ -235,7 +237,20 @@ async def run_interactive_loop(agent: ScheduleAgent) -> str:
             # 仅在未在处理用户输入时切分，避免并发写 context
             if is_processing:
                 continue
-            if _should_cut_session(idle_timeout):
+            if hasattr(agent, "expire_session_if_needed"):
+                if await agent.expire_session_if_needed(reason="timer"):
+                    try:
+                        mark_activity = getattr(agent, "mark_activity", None)
+                        if callable(mark_activity):
+                            mark_activity()
+                    except Exception:
+                        pass
+                    print()
+                    print(hint("  [Session] 已自动切分新会话。"))
+                    print()
+                    _last_activity_ref[0] = datetime.now()
+                    continue
+            elif _should_cut_session(idle_timeout):
                 try:
                     await _do_session_cut(hint)
                     _last_activity_ref[0] = datetime.now()
@@ -244,6 +259,12 @@ async def run_interactive_loop(agent: ScheduleAgent) -> str:
 
     async def _do_session_cut(hint_fn: Any) -> None:
         """执行 session 切分：finalize → reset。"""
+        if hasattr(agent, "expire_session"):
+            await agent.expire_session(reason="manual_check")
+            print()
+            print(hint_fn("  [Session] 已自动切分新会话。"))
+            print()
+            return
         try:
             await agent.finalize_session()
         except Exception:
@@ -406,9 +427,20 @@ async def run_interactive_loop(agent: ScheduleAgent) -> str:
                 idle_timeout = int(agent.config.memory.idle_timeout_minutes)
             except Exception:
                 idle_timeout = 30
-            if _should_cut_session(idle_timeout):
+            if hasattr(agent, "expire_session_if_needed"):
+                if await agent.expire_session_if_needed(reason="before_user_turn"):
+                    print()
+                    print(hint("  [Session] 已自动切分新会话。"))
+                    print()
+            elif _should_cut_session(idle_timeout):
                 await _do_session_cut(hint)
             _last_activity_ref[0] = datetime.now()
+            try:
+                mark_activity = getattr(agent, "mark_activity", None)
+                if callable(mark_activity):
+                    mark_activity()
+            except Exception:
+                pass
 
             if user_input.lower() in ("quit", "exit", "q"):
                 u = agent.get_token_usage()
@@ -649,15 +681,27 @@ async def run_interactive_loop(agent: ScheduleAgent) -> str:
                         _print_with_spinner(hint(f"  → 工具结果: {name} {ok}（{ms}ms） {msg}"))
 
                 is_processing = True
-                processing_task = asyncio.create_task(
-                    agent.process_input(
-                        user_input,
-                        on_stream_delta=on_stream_delta,
+                if hasattr(agent, "run_turn"):
+                    hooks = AgentHooks(
+                        on_assistant_delta=on_stream_delta,
                         on_reasoning_delta=on_reasoning_delta,
                         on_trace_event=on_trace_event,
                     )
-                )
-                response = await processing_task
+                    processing_task = asyncio.create_task(
+                        agent.run_turn(AgentRunInput(text=user_input), hooks=hooks)
+                    )
+                    _raw_result = await processing_task
+                    response = _raw_result.output_text if hasattr(_raw_result, "output_text") else str(_raw_result)
+                else:
+                    processing_task = asyncio.create_task(
+                        agent.process_input(
+                            user_input,
+                            on_stream_delta=on_stream_delta,
+                            on_reasoning_delta=on_reasoning_delta,
+                            on_trace_event=on_trace_event,
+                        )
+                    )
+                    response = await processing_task
                 _stop_spinner()
                 _flush_reasoning_buffer()
                 if spinner_task is not None:

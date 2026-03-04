@@ -21,7 +21,9 @@ from schedule_agent.config import (
     MCPConfig,
     MCPServerConfig,
 )
+from schedule_agent.automation import AutomationCoreGateway
 from schedule_agent.core import ScheduleAgent
+from schedule_agent.core.adapters import ScheduleAgentAdapter
 from schedule_agent.core.tools import BaseTool
 from schedule_agent.cli.interactive import (
     print_welcome,
@@ -317,7 +319,11 @@ class TestMainAsync:
 
                 with patch('main.run_interactive_loop', new_callable=AsyncMock, return_value="quit") as mock_loop:
                     await cli_module.main_async([])
-                    mock_loop.assert_called_once_with(mock_agent_instance)
+                    mock_loop.assert_called_once()
+                    wrapped = mock_loop.call_args.args[0]
+                    assert isinstance(wrapped, AutomationCoreGateway)
+                    assert isinstance(wrapped.raw_core_session, ScheduleAgentAdapter)
+                    assert wrapped.raw_core_session.raw_agent is mock_agent_instance
                 mock_agent_instance.finalize_session.assert_called_once()
 
     @pytest.mark.asyncio
