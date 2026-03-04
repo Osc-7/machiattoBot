@@ -11,8 +11,8 @@ import sys
 import shutil
 import threading
 import time
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import datetime
+from typing import Any, List, Optional
 
 from schedule_agent.core import ScheduleAgent
 from schedule_agent.automation.repositories import _automation_base_dir
@@ -188,8 +188,8 @@ async def run_interactive_loop(agent: ScheduleAgent) -> str:
     is_processing = False
     interrupted_processing = False
 
-    # Session 切分：记录上次用户活动时间
-    _last_activity_time: datetime = datetime.now(timezone.utc)
+    # Session 切分：用 list 存上次活动时间，供主循环与后台 timer 共享
+    _last_activity_ref: List[datetime] = [datetime.now()]
 
     def _should_cut_session(idle_timeout_minutes: int) -> bool:
         """
@@ -199,27 +199,48 @@ async def run_interactive_loop(agent: ScheduleAgent) -> str:
         1. idle 超时：距上次活动超过 idle_timeout_minutes 分钟
         2. 每日 4am 切分：跨越了本地 04:00（上次活动在 4am 之前，现在已过 4am）
         """
-        nonlocal _last_activity_time
-        now = datetime.now(timezone.utc)
-        idle_seconds = (now - _last_activity_time).total_seconds()
+        last_activity = _last_activity_ref[0]
+        # 使用本地时间（由全局 Config 统一设置为 Asia/Shanghai）
+        now = datetime.now()
+        idle_seconds = (now - last_activity).total_seconds()
         if idle_seconds >= idle_timeout_minutes * 60:
             return True
 
         # 每日 4am 切分：使用本地时间判断
-        try:
-            import zoneinfo
-            tz = zoneinfo.ZoneInfo("Asia/Shanghai")
-        except Exception:
-            return False
-        local_now = now.astimezone(tz)
-        local_last = _last_activity_time.astimezone(tz)
-        # 如果上次活动是"昨天"或更早，且现在已过 04:00
-        if local_last.date() < local_now.date() and local_now.hour >= 4:
+        # 如果上次活动是“昨天”或更早，且现在已过 04:00
+        if last_activity.date() < now.date() and now.hour >= 4:
             return True
         # 同一天但上次在 04:00 之前、现在在 04:00 之后
-        if local_last.date() == local_now.date() and local_last.hour < 4 <= local_now.hour:
+        if last_activity.date() == now.date() and last_activity.hour < 4 <= now.hour:
             return True
         return False
+
+    async def _session_cut_timer_loop() -> None:
+        """后台定时检查：到点（4am 或 idle 超时）即触发 session 切分，不依赖下次用户输入。"""
+        try:
+            idle_timeout = int(agent.config.memory.idle_timeout_minutes)
+        except Exception:
+            idle_timeout = 30
+        check_interval_sec = 60  # 每分钟检查一次
+        while not automation_stop_event.is_set():
+            try:
+                await asyncio.wait_for(
+                    asyncio.shield(automation_stop_event.wait()),
+                    timeout=check_interval_sec,
+                )
+            except asyncio.TimeoutError:
+                pass
+            if automation_stop_event.is_set():
+                break
+            # 仅在未在处理用户输入时切分，避免并发写 context
+            if is_processing:
+                continue
+            if _should_cut_session(idle_timeout):
+                try:
+                    await _do_session_cut(hint)
+                    _last_activity_ref[0] = datetime.now()
+                except Exception:
+                    pass
 
     async def _do_session_cut(hint_fn: Any) -> None:
         """执行 session 切分：finalize → reset。"""
@@ -331,6 +352,7 @@ async def run_interactive_loop(agent: ScheduleAgent) -> str:
                 continue
 
     automation_task: Optional[asyncio.Task[Any]] = asyncio.create_task(_automation_notifier_loop())
+    session_cut_task: Optional[asyncio.Task[Any]] = asyncio.create_task(_session_cut_timer_loop())
 
     # patch_stdout 让所有 print() 通过 prompt_toolkit 渲染，
     # 避免后台通知直接写 stdout 破坏输入提示符的显示。
@@ -386,7 +408,7 @@ async def run_interactive_loop(agent: ScheduleAgent) -> str:
                 idle_timeout = 30
             if _should_cut_session(idle_timeout):
                 await _do_session_cut(hint)
-            _last_activity_time = datetime.now(timezone.utc)
+            _last_activity_ref[0] = datetime.now()
 
             if user_input.lower() in ("quit", "exit", "q"):
                 u = agent.get_token_usage()
@@ -723,5 +745,10 @@ async def run_interactive_loop(agent: ScheduleAgent) -> str:
             automation_stop_event.set()
             try:
                 await automation_task
+            except Exception:
+                pass
+        if session_cut_task is not None:
+            try:
+                await session_cut_task
             except Exception:
                 pass

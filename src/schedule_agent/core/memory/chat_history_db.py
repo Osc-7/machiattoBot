@@ -314,14 +314,24 @@ def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
 
 
 def _escape_fts_query(query: str) -> str:
-    """简单转义 FTS5 查询中的特殊字符，防止语法错误。"""
-    # FTS5 特殊字符：" ^ * ( ) -
-    # 最简单的方式是用双引号包裹每个词
-    words = query.split()
-    escaped = []
-    for w in words:
-        # 去掉现有引号后用双引号包裹
-        clean = w.replace('"', "")
-        if clean:
-            escaped.append(f'"{clean}"')
-    return " ".join(escaped) if escaped else '""'
+    """将自然语言查询转换为 FTS5 查询语句。
+
+    目标：
+    - 对用户友好：支持用「多个词」作为关键词，不要求理解 FTS5 语法
+    - 行为直观：多个词时表示「匹配其中任意一个」（OR），单词时按原样匹配
+    - 安全：简单转义双引号，避免语法错误
+    """
+    # 拆分为非空词
+    words = [w.strip() for w in query.split() if w.strip()]
+    if not words:
+        return '""'
+
+    # 转义双引号，但不强制加整体引号，保留 FTS5 默认分词与匹配行为
+    escaped = [w.replace('"', '""') for w in words]
+
+    if len(escaped) == 1:
+        # 单个词：直接用该词，等价于「包含这个词」
+        return escaped[0]
+
+    # 多个词：使用 OR 连接，表示「包含任意一个关键词」
+    return " OR ".join(escaped)

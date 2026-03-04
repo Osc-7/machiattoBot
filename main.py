@@ -211,6 +211,7 @@ async def main_async(args: Optional[List[str]] = None):
                 else:
                     # 运行交互式循环
                     exit_reason = await run_interactive_loop(agent)
+                    # 仅用户主动 quit/exit/q 时写 summary；Ctrl+C/EOF 不写（调试后门）
                     should_finalize_session = exit_reason == "quit"
             finally:
                 # 会话结束时触发记忆总结（必须在 LLM close 之前，因为需要调用 LLM）
