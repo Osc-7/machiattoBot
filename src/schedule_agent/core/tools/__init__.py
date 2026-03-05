@@ -25,7 +25,7 @@ from .command_tools import RunCommandTool
 from .memory_tools import MemorySearchContentTool, MemorySearchLongTermTool, MemoryStoreTool, MemoryIngestTool
 from .media_tools import AttachMediaTool
 from .load_skill_tool import LoadSkillTool
-from .canvas_tools import SyncCanvasTool
+from .canvas_tools import SyncCanvasTool, FetchCanvasOverviewTool, FetchCanvasCourseContentTool
 from .automation_tools import (
     SyncSourcesTool,
     GetSyncStatusTool,
@@ -72,6 +72,8 @@ __all__ = [
     "AttachMediaTool",
     "LoadSkillTool",
     "SyncCanvasTool",
+    "FetchCanvasOverviewTool",
+    "FetchCanvasCourseContentTool",
     "SyncSourcesTool",
     "GetSyncStatusTool",
     "GetDigestTool",

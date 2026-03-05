@@ -142,13 +142,24 @@ def print_help():
 def print_token_usage_data(u: dict):
     """打印本会话 token 用量统计"""
     cost_line = f"\n- **预估费用**: `¥{u['cost_yuan']:.4f}`" if u.get("cost_yuan") is not None else ""
+
+    # 上下文窗口使用情况（如果后端提供）
+    ctx_max = u.get("context_window_max_tokens")
+    ctx_cur = u.get("context_window_current_tokens")
+    ctx_rem = u.get("context_window_remaining_tokens")
+    if isinstance(ctx_max, int) and ctx_max > 0 and isinstance(ctx_cur, int) and isinstance(ctx_rem, int):
+        ctx_line = (
+            f"\n- **上下文窗口**: `当前 {ctx_cur:,} / 最大 {ctx_max:,}，剩余 {ctx_rem:,} token`"
+        )
+    else:
+        ctx_line = ""
     md = f"""
 # Token 用量统计
 
 - **调用次数**: `{u['call_count']}`
 - **输入 token**: `{u['prompt_tokens']}`
 - **输出 token**: `{u['completion_tokens']}`
-- **合计 token**: `{u['total_tokens']}`{cost_line}
+- **合计 token**: `{u['total_tokens']}`{cost_line}{ctx_line}
 """
     if _HAS_RICH and _RICH_CONSOLE is not None:
         _RICH_CONSOLE.print(Markdown(md))
@@ -163,6 +174,8 @@ def print_token_usage_data(u: dict):
         print(f"  合计 token:   {u['total_tokens']}")
         if u.get("cost_yuan") is not None:
             print(f"  预估费用:     ¥{u['cost_yuan']:.4f}")
+        if isinstance(ctx_max, int) and ctx_max > 0 and isinstance(ctx_cur, int) and isinstance(ctx_rem, int):
+            print(f"  上下文窗口:   当前 {ctx_cur:,} / 最大 {ctx_max:,}，剩余 {ctx_rem:,} token")
         print("=" * 50)
         print()
 

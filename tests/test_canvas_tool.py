@@ -3,7 +3,7 @@
 import pytest
 
 from schedule_agent.config import Config, LLMConfig, CanvasIntegrationConfig
-from schedule_agent.core.tools.canvas_tools import SyncCanvasTool
+from schedule_agent.core.tools.canvas_tools import SyncCanvasTool, FetchCanvasOverviewTool
 from schedule_agent.storage.json_repository import EventRepository, TaskRepository
 
 
@@ -25,6 +25,15 @@ class _FakeCanvasClient:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         return None
+
+    # For FetchCanvasOverviewTool
+    async def get_user_profile(self):
+        return {"id": 1, "name": "Test User", "login_id": "test@example.com"}
+
+    async def get_courses(self):
+        return [
+            {"id": 1, "name": "SE101", "course_code": "SE101"},
+        ]
 
 
 class _FakeSyncResult:
@@ -193,3 +202,75 @@ async def test_sync_canvas_submitted_marks_task_and_event_completed(monkeypatch,
     event = event_repo.get_all()[0]
     assert task.status.value == "completed"
     assert event.status.value == "completed"
+
+
+@pytest.mark.asyncio
+async def test_fetch_canvas_overview_success(monkeypatch, tmp_path):
+    """FetchCanvasOverviewTool returns structured overview data."""
+
+    class _FakeOverviewCanvasClient(_FakeCanvasClient):
+        async def get_upcoming_assignments(self, days: int = 60, include_submitted: bool = False):
+            from canvas_integration.models import CanvasAssignment
+
+            return [
+                CanvasAssignment(
+                    id=201,
+                    name="HW1",
+                    course_id=1,
+                    course_name="SE101",
+                    points_possible=100.0,
+                )
+            ]
+
+        async def get_upcoming_events(self, days: int = 60):
+            from canvas_integration.models import CanvasEvent
+            from datetime import datetime, timedelta, timezone
+
+            start = datetime.now(timezone.utc)
+            end = start + timedelta(hours=2)
+            return [
+                CanvasEvent(
+                    id=301,
+                    title="Lecture",
+                    start_at=start,
+                    end_at=end,
+                    course_name="SE101",
+                )
+            ]
+
+        async def get_planner_items(self):
+            from canvas_integration.models import CanvasPlannerItem
+
+            return [
+                CanvasPlannerItem(
+                    plannable_id=401,
+                    plannable_type="assignment",
+                    title="HW1",
+                    course_id=1,
+                    course_name="SE101",
+                )
+            ]
+
+    config = Config(
+        llm=LLMConfig(api_key="x", model="x"),
+        canvas=CanvasIntegrationConfig(
+            enabled=True,
+            api_key="dummy_canvas_key_12345",
+        ),
+    )
+
+    tool = FetchCanvasOverviewTool(config=config)
+
+    monkeypatch.setattr("schedule_agent.core.tools.canvas_tools.CanvasConfig", _FakeCanvasConfig)
+    monkeypatch.setattr("schedule_agent.core.tools.canvas_tools.CanvasClient", _FakeOverviewCanvasClient)
+
+    result = await tool.execute(days_ahead=7, include_submitted=True)
+    assert result.success is True
+    assert result.error is None
+    assert "overview" in result.data
+    overview = result.data["overview"]
+    assert overview["profile"]["name"] == "Test User"
+    assert len(overview["courses"]) == 1
+    assert len(overview["upcoming_assignments"]) == 1
+    assert len(overview["upcoming_events"]) == 1
+    assert len(overview["planner_items"]) == 1

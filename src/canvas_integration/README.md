@@ -7,6 +7,7 @@
 - ✅ **自动获取课程信息**：获取用户所有活跃课程
 - ✅ **作业跟踪**：获取所有作业的截止时间、提交状态、成绩
 - ✅ **日历事件**：获取考试、讲座等日历事件
+- ✅ **Planner 待办**：通过 Planner API 获取待办/机会项（如作业、测验、讨论）
 - ✅ **智能同步**：将作业和事件自动同步到日程系统
 - ✅ **状态追踪**：记录已提交作业和已评分作业
 - ✅ **优先级排序**：根据截止时间自动设置优先级
@@ -117,19 +118,26 @@ Canvas API 客户端。
 async with CanvasClient(config) as client:
     # 获取用户信息
     profile = await client.get_user_profile()
-    
+
     # 获取课程列表
     courses = await client.get_courses()
-    
+
     # 获取课程作业
     assignments = await client.get_assignments(course_id=123)
-    
+
     # 获取日历事件
     events = await client.get_calendar_events("2026-02-28", "2026-03-31")
-    
+
     # 获取即将到来的作业
     upcoming = await client.get_upcoming_assignments(days=30)
-    
+
+    # 获取 Planner 待办/机会项
+    planner_items = await client.get_planner_items(
+        start_date="2026-03-01",
+        end_date="2026-03-31",
+        filter="incomplete_items",  # new_activity | incomplete_items | complete_items
+    )
+
     # 测试连接
     is_connected = await client.test_connection()
 ```
@@ -176,6 +184,20 @@ print(f"错误：{result.errors}")
 - `updated_count`: 更新数量
 - `skipped_count`: 跳过数量
 - `errors`: 错误列表
+
+**CanvasPlannerItem** - Planner 待办/机会项模型：
+- `plannable_id`: 关联对象 ID（作业/测验/讨论等）
+- `plannable_type`: 关联对象类型 (assignment, quiz, discussion_topic, planner_note, ...)
+- `title`: 展示标题
+- `course_id`: 课程 ID（若存在）
+- `course_name`: 课程名称
+- `context_type`: 上下文类型（course, group 等）
+- `html_url`: Canvas 网页链接
+- `new_activity`: 是否有新活动
+- `marked_complete`: 是否在 Planner 上标记为已完成
+- `dismissed`: 是否已从机会列表中隐藏
+- `todo_date`: Planner 计划日期（对于 planner_note 等）
+- `due_at`: 截止时间（若可获得）
 
 ## Canvas API 端点
 

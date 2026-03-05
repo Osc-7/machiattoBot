@@ -6,7 +6,7 @@ from typing import Optional, List, Dict, Any, Union
 import httpx
 
 from .config import CanvasConfig
-from .models import CanvasAssignment, CanvasEvent, now_utc
+from .models import CanvasAssignment, CanvasEvent, CanvasPlannerItem, CanvasFile, now_utc
 
 logger = logging.getLogger(__name__)
 
@@ -420,7 +420,67 @@ class CanvasClient:
             "GET",
             f"/courses/{course_id}/assignments/{assignment_id}/submissions/self",
         )
-    
+
+    async def get_course(
+        self,
+        course_id: int,
+        include_syllabus: bool = True,
+    ) -> Dict[str, Any]:
+        """获取单门课程详情
+        
+        Args:
+            course_id: 课程 ID
+            include_syllabus: 是否包含 syllabus_body
+        
+        Returns:
+            课程详情字典
+        """
+        params: Dict[str, Any] = {}
+        if include_syllabus:
+            params["include[]"] = "syllabus_body"
+        return await self.request("GET", f"/courses/{course_id}", params)
+
+    async def get_course_files(
+        self,
+        course_id: int,
+        search_term: Optional[str] = None,
+        content_types: Optional[List[str]] = None,
+        sort: str = "name",
+        order: str = "asc",
+    ) -> List[CanvasFile]:
+        """获取课程文件列表
+        
+        对应 Canvas API: GET /courses/:course_id/files
+        
+        Args:
+            course_id: 课程 ID
+            search_term: 搜索关键词（匹配文件名）
+            content_types: 过滤的 MIME 列表（如 ['application/pdf']）
+            sort: 排序字段（name, created_at, updated_at, size 等）
+            order: 排序顺序（asc, desc）
+        
+        Returns:
+            CanvasFile 列表
+        """
+        params: Dict[str, Any] = {
+            "sort": sort,
+            "order": order,
+        }
+        if search_term:
+            params["search_term"] = search_term
+        if content_types:
+            params["content_types[]"] = content_types
+
+        data = await self.request("GET", f"/courses/{course_id}/files", params)
+
+        files: List[CanvasFile] = []
+        for raw in data:
+            try:
+                files.append(CanvasFile.from_api_response(raw))
+            except Exception as e:
+                logger.error(f"Failed to parse file {raw.get('id')}: {e}")
+        return files
+
     # ========== 便捷方法 ==========
     
     async def get_all_assignments(
@@ -548,6 +608,74 @@ class CanvasClient:
         upcoming.sort(key=lambda a: a.due_at)
         
         return upcoming
+
+    async def get_planner_items(
+        self,
+        start_date: Optional[Union[str, datetime]] = None,
+        end_date: Optional[Union[str, datetime]] = None,
+        filter: Optional[str] = None,
+        context_codes: Optional[List[str]] = None,
+    ) -> List[CanvasPlannerItem]:
+        """获取 Canvas Planner 待办/机会项列表
+        
+        对应 Canvas Planner API: GET /planner/items
+        
+        Args:
+            start_date: 起始日期（YYYY-MM-DD 或 datetime），为空则默认今天
+            end_date: 结束日期（YYYY-MM-DD 或 datetime），为空则默认 start_date+30 天
+            filter: 过滤条件: new_activity | incomplete_items | complete_items
+            context_codes: 上下文过滤（如 ["course_42", "group_1"]），默认所有课程/小组
+        
+        Returns:
+            CanvasPlannerItem 列表
+        
+        参考文档:
+            https://canvas.instructure.com/doc/api/planner.html#get-planner-items
+        """
+        # 处理日期参数
+        def _normalize_date(value: Optional[Union[str, datetime]]) -> Optional[str]:
+            if value is None:
+                return None
+            if isinstance(value, datetime):
+                # Canvas 支持 ISO8601 字符串；这里统一使用日期部分
+                return value.strftime("%Y-%m-%d")
+            return value
+
+        if start_date is None:
+            start_date_str = datetime.now().strftime("%Y-%m-%d")
+        else:
+            start_date_str = _normalize_date(start_date)
+
+        if end_date is None:
+            end_date_str = (
+                datetime.now() + timedelta(days=30)
+            ).strftime("%Y-%m-%d")
+        else:
+            end_date_str = _normalize_date(end_date)
+
+        params: Dict[str, Any] = {
+            "start_date": start_date_str,
+            "end_date": end_date_str,
+        }
+        if filter:
+            params["filter"] = filter
+        if context_codes:
+            # 与其他数组参数保持一致（如 event_types[]）
+            params["context_codes[]"] = context_codes
+
+        data = await self.request("GET", "/planner/items", params)
+
+        items: List[CanvasPlannerItem] = []
+        for raw in data:
+            try:
+                item = CanvasPlannerItem.from_api_response(raw)
+                # 某些异常数据可能没有 plannable_id，直接跳过以免干扰后续逻辑
+                if item.plannable_id is not None:
+                    items.append(item)
+            except Exception as e:
+                logger.error(f"Failed to parse planner item: {e}")
+
+        return items
     
     async def test_connection(self) -> bool:
         """测试 API 连接

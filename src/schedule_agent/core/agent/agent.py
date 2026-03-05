@@ -23,7 +23,13 @@ from schedule_agent.utils.billing import compute_cost_from_calls
 from schedule_agent.core.mcp import MCPClientManager
 from schedule_agent.core.orchestrator import ToolSnapshot, ToolWorkingSetManager
 from schedule_agent.prompts import build_system_prompt as build_prompt
-from schedule_agent.core.llm import LLMClient, LLMResponse, ToolCall, TokenUsage
+from schedule_agent.core.llm import (
+    LLMClient,
+    LLMResponse,
+    ToolCall,
+    TokenUsage,
+    get_context_window_tokens_for_model,
+)
 from schedule_agent.utils.media import resolve_media_to_content_item
 from schedule_agent.core.tools import (
     BaseTool,
@@ -301,9 +307,34 @@ class ScheduleAgent:
         获取本会话累计的 token 用量。
 
         Returns:
-            包含 prompt_tokens, completion_tokens, total_tokens, call_count, cost_yuan 的字典
+            包含 prompt_tokens, completion_tokens, total_tokens, call_count, cost_yuan 等字段的字典
         """
         out: dict[str, int | float] = dict(self._token_usage)
+
+        # 上下文窗口（context window）相关信息
+        try:
+            model_name = self._llm_client.model
+        except Exception:
+            model_name = self._config.llm.model
+
+        max_ctx_tokens = get_context_window_tokens_for_model(model_name)
+        if max_ctx_tokens and max_ctx_tokens > 0:
+            # 当前上下文 token 数：
+            # 优先使用上一轮真实的 prompt_tokens（包含 system + messages），
+            # 若不存在则回退到根据当前消息估算。
+            current_ctx_tokens: int
+            if self._last_prompt_tokens is not None and self._last_prompt_tokens > 0:
+                current_ctx_tokens = int(self._last_prompt_tokens)
+            else:
+                # 估算当前上下文长度（仅基于 messages），这里不额外估算 system，
+                # 只作为无 usage 时的近似值。
+                current_ctx_tokens = self._working_memory.get_current_tokens()
+
+            remaining_ctx_tokens = max(max_ctx_tokens - current_ctx_tokens, 0)
+            out["context_window_max_tokens"] = max_ctx_tokens
+            out["context_window_current_tokens"] = current_ctx_tokens
+            out["context_window_remaining_tokens"] = remaining_ctx_tokens
+
         cost = compute_cost_from_calls(
             self._usage_calls,
             self._config.llm.model,

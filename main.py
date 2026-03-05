@@ -50,6 +50,8 @@ from schedule_agent.core.tools import (
     MemoryIngestTool,
     AttachMediaTool,
     SyncCanvasTool,
+    FetchCanvasOverviewTool,
+    FetchCanvasCourseContentTool,
     SyncSourcesTool,
     GetSyncStatusTool,
     GetDigestTool,
@@ -135,8 +137,10 @@ def get_default_tools(config: Optional[Config] = None) -> List[BaseTool]:
     if config and config.multimodal.enabled:
         tools.append(AttachMediaTool())
 
-    # Canvas 同步工具（始终注册，便于 search_tools 发现；启用状态在工具内部校验）
+    # Canvas 工具（始终注册，便于 search_tools 发现；启用状态在工具内部校验）
     tools.append(SyncCanvasTool(config=config))
+    tools.append(FetchCanvasOverviewTool(config=config))
+    tools.append(FetchCanvasCourseContentTool(config=config))
     # 交大教学信息服务网课表同步工具（基于 Cookie，只读）
     if config is not None:
         tools.append(
@@ -346,24 +350,37 @@ async def main_async(args: Optional[List[str]] = None):
                         pass
     finally:
         if session_logger:
-            turn_count = 0
-            total_usage = None
+            turn_count: int = 0
+            total_usage: dict[str, int] | None = None
             if agent_ref:
                 get_turn_count = getattr(agent_ref, "get_turn_count", None)
                 if callable(get_turn_count):
-                    maybe_turn = get_turn_count()
-                    if hasattr(maybe_turn, "__await__"):
+                    get_turn_count_fn = cast(
+                        Callable[[], int | Awaitable[int] | None],
+                        get_turn_count,
+                    )
+                    maybe_turn = get_turn_count_fn()
+                    if isinstance(maybe_turn, int):
+                        turn_count = maybe_turn
+                    elif maybe_turn is not None:
                         turn_count = int(await maybe_turn)
-                    else:
-                        turn_count = int(maybe_turn or 0)
 
                 get_token_usage = getattr(agent_ref, "get_token_usage", None)
                 if callable(get_token_usage):
-                    maybe_usage = get_token_usage()
-                    if hasattr(maybe_usage, "__await__"):
-                        total_usage = await maybe_usage
-                    else:
+                    get_token_usage_fn = cast(
+                        Callable[
+                            [],
+                            dict[str, int]
+                            | Awaitable[dict[str, int] | None]
+                            | None,
+                        ],
+                        get_token_usage,
+                    )
+                    maybe_usage = get_token_usage_fn()
+                    if isinstance(maybe_usage, dict) or maybe_usage is None:
                         total_usage = maybe_usage
+                    else:
+                        total_usage = await maybe_usage
             session_logger.on_session_end(turn_count, total_usage)
             session_logger.close()
 

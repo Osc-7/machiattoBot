@@ -1,7 +1,7 @@
 """Canvas LMS 数据模型定义"""
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional, List, Any
+from typing import Optional, List
 
 
 def now_utc() -> datetime:
@@ -231,6 +231,201 @@ class CanvasEvent:
             "event_type": self.event_type,
             "all_day": self.all_day,
             "html_url": self.html_url,
+        }
+
+
+@dataclass
+class CanvasPlannerItem:
+    """Canvas Planner 待办/机会项模型
+    
+    对应 Canvas Planner API (`GET /planner/items`) 返回的条目，统一抽象为
+    「用户在 Planner 上看到的一条待处理事项」。
+    
+    Attributes:
+        plannable_id: 关联对象 ID（作业/测验/讨论等）
+        plannable_type: 关联对象类型 (assignment, quiz, discussion_topic, planner_note, 等)
+        title: 展示标题
+        course_id: 课程 ID（若存在）
+        course_name: 课程名称（若存在）
+        context_type: 上下文类型（course, group 等）
+        html_url: Canvas 网页链接
+        new_activity: 是否有新活动
+        marked_complete: 是否在 Planner 上标记为已完成
+        dismissed: 是否已从机会列表中隐藏
+        todo_date: Planner 计划日期（对于 planner_note 等）
+        due_at: 对于作业/测验等的截止时间（若可获得）
+    """
+
+    plannable_id: int
+    plannable_type: str
+    title: str
+    course_id: Optional[int] = None
+    course_name: str = ""
+    context_type: str = ""
+    html_url: str = ""
+    new_activity: bool = False
+    marked_complete: bool = False
+    dismissed: bool = False
+    todo_date: Optional[datetime] = None
+    due_at: Optional[datetime] = None
+
+    @classmethod
+    def from_api_response(cls, data: dict) -> "CanvasPlannerItem":
+        """从 Planner API 响应创建 Planner 条目对象
+        
+        Canvas Planner API 返回的结构大致为：
+        
+        {
+            "plannable_id": 123,
+            "plannable_type": "assignment",
+            "new_activity": true,
+            "context_type": "course",
+            "course_id": 42,
+            "plannable": { ... 原始对象 ... },
+            "planner_override": {
+                "marked_complete": false,
+                "dismissed": false,
+                ...
+            },
+            "html_url": "https://...",
+            ...
+        }
+        """
+        plannable = data.get("plannable") or {}
+        override = data.get("planner_override") or {}
+
+        title = (
+            plannable.get("title")
+            or plannable.get("name")
+            or data.get("title")
+            or ""
+        )
+
+        # 课程信息：有些 plannable 会带 course_id / course_name
+        course_id = (
+            data.get("course_id")
+            or plannable.get("course_id")
+        )
+        course_name = plannable.get("course_name", "") or data.get("course_name", "")
+
+        # 截止/计划时间：不同类型字段命名略有差异
+        due_at = cls._parse_datetime(
+            plannable.get("due_at")
+            or plannable.get("lock_at")
+        )
+        todo_date = cls._parse_datetime(
+            data.get("todo_date") or plannable.get("todo_date")
+        )
+
+        return cls(
+            plannable_id=data.get("plannable_id") or plannable.get("id"),
+            plannable_type=data.get("plannable_type", ""),
+            title=title,
+            course_id=course_id,
+            course_name=course_name,
+            context_type=data.get("context_type", ""),
+            html_url=data.get("html_url") or plannable.get("html_url", ""),
+            new_activity=bool(data.get("new_activity", False)),
+            marked_complete=bool(override.get("marked_complete", False)),
+            dismissed=bool(override.get("dismissed", False)),
+            todo_date=todo_date,
+            due_at=due_at,
+        )
+
+    @staticmethod
+    def _parse_datetime(date_str: Optional[str]) -> Optional[datetime]:
+        """解析 ISO 格式日期字符串，返回 timezone-aware datetime"""
+        if not date_str:
+            return None
+        try:
+            dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except (ValueError, AttributeError):
+            return None
+
+    def to_dict(self) -> dict:
+        """转换为字典"""
+        return {
+            "plannable_id": self.plannable_id,
+            "plannable_type": self.plannable_type,
+            "title": self.title,
+            "course_id": self.course_id,
+            "course_name": self.course_name,
+            "context_type": self.context_type,
+            "html_url": self.html_url,
+            "new_activity": self.new_activity,
+            "marked_complete": self.marked_complete,
+            "dismissed": self.dismissed,
+            "todo_date": self.todo_date.isoformat() if self.todo_date else None,
+            "due_at": self.due_at.isoformat() if self.due_at else None,
+        }
+ 
+
+@dataclass
+class CanvasFile:
+    """Canvas 课程文件模型
+    
+    Attributes:
+        id: 文件 ID
+        display_name: 文件在界面上的展示名
+        filename: 实际文件名
+        content_type: MIME 类型
+        size: 文件大小（字节）
+        url: 下载 URL（带授权）
+        html_url: 网页预览 URL
+        created_at: 创建时间
+        updated_at: 更新时间
+    """
+
+    id: int
+    display_name: str
+    filename: str = ""
+    content_type: str = ""
+    size: int = 0
+    url: str = ""
+    html_url: str = ""
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    @classmethod
+    def from_api_response(cls, data: dict) -> "CanvasFile":
+        return cls(
+            id=data["id"],
+            display_name=data.get("display_name") or data.get("filename", ""),
+            filename=data.get("filename", ""),
+            content_type=data.get("content_type", ""),
+            size=int(data.get("size", 0) or 0),
+            url=data.get("url", ""),
+            html_url=data.get("html_url", ""),
+            created_at=cls._parse_datetime(data.get("created_at")),
+            updated_at=cls._parse_datetime(data.get("updated_at")),
+        )
+
+    @staticmethod
+    def _parse_datetime(date_str: Optional[str]) -> Optional[datetime]:
+        if not date_str:
+            return None
+        try:
+            dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except (ValueError, AttributeError):
+            return None
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "display_name": self.display_name,
+            "filename": self.filename,
+            "content_type": self.content_type,
+            "size": self.size,
+            "url": self.url,
+            "html_url": self.html_url,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
 

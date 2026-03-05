@@ -89,6 +89,37 @@ class TokenUsage:
         )
 
 
+def get_context_window_tokens_for_model(model: str) -> int:
+    """
+    根据模型名称返回大致的上下文窗口大小（单位：token）。
+
+    说明：
+    - 仅对常见模型做显式映射，其余返回一个保守的默认值，避免过度依赖不确定信息。
+    - 当前主要关注 Qwen 系列（尤其是 qwen3.5-plus），其它模型可按需扩展。
+    """
+    if not model:
+        # 默认保守值：20 万 token
+        return 200_000
+
+    m = model.lower()
+
+    # Qwen 3.5 系列：
+    # - 官方文档：qwen3.5-plus 支持约 1M context window
+    # - 基础 qwen3.5 模型通常为 256K 级别
+    if "qwen" in m and "3.5" in m:
+        if "plus" in m or "1m" in m:
+            return 1_000_000
+        # 基础 qwen3.5
+        return 256_000
+
+    # Qwen 2.5 1M 变体（如 qwen2.5-1m 等）
+    if "qwen" in m and "2.5" in m and "1m" in m:
+        return 1_000_000
+
+    # 其它未显式列出的模型，使用保守默认值。
+    return 200_000
+
+
 @dataclass
 class ToolCall:
     """工具调用"""
