@@ -94,6 +94,7 @@ async def _consume_loop(
 
 async def _main() -> None:
     cfg = get_config()
+    # 工具在 daemon 进程内加载；修改工具实现/定义（如 file_tools.read_file）后需重启本 daemon 才能生效
     tools = get_default_tools(config=cfg)
     owner_id = (sys.argv[1].strip() if len(sys.argv) > 1 else "root") or "root"
     source = (sys.argv[2].strip() if len(sys.argv) > 2 else "cli") or "cli"

@@ -66,6 +66,18 @@ class ReadFileTool(BaseTool):
                     required=False,
                     default="utf-8",
                 ),
+                ToolParameter(
+                    name="start_line",
+                    type="integer",
+                    description="从第几行开始读取（从 1 开始计数），默认从第 1 行开始",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="max_lines",
+                    type="integer",
+                    description="最多读取的行数；未提供时从 start_line 读取到文件末尾",
+                    required=False,
+                ),
             ],
             examples=[
                 {
@@ -81,6 +93,7 @@ class ReadFileTool(BaseTool):
                 "path 支持任意有效路径（/etc/xxx、~/.config/xxx 等），相对路径相对于 base_dir",
                 "只能读取文本文件，二进制文件会返回错误",
                 "文件不存在时返回明确错误",
+                "对于大文件，建议结合 start_line 和 max_lines 分段读取，以避免一次性加载过多内容",
             ],
             tags=['文件', '读取'],
         )
@@ -121,13 +134,78 @@ class ReadFileTool(BaseTool):
             return ToolResult(success=False, error="INVALID_PATH", message=err)
 
         encoding = kwargs.get("encoding", "utf-8")
+        start_line = kwargs.get("start_line")
+        max_lines = kwargs.get("max_lines")
+
+        # 校验 start_line / max_lines（如提供）
+        if start_line is not None:
+            try:
+                start_line = int(start_line)
+            except (TypeError, ValueError):
+                return ToolResult(
+                    success=False,
+                    error="INVALID_START_LINE",
+                    message="start_line 必须为正整数",
+                )
+            if start_line < 1:
+                return ToolResult(
+                    success=False,
+                    error="INVALID_START_LINE",
+                    message="start_line 必须为正整数",
+                )
+
+        if max_lines is not None:
+            try:
+                max_lines = int(max_lines)
+            except (TypeError, ValueError):
+                return ToolResult(
+                    success=False,
+                    error="INVALID_MAX_LINES",
+                    message="max_lines 必须为正整数",
+                )
+            if max_lines < 1:
+                return ToolResult(
+                    success=False,
+                    error="INVALID_MAX_LINES",
+                    message="max_lines 必须为正整数",
+                )
 
         try:
             content = resolved.read_text(encoding=encoding)
+            # 若未指定行范围，保持向后兼容：返回完整内容
+            if start_line is None and max_lines is None:
+                return ToolResult(
+                    success=True,
+                    data={"path": str(resolved), "content": content},
+                    message=f"成功读取文件: {resolved.name}",
+                )
+
+            # 按行截取
+            lines = content.splitlines()
+            total_lines = len(lines)
+            start = start_line if start_line is not None else 1
+            # Python 索引从 0 开始
+            start_idx = max(0, start - 1)
+
+            if max_lines is None:
+                end_idx = total_lines
+            else:
+                end_idx = min(total_lines, start_idx + max_lines)
+
+            sliced_lines = lines[start_idx:end_idx]
+            sliced_content = "\n".join(sliced_lines)
+
             return ToolResult(
                 success=True,
-                data={"path": str(resolved), "content": content},
-                message=f"成功读取文件: {resolved.name}",
+                data={
+                    "path": str(resolved),
+                    "content": sliced_content,
+                    "start_line": start,
+                    "max_lines": max_lines if max_lines is not None else total_lines - start_idx,
+                    "total_lines": total_lines,
+                    "has_more": end_idx < total_lines,
+                },
+                message=f"成功读取文件: {resolved.name}（第 {start} 行起，共返回 {len(sliced_lines)} 行）",
             )
         except FileNotFoundError:
             return ToolResult(

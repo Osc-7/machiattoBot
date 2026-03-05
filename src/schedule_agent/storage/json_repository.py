@@ -272,16 +272,16 @@ class EventRepository(JSONRepository[Event]):
 
     def get_upcoming(self, days: int = 7) -> List[Event]:
         """
-        获取未来几天的事件
+        获取未来几天的事件（含今天，共 days 天）
 
         Args:
-            days: 天数
+            days: 天数（今天 + 未来 days-1 天，共 days 个自然日）
 
         Returns:
             未来事件列表
         """
-        start = datetime.now()
-        end = start + timedelta(days=days)
+        start = datetime.combine(date.today(), datetime.min.time())
+        end = datetime.combine(date.today() + timedelta(days=days), datetime.min.time())
         return self.get_by_date_range(start, end)
 
     def get_by_status(self, status: EventStatus) -> List[Event]:

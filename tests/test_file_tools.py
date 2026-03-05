@@ -43,7 +43,12 @@ class TestReadFileTool:
         defn = tool.get_definition()
         assert isinstance(defn, ToolDefinition)
         assert defn.name == "read_file"
-        assert "path" in [p.name for p in defn.parameters]
+        param_names = [p.name for p in defn.parameters]
+        assert "path" in param_names
+        assert "encoding" in param_names
+        # 新增的分页参数
+        assert "start_line" in param_names
+        assert "max_lines" in param_names
 
     @pytest.mark.asyncio
     async def test_read_file_success(self, tmp_path):
@@ -94,6 +99,69 @@ class TestReadFileTool:
         result = await tool.execute()
         assert not result.success
         assert result.error == "MISSING_PATH"
+
+    @pytest.mark.asyncio
+    async def test_read_file_with_max_lines(self, tmp_path):
+        (tmp_path / "multi.txt").write_text(
+            "line1\nline2\nline3\nline4\n", encoding="utf-8"
+        )
+        config = _make_config(allow_read=True, base_dir=str(tmp_path))
+        tool = ReadFileTool(config=config)
+        result = await tool.execute(path="multi.txt", max_lines=2)
+        assert result.success
+        assert result.data["content"] == "line1\nline2"
+        # 元信息
+        assert result.data["start_line"] == 1
+        assert result.data["max_lines"] == 2
+        assert result.data["total_lines"] == 4
+        assert result.data["has_more"] is True
+
+    @pytest.mark.asyncio
+    async def test_read_file_with_start_line_and_max_lines(self, tmp_path):
+        (tmp_path / "multi.txt").write_text(
+            "a\nb\nc\nd\n", encoding="utf-8"
+        )
+        config = _make_config(allow_read=True, base_dir=str(tmp_path))
+        tool = ReadFileTool(config=config)
+        result = await tool.execute(path="multi.txt", start_line=2, max_lines=2)
+        assert result.success
+        assert result.data["content"] == "b\nc"
+        assert result.data["start_line"] == 2
+        assert result.data["max_lines"] == 2
+        assert result.data["total_lines"] == 4
+        assert result.data["has_more"] is True
+
+    @pytest.mark.asyncio
+    async def test_read_file_with_start_line_past_end_returns_empty(self, tmp_path):
+        (tmp_path / "multi.txt").write_text(
+            "x\ny\n", encoding="utf-8"
+        )
+        config = _make_config(allow_read=True, base_dir=str(tmp_path))
+        tool = ReadFileTool(config=config)
+        result = await tool.execute(path="multi.txt", start_line=10)
+        assert result.success
+        assert result.data["content"] == ""
+        assert result.data["start_line"] == 10
+        assert result.data["total_lines"] == 2
+        assert result.data["has_more"] is False
+
+    @pytest.mark.asyncio
+    async def test_read_file_invalid_start_line(self, tmp_path):
+        (tmp_path / "f.txt").write_text("x", encoding="utf-8")
+        config = _make_config(allow_read=True, base_dir=str(tmp_path))
+        tool = ReadFileTool(config=config)
+        result = await tool.execute(path="f.txt", start_line=0)
+        assert not result.success
+        assert result.error == "INVALID_START_LINE"
+
+    @pytest.mark.asyncio
+    async def test_read_file_invalid_max_lines(self, tmp_path):
+        (tmp_path / "f.txt").write_text("x", encoding="utf-8")
+        config = _make_config(allow_read=True, base_dir=str(tmp_path))
+        tool = ReadFileTool(config=config)
+        result = await tool.execute(path="f.txt", max_lines=0)
+        assert not result.success
+        assert result.error == "INVALID_MAX_LINES"
 
 
 # ============================================================================
