@@ -409,7 +409,7 @@ class TestMainAsync:
                 MockAgent.return_value = mock_agent_instance
 
                 with patch('main.run_interactive_loop', new_callable=AsyncMock, return_value="quit") as mock_loop:
-                    await cli_module.main_async([])
+                    await cli_module.main_async(["main.py", "--local"])
                     mock_loop.assert_called_once()
                     wrapped = mock_loop.call_args.args[0]
                     assert isinstance(wrapped, AutomationCoreGateway)
@@ -429,7 +429,7 @@ class TestMainAsync:
                 MockAgent.return_value = mock_agent_instance
 
                 with patch('main.run_interactive_loop', new_callable=AsyncMock, return_value="sigint"):
-                    await cli_module.main_async([])
+                    await cli_module.main_async(["main.py", "--local"])
 
                 mock_agent_instance.finalize_session.assert_not_called()
 
@@ -445,7 +445,7 @@ class TestMainAsync:
 
                 with patch('main.run_single_command', new_callable=AsyncMock, return_value="响应") as mock_cmd:
                     with patch('builtins.print') as mock_print:
-                        await cli_module.main_async(['main.py', '明天的日程'])
+                        await cli_module.main_async(["main.py", "--local", "明天的日程"])
                         mock_cmd.assert_called_once()
                         mock_print.assert_called_with("响应")
 
@@ -476,7 +476,7 @@ class TestMainAsync:
                 MockMCPManager.return_value = mock_mcp
 
                 with patch('main.run_interactive_loop', new_callable=AsyncMock):
-                    await cli_module.main_async([])
+                    await cli_module.main_async(["main.py", "--local"])
 
                 # MCP 在 __aenter__ 中初始化
                 mock_mcp.connect.assert_called_once()
@@ -499,7 +499,7 @@ class TestMainAsync:
                 MockMCPManager.return_value = mock_mcp
 
                 with patch('main.run_interactive_loop', new_callable=AsyncMock):
-                    await cli_module.main_async([])
+                    await cli_module.main_async(["main.py", "--local"])
 
                 assert MockMCPManager.call_count == 1
                 runtime_mcp = MockMCPManager.call_args[0][0]
@@ -570,7 +570,7 @@ class TestCLIIntegration:
 
                 with patch('builtins.input', side_effect=inputs):
                     with patch('builtins.print'):
-                        await cli_module.main_async([])
+                        await cli_module.main_async(["main.py", "--local"])
 
                 mock_agent.process_input.assert_called_once()
                 assert mock_agent.process_input.call_args.args[0] == "hello"

@@ -3,8 +3,13 @@
 Schedule Agent CLI 入口
 
 提供命令行交互界面，允许用户通过自然语言与日程管理 Agent 进行交互。
+
+运行模式（由命令行参数决定）：
+- 默认：通过 UNIX socket 连接长驻 automation daemon；若 daemon 未运行则报错退出。
+- --local：在当前进程内直接启动 ScheduleAgent（直连模式），不依赖 daemon。
 """
 
+import argparse
 import asyncio
 import os
 import sys
@@ -190,13 +195,45 @@ async def run_single_command(agent: Any, command: str) -> str:
     return await agent.process_input(command)
 
 
+def _parse_args(argv: List[str]) -> tuple[bool, List[str]]:
+    """
+    解析命令行参数，分离「是否直连模式」与剩余参数（用于单条命令）。
+
+    Returns:
+        (direct_mode, remaining_args): direct_mode 为 True 表示使用 --local 直连；
+        remaining_args 为 [script_name, ...] 形式，其中 script_name 后为可选的单条命令。
+    """
+    parser = argparse.ArgumentParser(
+        description="Schedule Agent CLI：默认连接 automation daemon，使用 --local 时在当前进程直连运行。"
+    )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="直连模式：在当前进程内直接启动 Agent，不连接 daemon（默认关闭）",
+    )
+    parser.add_argument(
+        "command",
+        nargs="*",
+        help="单条要执行的命令（不传则进入交互模式）",
+    )
+    parsed, unknown = parser.parse_known_args(argv[1:] if len(argv) > 1 else [])
+    direct_mode = parsed.local
+    remaining = [argv[0]] + (getattr(parsed, "command", []) or []) + unknown
+    return direct_mode, remaining
+
+
 async def main_async(args: Optional[List[str]] = None):
     """
     异步主函数。
 
     Args:
-        args: 命令行参数
+        args: 命令行参数（默认 sys.argv）；会在此处解析 --local 与单条命令。
     """
+    raw_args = args if args is not None else sys.argv
+    if not raw_args:
+        raw_args = ["main.py"]
+    direct_mode, args = _parse_args(raw_args)
+
     # 加载配置
     config = _load_config()
     if config is None:
@@ -211,34 +248,35 @@ async def main_async(args: Optional[List[str]] = None):
     session_logger = None
 
     agent_ref = None
-    use_ipc_mode = (os.getenv("SCHEDULE_AUTOMATION_IPC", "auto").strip() or "auto").lower()
     ipc_socket = os.getenv("SCHEDULE_AUTOMATION_SOCKET", "").strip() or default_socket_path()
+
     try:
-        if use_ipc_mode in {"1", "true", "yes", "auto"}:
+        if not direct_mode:
+            # 默认：仅通过 daemon（IPC）；若 daemon 未运行则报错退出
             ipc_client = AutomationIPCClient(
                 owner_id=user_id,
                 source=source,
                 socket_path=ipc_socket,
             )
-            if await ipc_client.ping():
-                await ipc_client.connect()
-                agent_ref = ipc_client
-                try:
-                    if args and len(args) > 1:
-                        command = " ".join(args[1:])
-                        response = await run_single_command(ipc_client, command)
-                        print(response)
-                    else:
-                        await run_interactive_loop(ipc_client)
-                finally:
-                    await ipc_client.close()
-                return
-            if use_ipc_mode in {"1", "true", "yes"}:
+            if not await ipc_client.ping():
                 print(f"错误: 未连接到 automation daemon ({ipc_socket})")
                 print("请先运行: python automation_daemon.py")
+                print("若需在当前进程直连运行，请使用: python main.py --local")
                 sys.exit(1)
+            await ipc_client.connect()
+            agent_ref = ipc_client
+            try:
+                if args and len(args) > 1:
+                    command = " ".join(args[1:])
+                    response = await run_single_command(ipc_client, command)
+                    print(response)
+                else:
+                    await run_interactive_loop(ipc_client)
+            finally:
+                await ipc_client.close()
+            return
 
-        # 本地直连模式下才创建 Session 日志记录器
+        # 直连模式（--local）：在当前进程内启动 ScheduleAgent，不连接 daemon
         if config.logging.enable_session_log:
             session_logger = SessionLogger(
                 log_dir=config.logging.session_log_dir,
