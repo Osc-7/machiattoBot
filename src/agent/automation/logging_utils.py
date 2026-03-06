@@ -60,7 +60,7 @@ class AutomationTaskLogger:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
     # ------------------------------------------------------------------
-    # Public API used by agent_worker / SessionManager
+    # Public API used by 队列消费者（如 automation_daemon 内部的 SessionManager）
     # ------------------------------------------------------------------
 
     def log_task_start(self) -> None:

@@ -86,7 +86,7 @@ class AutomationScheduler:
                 self._job_snapshots[job.job_id] = job
 
         # 队列驱动模式下，支持在运行期通过修改 job_definitions.json 添加/禁用任务，
-        # 由后台 watcher 周期性刷新内存中的任务列表，避免必须重启 agent_worker。
+        # 由后台 watcher 周期性刷新内存中的任务列表，避免必须重启后台守护进程（如 automation_daemon）。
         self._watch_task = asyncio.create_task(self._watch_job_definitions(), name="scheduler:watcher")
 
     async def stop(self) -> None:
@@ -133,7 +133,7 @@ class AutomationScheduler:
         """持续调度单个 Job。
 
         注意：首次执行前会先等待到下一次计划触发时间，
-        避免在 scheduler / agent_worker 启动瞬间就立刻跑一遍。
+        避免在 scheduler / 后台守护进程启动瞬间就立刻跑一遍。
         """
         while self._running:
             delay = self._compute_sleep_seconds(job)
@@ -301,7 +301,7 @@ class AutomationScheduler:
                 continue
 
     async def _dispatch_job(self, job: JobDefinition) -> None:
-        # 队列模式：推送 AgentTask，由 agent_worker 消费执行
+        # 队列模式：推送 AgentTask，由后台队列消费者（如 automation_daemon 内部）消费执行
         if self._task_queue is not None:
             await self._dispatch_via_queue(job)
             return

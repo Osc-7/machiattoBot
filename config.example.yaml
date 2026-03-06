@@ -85,7 +85,7 @@ sjtu_jw:
 
 # 自动化定时任务配置（可选）
 # 这里提供一个高层的“任务描述 + 时间间隔”入口，运行时会被转换为 automation 子系统的 JobDefinition，
-# 由 agent_worker 在后台周期性执行。
+# 由 automation_daemon 在后台统一调度并周期性执行。
 automation:
   jobs:
     # 示例：每 6 小时同步课程（Canvas/course_stub）并生成系统级活动记录

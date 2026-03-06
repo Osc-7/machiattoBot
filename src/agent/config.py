@@ -589,7 +589,7 @@ class FeishuConfig(BaseModel):
 
     enabled: bool = Field(
         default=False,
-        description="是否启用飞书集成（feishu_server.py 仅在启用且配置完整时对外提供服务）",
+        description="是否启用飞书集成（推荐通过 feishu_ws_gateway.py 对外提供服务）",
     )
     app_id: Optional[str] = Field(
         default=None,

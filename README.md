@@ -1,6 +1,6 @@
 # machiattoBot
 
-基于 LLM 的工AI助手，支持自然语言日程管理、自动化任务队列和多终端、多会话。
+基于 LLM 的AI助手，支持自然语言日程管理、自动化任务队列和多终端、多会话。
 
 ## 当前能力
 
@@ -25,8 +25,9 @@ cp config.example.yaml config.yaml
 # 3) 启动 automation daemon（推荐）
 python automation_daemon.py
 
-# 4) 启动 CLI
-python main.py
+# 4) 启动前端
+python main.py #启动CLI
+python feishu_ws_gateway.py #启动飞书服务器
 
 # 5) 单条命令模式
 python main.py 明天下午3点开会
@@ -37,16 +38,15 @@ SCHEDULE_USER_ID=root SCHEDULE_SOURCE=cli python main.py
 
 ## 运行模式
 
-### 1) 交互式 CLI
-
-```bash
-python main.py
-```
-
-### 2) 后台自动化 Daemon（推荐）
+### 1) 后台进程
 
 ```bash
 python automation_daemon.py
+```
+### 2) 交互式 CLI
+
+```bash
+python main.py
 ```
 
 Daemon 会执行：
@@ -55,25 +55,22 @@ Daemon 会执行：
 - 暴露本地 IPC（Unix Socket）给 CLI / 其他前端
 - 在 automation 进程内统一执行 session expired 检查与切分（idle + 4am）
 
-兼容模式：
-- 仍可运行 `python agent_worker.py`（仅队列消费，不提供 IPC）。
-
 ## CLI 会话命令
 
 CLI 会话命令（通过 IPC 或本地模式）：
 
-- `session`：显示当前会话
-- `session list`：列出已加载会话
-- `session new [id]`：创建并切换新会话
-- `session switch <id>`：切换到已有会话
+- `/session`：显示当前会话
+- `/session list`：列出已加载会话
+- `/session new [id]`：创建并切换新会话
+- `/session switch <id>`：切换到已有会话
 
 示例：
 
 ```bash
-session
-session new cli:work
-session list
-session switch cli:default
+/session
+/session new cli:work
+/session list
+/session switch cli:default
 ```
 
 说明：
@@ -108,7 +105,7 @@ src/agent/
 ├── core/
 │   ├── agent/       # Agent 主循环
 │   ├── interfaces/  # Core 协议与命令模型
-│   ├── adapters/    # ScheduleAgent -> CoreSession 适配
+│   ├── adapters/    # Agent -> CoreSession 适配
 │   ├── tools/       # 工具系统
 │   ├── llm/         # LLM 客户端
 │   └── memory/      # 记忆与会话总结

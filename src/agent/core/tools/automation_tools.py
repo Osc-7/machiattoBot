@@ -298,7 +298,7 @@ class CreateScheduledJobTool(BaseTool):
             description=(
                 "创建一个新的定时自动化任务。\n\n"
                 "典型用法：当用户用自然语言描述“每隔多久做什么事情”或“每天几点/几点做什么事情”时，"
-                "使用本工具将其注册为后台定时任务，由 agent_worker 在后台以 ephemeral 会话周期性执行。\n\n"
+                "使用本工具将其注册为后台定时任务，由 automation_daemon 在后台以 ephemeral 会话周期性执行。\n\n"
                 "支持三种主要语义：\n"
                 "1）interval：基于 interval_minutes/interval_seconds 的固定间隔执行；\n"
                 "2）daily_time/times：基于每天一个或多个固定时间点（HH:MM，本地时区）执行；\n"
