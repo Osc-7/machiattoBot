@@ -8,8 +8,8 @@ from datetime import datetime, date, timedelta
 from typing import Optional, List, Any
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
-from schedule_agent.storage.json_repository import EventRepository, TaskRepository
-from schedule_agent.models import Event, Task, EventStatus, TaskStatus, EventPriority, TaskPriority
+from agent.storage.json_repository import EventRepository, TaskRepository
+from agent.models import Event, Task, EventStatus, TaskStatus, EventPriority, TaskPriority
 
 
 def _datetime_sort_key(dt: datetime) -> float:

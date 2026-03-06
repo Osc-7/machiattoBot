@@ -19,7 +19,7 @@ from typing import Any, Deque, Dict, Set, Tuple
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from schedule_agent.config import get_config
+from agent.config import get_config
 
 from .client import FeishuClient
 from .config import get_feishu_config

@@ -13,10 +13,10 @@ import inspect
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
-from schedule_agent.config import Config, get_config
-from schedule_agent.core.adapters import ScheduleAgentAdapter
-from schedule_agent.core.interfaces import AgentHooks, AgentRunInput, CoreSession, RunTurnCommand
-from schedule_agent.core.tools import BaseTool
+from agent.config import Config, get_config
+from agent.core.adapters import ScheduleAgentAdapter
+from agent.core.interfaces import AgentHooks, AgentRunInput, CoreSession, RunTurnCommand
+from agent.core.tools import BaseTool
 
 from .agent_task import ContextPolicy
 
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Lazy import to avoid circular dependency issues at module load time.
 def _import_schedule_agent():
-    from schedule_agent.core.agent import ScheduleAgent
+    from agent.core.agent import ScheduleAgent
     return ScheduleAgent
 
 

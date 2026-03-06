@@ -8,7 +8,7 @@ import pytest
 
 from canvas_integration.config import CanvasConfig
 from canvas_integration.models import CanvasAssignment, CanvasEvent
-from schedule_agent.automation.connectors.canvas import CanvasConnector
+from agent.automation.connectors.canvas import CanvasConnector
 
 
 class _FakeCanvasClient:

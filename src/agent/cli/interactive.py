@@ -15,10 +15,10 @@ import threading
 import time
 from typing import Any, Optional
 
-from schedule_agent.core import ScheduleAgent
-from schedule_agent.core.interfaces import AgentHooks, AgentRunInput
-from schedule_agent.automation.repositories import _automation_base_dir
-from schedule_agent.utils.cli_style import (
+from agent.core import ScheduleAgent
+from agent.core.interfaces import AgentHooks, AgentRunInput
+from agent.automation.repositories import _automation_base_dir
+from agent.utils.cli_style import (
     hint,
     label,
     accent,

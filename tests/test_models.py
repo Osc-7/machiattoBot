@@ -7,7 +7,7 @@
 import pytest
 from datetime import datetime, timedelta, date
 
-from schedule_agent.models import (
+from agent.models import (
     Event, EventStatus, EventPriority,
     Task, TaskStatus, TaskPriority,
     TimeSlot, SlotType, create_sleep_slots

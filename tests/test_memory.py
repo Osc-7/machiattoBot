@@ -15,17 +15,17 @@ from pathlib import Path
 
 import pytest
 
-from schedule_agent.core.memory.types import MemoryEntry, SessionSummary
-from schedule_agent.core.memory.working_memory import (
+from agent.core.memory.types import MemoryEntry, SessionSummary
+from agent.core.memory.working_memory import (
     WorkingMemory,
     estimate_messages_tokens,
     estimate_tokens,
 )
-from schedule_agent.core.memory.short_term import ShortTermMemory
-from schedule_agent.core.memory.long_term import LongTermMemory
-from schedule_agent.core.memory.content_memory import ContentMemory
-from schedule_agent.core.memory.recall import RecallPolicy, RecallResult
-from schedule_agent.core.context.conversation import ConversationContext
+from agent.core.memory.short_term import ShortTermMemory
+from agent.core.memory.long_term import LongTermMemory
+from agent.core.memory.content_memory import ContentMemory
+from agent.core.memory.recall import RecallPolicy, RecallResult
+from agent.core.context.conversation import ConversationContext
 
 
 class TestEstimateTokens:

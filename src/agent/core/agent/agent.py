@@ -17,21 +17,21 @@ from datetime import timezone as dt_timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
-from schedule_agent.config import Config, MemoryConfig, MCPServerConfig, get_config
-from schedule_agent.core.context import ConversationContext, get_time_context
-from schedule_agent.utils.billing import compute_cost_from_calls
-from schedule_agent.core.mcp import MCPClientManager
-from schedule_agent.core.orchestrator import ToolSnapshot, ToolWorkingSetManager
-from schedule_agent.prompts import build_system_prompt as build_prompt
-from schedule_agent.core.llm import (
+from agent.config import Config, MemoryConfig, MCPServerConfig, get_config
+from agent.core.context import ConversationContext, get_time_context
+from agent.utils.billing import compute_cost_from_calls
+from agent.core.mcp import MCPClientManager
+from agent.core.orchestrator import ToolSnapshot, ToolWorkingSetManager
+from agent.prompts import build_system_prompt as build_prompt
+from agent.core.llm import (
     LLMClient,
     LLMResponse,
     ToolCall,
     TokenUsage,
     get_context_window_tokens_for_model,
 )
-from schedule_agent.utils.media import resolve_media_to_content_item
-from schedule_agent.core.tools import (
+from agent.utils.media import resolve_media_to_content_item
+from agent.core.tools import (
     BaseTool,
     CallToolTool,
     SearchToolsTool,
@@ -40,12 +40,12 @@ from schedule_agent.core.tools import (
     WebExtractorTool,
     WebSearchTool,
 )
-from schedule_agent.core.tools.chat_history_tools import (
+from agent.core.tools.chat_history_tools import (
     ChatSearchTool,
     ChatContextTool,
     ChatScrollTool,
 )
-from schedule_agent.core.memory import (
+from agent.core.memory import (
     WorkingMemory,
     ShortTermMemory,
     LongTermMemory,
@@ -57,7 +57,7 @@ from schedule_agent.core.memory import (
 )
 
 if TYPE_CHECKING:
-    from schedule_agent.utils.session_logger import SessionLogger
+    from agent.utils.session_logger import SessionLogger
 
 
 def _namespace_dir(path: str, user_id: str) -> str:
@@ -651,7 +651,7 @@ class ScheduleAgent:
 
         # 自动化摘要（最近日结 / 周结），帮助 Agent 感知近期整体节奏
         try:
-            from schedule_agent.automation.repositories import DigestRepository  # type: ignore[import]
+            from agent.automation.repositories import DigestRepository  # type: ignore[import]
 
             digest_repo = DigestRepository()
             daily_digest = digest_repo.latest("daily")

@@ -12,7 +12,7 @@ from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 from .versioned_registry import VersionedToolRegistry
 
 if TYPE_CHECKING:
-    from schedule_agent.core.orchestrator import ToolWorkingSetManager
+    from agent.core.orchestrator import ToolWorkingSetManager
 
 
 class SearchToolsTool(BaseTool):

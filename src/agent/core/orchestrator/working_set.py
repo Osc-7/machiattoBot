@@ -11,7 +11,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Dict, List, Set
 
-from schedule_agent.core.tools.versioned_registry import VersionedToolRegistry
+from agent.core.tools.versioned_registry import VersionedToolRegistry
 
 
 @dataclass(frozen=True)

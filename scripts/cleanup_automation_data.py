@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List
 
-from schedule_agent.automation.repositories import (
+from agent.automation.repositories import (
     JobDefinitionRepository,
     JobRunRepository,
     _automation_base_dir,

@@ -9,9 +9,9 @@ from typing import Optional, List
 import uuid
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
-from schedule_agent.config import PlanningConfig
-from schedule_agent.storage.json_repository import EventRepository, TaskRepository
-from schedule_agent.models import (
+from agent.config import PlanningConfig
+from agent.storage.json_repository import EventRepository, TaskRepository
+from agent.models import (
     Event,
     Task,
     TimeSlot,
@@ -19,7 +19,7 @@ from schedule_agent.models import (
     EventStatus,
     TaskStatus,
 )
-from schedule_agent.core.planner import PlannerEngine
+from agent.core.planner import PlannerEngine
 
 
 class GetFreeSlotsTool(BaseTool):

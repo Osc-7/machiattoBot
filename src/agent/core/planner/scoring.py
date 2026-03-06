@@ -5,8 +5,8 @@ Planner 评分逻辑。
 from datetime import date
 from typing import Iterable
 
-from schedule_agent.config import PlanningWeightsConfig
-from schedule_agent.models import Task
+from agent.config import PlanningWeightsConfig
+from agent.models import Task
 
 
 def _clamp(value: float, low: float, high: float) -> float:

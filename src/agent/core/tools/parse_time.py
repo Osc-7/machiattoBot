@@ -10,7 +10,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Optional, Tuple
 from zoneinfo import ZoneInfo
 
-from schedule_agent.core.context.time_context import get_time_context
+from agent.core.context.time_context import get_time_context
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 

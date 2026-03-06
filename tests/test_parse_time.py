@@ -6,7 +6,7 @@ import pytest
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from schedule_agent.core.tools import ParseTimeTool, ParsedTime, TimeParser
+from agent.core.tools import ParseTimeTool, ParsedTime, TimeParser
 
 
 class TestTimeParser:

@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from schedule_agent.core.adapters import ScheduleAgentAdapter
-from schedule_agent.core.interfaces import AgentHooks, AgentRunInput
+from agent.core.adapters import ScheduleAgentAdapter
+from agent.core.interfaces import AgentHooks, AgentRunInput
 
 
 @pytest.mark.asyncio

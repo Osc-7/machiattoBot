@@ -31,7 +31,7 @@ _DANGEROUS_PATTERNS = [
     re.compile(r"\bformat\s+", re.I),
 ]
 
-from schedule_agent.config import CommandToolsConfig, Config, get_config
+from agent.config import CommandToolsConfig, Config, get_config
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 

@@ -9,7 +9,7 @@ from typing import Callable, Optional
 from canvas_integration import CanvasClient, CanvasConfig
 from canvas_integration.models import CanvasAssignment, CanvasEvent
 
-from schedule_agent.config import Config, get_config
+from agent.config import Config, get_config
 
 from .base import BaseConnector, ConnectorFetchItem, ConnectorFetchResult
 

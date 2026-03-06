@@ -11,7 +11,7 @@
 创建 Web 模块目录结构：
 
 ```
-src/schedule_agent/web/
+src/agent/web/
 ├── __init__.py
 ├── api.py              # REST API 路由
 ├── websocket.py        # WebSocket 处理器
@@ -32,7 +32,7 @@ websockets>=12.0
 
 ### Step 3: 会话管理器实现
 
-**文件**: `src/schedule_agent/web/session_manager.py`
+**文件**: `src/agent/web/session_manager.py`
 
 ```python
 """
@@ -44,9 +44,9 @@ Web 会话管理器
 import uuid
 from datetime import datetime, timedelta
 from typing import Dict, Optional
-from schedule_agent.core import ScheduleAgent
-from schedule_agent.config import get_config
-from schedule_agent.core.tools import (
+from agent.core import ScheduleAgent
+from agent.config import get_config
+from agent.core.tools import (
     ParseTimeTool, AddEventTool, AddTaskTool,
     GetEventsTool, GetTasksTool, UpdateTaskTool,
     DeleteScheduleDataTool, GetFreeSlotsTool, PlanTasksTool,
@@ -149,7 +149,7 @@ class SessionManager:
 
 ### Step 4: WebSocket 处理器实现
 
-**文件**: `src/schedule_agent/web/websocket.py`
+**文件**: `src/agent/web/websocket.py`
 
 ```python
 """
@@ -162,7 +162,7 @@ import json
 import asyncio
 from typing import Optional
 from fastapi import WebSocket, WebSocketDisconnect
-from schedule_agent.web.session_manager import SessionManager
+from agent.web.session_manager import SessionManager
 
 async def websocket_endpoint(websocket: WebSocket, session_id: Optional[str] = None):
     """
@@ -243,7 +243,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: Optional[str] = N
 
 ### Step 5: REST API 实现
 
-**文件**: `src/schedule_agent/web/api.py`
+**文件**: `src/agent/web/api.py`
 
 ```python
 """
@@ -255,10 +255,10 @@ REST API 路由
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from schedule_agent.models import Event, Task
-from schedule_agent.storage import EventRepository, TaskRepository
-from schedule_agent.web.session_manager import SessionManager
-from schedule_agent.config import get_config
+from agent.models import Event, Task
+from agent.storage import EventRepository, TaskRepository
+from agent.web.session_manager import SessionManager
+from agent.config import get_config
 
 router = APIRouter()
 
@@ -432,8 +432,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-from schedule_agent.web.api import router as api_router
-from schedule_agent.web.websocket import websocket_endpoint
+from agent.web.api import router as api_router
+from agent.web.websocket import websocket_endpoint
 
 # 创建 FastAPI 应用
 app = FastAPI(

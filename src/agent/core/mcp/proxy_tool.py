@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from schedule_agent.core.tools.base import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from agent.core.tools.base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 
 
 def _schema_to_parameters(input_schema: Dict[str, Any]) -> List[ToolParameter]:

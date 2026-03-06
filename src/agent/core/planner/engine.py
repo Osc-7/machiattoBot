@@ -5,8 +5,8 @@ Planner 排程引擎（v1：评分 + 贪心）。
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from schedule_agent.config import PlanningConfig
-from schedule_agent.models import Event, EventStatus, SlotType, Task, TimeSlot
+from agent.config import PlanningConfig
+from agent.models import Event, EventStatus, SlotType, Task, TimeSlot
 
 from .scoring import rank_tasks
 from .types import PlannerPlannedItem, PlannerResult, PlannerUnplannedItem

@@ -21,16 +21,16 @@ import signal
 import sys
 from pathlib import Path
 
-from schedule_agent.automation.agent_task import TaskStatus
-from schedule_agent.automation.repositories import (
+from agent.automation.agent_task import TaskStatus
+from agent.automation.repositories import (
     JobDefinitionRepository,
     JobRunRepository,
 )
-from schedule_agent.automation.scheduler import AutomationScheduler
-from schedule_agent.automation.session_manager import SessionManager
-from schedule_agent.automation.task_queue import AgentTaskQueue
-from schedule_agent.automation.logging_utils import AutomationTaskLogger
-from schedule_agent.config import find_config_file, get_config, load_config
+from agent.automation.scheduler import AutomationScheduler
+from agent.automation.session_manager import SessionManager
+from agent.automation.task_queue import AgentTaskQueue
+from agent.automation.logging_utils import AutomationTaskLogger
+from agent.config import find_config_file, get_config, load_config
 
 LOG_DIR = Path(__file__).resolve().parent / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -152,7 +152,7 @@ def _sync_jobs_from_config(config, job_def_repo: JobDefinitionRepository) -> Non
             if changed:
                 job_def_repo.update(matched)
         else:
-            from schedule_agent.automation.types import JobDefinition
+            from agent.automation.types import JobDefinition
 
             job = JobDefinition(
                 job_type=target_job_type,

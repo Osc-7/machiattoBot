@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 from typing import Any, Dict, Optional
 
-from schedule_agent.core.interfaces import (
+from agent.core.interfaces import (
     AgentHooks,
     AgentRunInput,
     AgentRunResult,

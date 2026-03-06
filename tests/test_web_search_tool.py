@@ -4,7 +4,7 @@
 
 import pytest
 
-from schedule_agent.core.tools import VersionedToolRegistry, WebSearchTool
+from agent.core.tools import VersionedToolRegistry, WebSearchTool
 
 
 class _FakeSearchTool:

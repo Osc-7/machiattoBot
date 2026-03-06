@@ -169,7 +169,7 @@ sequenceDiagram
 
 - **配置系统**
   - 主配置文件：`config.yaml`（参考 `config.example.yaml`）。
-  - 通过 `schedule_agent.config.Config` 强类型化，并在 `ScheduleAgent`、automation daemon、CLI 中广泛使用。
+  - 通过 `agent.config.Config` 强类型化，并在 `ScheduleAgent`、automation daemon、CLI 中广泛使用。
   - 关键领域：
     - `llm.*`：模型、密钥、请求超时、温度、token 限制。
     - `time.*`：默认时区，用于 `TimeContext`。

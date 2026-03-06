@@ -10,12 +10,12 @@
 
 ## 安装
 
-本技能位于 `src/schedule_agent/prompts/skills/maker-time-protector/`
+本技能位于 `src/agent/prompts/skills/maker-time-protector/`
 
 如需安装到全局技能目录：
 
 ```bash
-cp -r src/schedule_agent/prompts/skills/maker-time-protector ~/.agents/skills/
+cp -r src/agent/prompts/skills/maker-time-protector ~/.agents/skills/
 ```
 
 ## 触发短语

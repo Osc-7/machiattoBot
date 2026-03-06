@@ -14,8 +14,8 @@ from mcp.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
 
-from schedule_agent.config import Config, get_config
-from schedule_agent.core.tools import (
+from agent.config import Config, get_config
+from agent.core.tools import (
     AddEventTool,
     AddTaskTool,
     BaseTool,

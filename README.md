@@ -1,6 +1,6 @@
-# Schedule Agent
+# machiattoBot
 
-基于 LLM 的工具驱动日程助手，支持自然语言日程管理、自动化任务队列和多会话 CLI。
+基于 LLM 的工AI助手，支持自然语言日程管理、自动化任务队列和多终端、多会话。
 
 ## 当前能力
 
@@ -25,7 +25,7 @@ cp config.example.yaml config.yaml
 # 3) 启动 automation daemon（推荐）
 python automation_daemon.py
 
-# 4) 启动 CLI（会自动优先连接 daemon 的本地 IPC）
+# 4) 启动 CLI
 python main.py
 
 # 5) 单条命令模式
@@ -102,7 +102,7 @@ session switch cli:default
 ## 项目结构（简版）
 
 ```text
-src/schedule_agent/
+src/agent/
 ├── automation/      # 调度/队列/SessionManager/Gateway
 ├── cli/             # 交互式命令行
 ├── core/

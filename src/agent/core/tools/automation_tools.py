@@ -6,14 +6,14 @@ from datetime import datetime
 import json
 from typing import Any, Optional
 
-from schedule_agent.automation.repositories import (
+from agent.automation.repositories import (
     AutomationPolicyRepository,
     JobDefinitionRepository,
     _automation_base_dir,
 )
-from schedule_agent.automation.runtime import get_runtime
-from schedule_agent.automation.types import AutomationPolicy, JobDefinition
-from schedule_agent.config import get_config
+from agent.automation.runtime import get_runtime
+from agent.automation.types import AutomationPolicy, JobDefinition
+from agent.config import get_config
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 

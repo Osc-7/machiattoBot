@@ -11,11 +11,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from schedule_agent.config import AgentConfig, Config, LLMConfig, reset_config
-from schedule_agent.core.agent import ScheduleAgent
-from schedule_agent.core.context import ConversationContext
-from schedule_agent.core.llm import LLMClient, LLMResponse, ToolCall
-from schedule_agent.core.tools import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from agent.config import AgentConfig, Config, LLMConfig, reset_config
+from agent.core.agent import ScheduleAgent
+from agent.core.context import ConversationContext
+from agent.core.llm import LLMClient, LLMResponse, ToolCall
+from agent.core.tools import BaseTool, ToolDefinition, ToolParameter, ToolResult
 
 
 # ============== 测试工具 ==============
@@ -394,7 +394,7 @@ class TestProcessInput:
 
         with (
             patch(
-                "schedule_agent.core.agent.agent.resolve_media_to_content_item",
+                "agent.core.agent.agent.resolve_media_to_content_item",
                 return_value=(
                     {
                         "type": "image_url",

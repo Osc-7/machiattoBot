@@ -71,7 +71,7 @@
 │   ├── WEB_IMPLEMENTATION_PLAN.md   # 实现计划
 │   ├── WEB_ARCHITECTURE_DIAGRAM.md  # 架构图
 │   └── WEB_SUMMARY.md               # 本文档
-├── src/schedule_agent/
+├── src/agent/
 │   └── web/                          # Web 模块（待实现）
 │       ├── __init__.py
 │       ├── api.py

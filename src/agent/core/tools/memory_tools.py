@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from schedule_agent.core.memory import (
+from agent.core.memory import (
     ContentMemory,
     LongTermMemory,
 )

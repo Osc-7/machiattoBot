@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from schedule_agent.storage.json_repository import EventRepository, TaskRepository
+from agent.storage.json_repository import EventRepository, TaskRepository
 
 from .connectors import CanvasConnector, CourseConnectorStub, EmailConnectorStub
 from .event_bus import AsyncEventBus

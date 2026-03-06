@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from schedule_agent.config import Config, LLMConfig, SkillsConfig
-from schedule_agent.core.tools import LoadSkillTool
-from schedule_agent.prompts.loader import (
+from agent.config import Config, LLMConfig, SkillsConfig
+from agent.core.tools import LoadSkillTool
+from agent.prompts.loader import (
     _format_skills_index,
     _load_skill_metadata,
     _parse_skill_frontmatter,

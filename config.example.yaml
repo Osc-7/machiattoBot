@@ -16,7 +16,7 @@
 # 方式1（推荐）：设置环境变量后运行
 #   export QWEN_API_KEY="your-api-key"   # 或 DOUBAO_API_KEY
 #   export QWEN_MODEL="qwen-3.5-plus"   # 或 DOUBAO_MODEL
-#   python -m schedule_agent.main
+#   python -m agent.main
 # 方式2：在下方 llm 中直接填写（不推荐，容易泄露）
 
 # 豆包 LLM 配置示例

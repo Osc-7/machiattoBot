@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional, Tuple
 
 
 def _project_root() -> Path:
-    # /work/src/schedule_agent/utils/media.py -> /work
+    # /work/src/agent/utils/media.py -> /work
     return Path(__file__).resolve().parents[3]
 
 

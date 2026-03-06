@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 
-from schedule_agent.frontend.feishu.ws_client import run_ws_client
+from agent.frontend.feishu.ws_client import run_ws_client
 
 
 logging.basicConfig(

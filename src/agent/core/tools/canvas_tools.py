@@ -11,9 +11,9 @@ from datetime import datetime
 from typing import Optional, List
 
 from canvas_integration import CanvasClient, CanvasConfig, CanvasSync
-from schedule_agent.config import Config
-from schedule_agent.models import Event, EventPriority, EventStatus, Task, TaskPriority, TaskStatus
-from schedule_agent.storage.json_repository import EventRepository, TaskRepository
+from agent.config import Config
+from agent.models import Event, EventPriority, EventStatus, Task, TaskPriority, TaskStatus
+from agent.storage.json_repository import EventRepository, TaskRepository
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 

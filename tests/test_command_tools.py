@@ -6,8 +6,8 @@ import os
 
 import pytest
 
-from schedule_agent.config import CommandToolsConfig, Config, LLMConfig
-from schedule_agent.core.tools.command_tools import RunCommandTool
+from agent.config import CommandToolsConfig, Config, LLMConfig
+from agent.core.tools.command_tools import RunCommandTool
 
 
 def _make_config(

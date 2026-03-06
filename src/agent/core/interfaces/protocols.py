@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from schedule_agent.core.memory import SessionSummary
+from agent.core.memory import SessionSummary
 
 from .models import AgentHooks, AgentRunInput, AgentRunResult, AgentSessionState
 

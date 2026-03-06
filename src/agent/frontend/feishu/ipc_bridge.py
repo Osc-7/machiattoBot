@@ -10,8 +10,8 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
-from schedule_agent.automation import AutomationIPCClient, default_socket_path
-from schedule_agent.core.interfaces import AgentHooks, AgentRunInput, AgentRunResult
+from agent.automation import AutomationIPCClient, default_socket_path
+from agent.core.interfaces import AgentHooks, AgentRunInput, AgentRunResult
 
 from .client import FeishuClient
 

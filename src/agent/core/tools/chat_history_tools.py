@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 
 if TYPE_CHECKING:
-    from schedule_agent.core.memory.chat_history_db import ChatHistoryDB
+    from agent.core.memory.chat_history_db import ChatHistoryDB
 
 
 class ChatSearchTool(BaseTool):

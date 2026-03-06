@@ -8,8 +8,8 @@ import mimetypes
 from pathlib import Path
 from typing import Optional
 
-from schedule_agent.config import Config, get_config
-from schedule_agent.core.llm import LLMClient
+from agent.config import Config, get_config
+from agent.core.llm import LLMClient
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 

@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from schedule_agent.core.tools import ParseTimeTool
-from schedule_agent.mcp_server import ScheduleToolsMCPServer
+from agent.core.tools import ParseTimeTool
+from agent.mcp_server import ScheduleToolsMCPServer
 
 
 class TestScheduleToolsMCPServer:

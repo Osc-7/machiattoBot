@@ -6,8 +6,8 @@ Agent 在需要时调用此工具获取完整 SKILL 说明。
 技能仅从 cli_dir（~/.agents/skills）读取。
 """
 
-from schedule_agent.config import Config
-from schedule_agent.prompts.loader import (
+from agent.config import Config
+from agent.prompts.loader import (
     _list_cli_dir_skills,
     _resolve_cli_dir,
     load_skill_content,

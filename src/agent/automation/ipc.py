@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional
 
-from schedule_agent.core.interfaces import AgentHooks, AgentRunInput, AgentRunResult, InjectMessageCommand
+from agent.core.interfaces import AgentHooks, AgentRunInput, AgentRunResult, InjectMessageCommand
 
 from .core_gateway import AutomationCoreGateway
 

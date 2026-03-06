@@ -21,8 +21,8 @@ import logging
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from schedule_agent.config import get_config
-from schedule_agent.frontend.feishu.router import router as feishu_router
+from agent.config import get_config
+from agent.frontend.feishu.router import router as feishu_router
 
 logging.basicConfig(
     level=logging.INFO,

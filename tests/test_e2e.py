@@ -16,8 +16,8 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
-from schedule_agent.config import PlanningConfig, PlanningWorkingHoursConfig
-from schedule_agent.core.tools import (
+from agent.config import PlanningConfig, PlanningWorkingHoursConfig
+from agent.core.tools import (
     AddEventTool,
     AddTaskTool,
     GetEventsTool,
@@ -26,8 +26,8 @@ from schedule_agent.core.tools import (
     PlanTasksTool,
     ToolRegistry,
 )
-from schedule_agent.storage.json_repository import EventRepository, TaskRepository
-from schedule_agent.models import (
+from agent.storage.json_repository import EventRepository, TaskRepository
+from agent.models import (
     Event, Task, EventStatus, TaskStatus, EventPriority, TaskPriority,
     TimeSlot, SlotType,
 )

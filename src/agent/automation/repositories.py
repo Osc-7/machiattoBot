@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
-from schedule_agent.storage.json_repository import JSONRepository
+from agent.storage.json_repository import JSONRepository
 
 from .types import (
     AutomationPolicy,

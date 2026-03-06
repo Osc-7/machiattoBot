@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from schedule_agent.automation import (
+from agent.automation import (
     AgentTaskQueue,
     AutomationCoreGateway,
     AutomationIPCServer,
@@ -27,12 +27,12 @@ from schedule_agent.automation import (
     SessionRegistry,
     default_socket_path,
 )
-from schedule_agent.automation.agent_task import TaskStatus
-from schedule_agent.automation.logging_utils import AutomationTaskLogger
-from schedule_agent.automation.repositories import JobDefinitionRepository, JobRunRepository
-from schedule_agent.config import get_config
-from schedule_agent.core import ScheduleAgent, ScheduleAgentAdapter
-from schedule_agent.utils.session_logger import SessionLogger
+from agent.automation.agent_task import TaskStatus
+from agent.automation.logging_utils import AutomationTaskLogger
+from agent.automation.repositories import JobDefinitionRepository, JobRunRepository
+from agent.config import get_config
+from agent.core import ScheduleAgent, ScheduleAgentAdapter
+from agent.utils.session_logger import SessionLogger
 
 from main import get_default_tools
 

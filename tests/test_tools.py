@@ -5,7 +5,7 @@
 import pytest
 from typing import Any, Dict
 
-from schedule_agent.core.tools import (
+from agent.core.tools import (
     BaseTool,
     ToolDefinition,
     ToolParameter,

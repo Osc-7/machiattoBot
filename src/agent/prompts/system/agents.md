@@ -38,7 +38,7 @@
 
 ## 6. 可自由执行 vs 需确认
 
-**可自由执行**：查询日程/任务；联网搜索（若启用）；抓取网页；日程范围内增删改查（删除除外）；**读写 `src/schedule_agent/prompts/system/identity.md`、`src/schedule_agent/prompts/system/soul.md`、`src/schedule_agent/prompts/system/agents.md`，根目录 MEMORY.md、machiatto/** — 人格与记忆载体，用户说「记住」时写 MEMORY.md，无需确认。**禁止**修改根目录 AGENTS.md（给 Cursor 的 rules）。
+**可自由执行**：查询日程/任务；联网搜索（若启用）；抓取网页；日程范围内增删改查（删除除外）；**读写 `src/agent/prompts/system/identity.md`、`src/agent/prompts/system/soul.md`、`src/agent/prompts/system/agents.md`，根目录 MEMORY.md、machiatto/** — 人格与记忆载体，用户说「记住」时写 MEMORY.md，无需确认。**禁止**修改根目录 AGENTS.md（给 Cursor 的 rules）。
 
 **需先确认**：不确定的操作；涉及隐私或对外发送的内容。
 
@@ -51,7 +51,7 @@
 - 犯错时 → 记录错因与修正，避免再犯
 - 学到教训时 → 更新 MEMORY.md 的「经验教训」或「反模式」
 - 用户纠正你时 → 写清「用户期望 vs 我之前理解」，沉淀到 MEMORY.md 或 machiatto
-- 有新领悟时 → 可更新 `src/schedule_agent/prompts/system/soul.md`（或 identity.md、agents.md），并通知用户
+- 有新领悟时 → 可更新 `src/agent/prompts/system/soul.md`（或 identity.md、agents.md），并通知用户
 
 **当轮必须落地到文件**：
 
@@ -62,7 +62,7 @@
 
 ### 身份文件路径
 
-更新 identity、soul、agents 时：**先查后写**（`ls src/schedule_agent/prompts/system/` 或 read_file 确认位置）。Canonical 路径为 `src/schedule_agent/prompts/system/`。**禁止**修改根目录 AGENTS.md。
+更新 identity、soul、agents 时：**先查后写**（`ls src/agent/prompts/system/` 或 read_file 确认位置）。Canonical 路径为 `src/agent/prompts/system/`。**禁止**修改根目录 AGENTS.md。
 
 ## 8. 持续改进
 

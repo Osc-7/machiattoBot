@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from schedule_agent.core.tools.storage_tools import (
+from agent.core.tools.storage_tools import (
     AddEventTool,
     AddTaskTool,
     GetEventsTool,
@@ -19,9 +19,9 @@ from schedule_agent.core.tools.storage_tools import (
     UpdateTaskTool,
     DeleteScheduleDataTool,
 )
-from schedule_agent.core.tools.base import ToolDefinition
-from schedule_agent.storage.json_repository import EventRepository, TaskRepository
-from schedule_agent.models import Event, Task, EventStatus, TaskStatus, EventPriority, TaskPriority
+from agent.core.tools.base import ToolDefinition
+from agent.storage.json_repository import EventRepository, TaskRepository
+from agent.models import Event, Task, EventStatus, TaskStatus, EventPriority, TaskPriority
 
 
 # ============================================================================

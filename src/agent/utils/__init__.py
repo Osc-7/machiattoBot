@@ -3,7 +3,7 @@
 """
 
 # 配置相关工具从 config 模块导入
-from schedule_agent.config import (
+from agent.config import (
     Config,
     LLMConfig,
     TimeConfig,

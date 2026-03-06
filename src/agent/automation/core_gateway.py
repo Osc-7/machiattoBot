@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Awaitable, Callable, Dict, Optional
 
 from .session_registry import SessionRegistry
-from schedule_agent.core.interfaces import (
+from agent.core.interfaces import (
     AgentHooks,
     AgentRunInput,
     AgentRunResult,

@@ -14,8 +14,8 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from schedule_agent.config import MCPConfig, MCPServerConfig
-from schedule_agent.core.tools.base import ToolResult
+from agent.config import MCPConfig, MCPServerConfig
+from agent.core.tools.base import ToolResult
 
 from .proxy_tool import MCPProxyTool
 

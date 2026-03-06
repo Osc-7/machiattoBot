@@ -14,8 +14,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from schedule_agent.config import get_config
-from schedule_agent.core.memory import LongTermMemory, MemoryEntry
+from agent.config import get_config
+from agent.core.memory import LongTermMemory, MemoryEntry
 
 
 def _migrate_long_term_entries(user_id: str = "root") -> Dict[str, Any]:

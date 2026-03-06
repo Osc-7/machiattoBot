@@ -22,7 +22,7 @@ from typing import Literal, Optional, Tuple
 
 import yaml
 
-from schedule_agent.config import Config
+from agent.config import Config
 
 PromptMode = Literal["full", "minimal", "none"]
 """系统提示组装模式：

@@ -19,7 +19,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import httpx
 
-from schedule_agent.config import SjtuJwConfig
+from agent.config import SjtuJwConfig
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 

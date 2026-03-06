@@ -76,7 +76,7 @@
 ```
 /work
 ├── src/
-│   └── schedule_agent/
+│   └── agent/
 │       ├── web/                    # 新增 Web 模块
 │       │   ├── __init__.py
 │       │   ├── api.py              # REST API 路由
@@ -343,8 +343,8 @@ http://localhost:8000
 ```python
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
-from schedule_agent.web.api import router as api_router
-from schedule_agent.web.websocket import websocket_endpoint
+from agent.web.api import router as api_router
+from agent.web.websocket import websocket_endpoint
 
 app = FastAPI(title="Schedule Agent Web")
 app.include_router(api_router, prefix="/api")
@@ -355,8 +355,8 @@ app.mount("/", StaticFiles(directory="static", html=True), name="static")
 ### 12.2 WebSocket 处理器（websocket.py）
 ```python
 from fastapi import WebSocket
-from schedule_agent.core import ScheduleAgent
-from schedule_agent.web.session_manager import SessionManager
+from agent.core import ScheduleAgent
+from agent.web.session_manager import SessionManager
 
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()

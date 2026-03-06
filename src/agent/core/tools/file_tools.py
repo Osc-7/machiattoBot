@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Awaitable, Callable, Optional, Tuple
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
-from schedule_agent.config import Config, FileToolsConfig, get_config
+from agent.config import Config, FileToolsConfig, get_config
 
 
 class ReadFileTool(BaseTool):

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from schedule_agent.config import Config, FeishuConfig, get_config
+from agent.config import Config, FeishuConfig, get_config
 
 
 def get_feishu_config(config: Optional[Config] = None) -> FeishuConfig:

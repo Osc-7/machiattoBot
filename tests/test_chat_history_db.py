@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from schedule_agent.core.memory.chat_history_db import ChatHistoryDB
+from agent.core.memory.chat_history_db import ChatHistoryDB
 
 
 def test_chat_history_db_filters_by_default_source(tmp_path):

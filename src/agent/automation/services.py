@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Dict, Iterable, Optional
 
-from schedule_agent.models import Event, EventPriority, Task, TaskPriority
-from schedule_agent.storage.json_repository import EventRepository, TaskRepository
+from agent.models import Event, EventPriority, Task, TaskPriority
+from agent.storage.json_repository import EventRepository, TaskRepository
 
 from .connectors import BaseConnector
 from .event_bus import AsyncEventBus

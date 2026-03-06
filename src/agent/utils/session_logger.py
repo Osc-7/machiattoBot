@@ -14,8 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from schedule_agent.core.llm import LLMResponse, ToolCall, TokenUsage
-from schedule_agent.core.tools import ToolResult
+from agent.core.llm import LLMResponse, ToolCall, TokenUsage
+from agent.core.tools import ToolResult
 
 
 @dataclass

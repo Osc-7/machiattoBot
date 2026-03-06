@@ -16,18 +16,18 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Awaitable, List, Optional, cast
 
-from schedule_agent.config import Config, get_config
-from schedule_agent.automation import (
+from agent.config import Config, get_config
+from agent.automation import (
     AutomationCoreGateway,
     AutomationIPCClient,
     SessionCutPolicy,
     default_socket_path,
 )
-from schedule_agent.core import ScheduleAgent, ScheduleAgentAdapter
-from schedule_agent.core.interfaces import AgentHooks, AgentRunInput
-from schedule_agent.cli import run_interactive_loop
-from schedule_agent.utils.session_logger import SessionLogger
-from schedule_agent.core.tools import (
+from agent.core import ScheduleAgent, ScheduleAgentAdapter
+from agent.core.interfaces import AgentHooks, AgentRunInput
+from agent.cli import run_interactive_loop
+from agent.utils.session_logger import SessionLogger
+from agent.core.tools import (
     BaseTool,
     LoadSkillTool,
     ParseTimeTool,
@@ -62,7 +62,7 @@ from schedule_agent.core.tools import (
     FetchSjtuUndergradScheduleTool,
     CreateScheduledJobTool,
 )
-from schedule_agent.core.memory import (
+from agent.core.memory import (
     ContentMemory,
     LongTermMemory,
 )

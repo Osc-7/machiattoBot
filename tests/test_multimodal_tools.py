@@ -4,7 +4,7 @@
 
 import pytest
 
-from schedule_agent.core.tools.media_tools import AttachMediaTool
+from agent.core.tools.media_tools import AttachMediaTool
 
 
 class TestAttachMediaTool:

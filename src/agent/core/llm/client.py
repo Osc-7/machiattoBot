@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from openai import AsyncOpenAI  # type: ignore
 
-from schedule_agent.config import Config, get_config
+from agent.config import Config, get_config
 
 # Qwen 深度思考模式会将推理内容放在 content 中（有时与回复混合），用 ` <think>...</think>` 包裹。
 # 参见 https://www.alibabacloud.com/help/zh/model-studio/deep-thinking

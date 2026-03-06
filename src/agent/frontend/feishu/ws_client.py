@@ -24,7 +24,7 @@ from typing import Any
 
 import lark_oapi as lark
 
-from schedule_agent.config import get_config
+from agent.config import get_config
 
 from .client import FeishuClient
 from .event_models import FeishuMessage, FeishuMessageEvent, FeishuSender, FeishuSenderId
