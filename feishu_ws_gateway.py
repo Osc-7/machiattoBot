@@ -36,6 +36,9 @@ logger = logging.getLogger("feishu_ws_gateway")
 def main() -> None:
     try:
         run_ws_client()
+    except KeyboardInterrupt:
+        # 用户主动通过 Ctrl+C 终止进程时，优雅退出而不打印异常堆栈
+        logger.info("Feishu ws gateway stopped by user (KeyboardInterrupt)")
     except Exception as exc:  # noqa: BLE001
         logger.exception("Feishu ws gateway exited with error: %s", exc)
         raise

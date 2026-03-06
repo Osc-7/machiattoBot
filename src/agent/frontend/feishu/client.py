@@ -15,6 +15,7 @@ import json
 import httpx
 
 from .config import get_feishu_config
+from .markdown_filter import filter_markdown_for_feishu
 
 
 @dataclass
@@ -79,12 +80,15 @@ class FeishuClient:
         """
         if not chat_id:
             raise ValueError("chat_id 不能为空")
+        # 统一在这里做 Markdown → 纯文本过滤，避免上层重复处理。
+        safe_text = filter_markdown_for_feishu(text)
+
         token = await self._get_tenant_access_token()
         url = f"{self._base_url}/open-apis/im/v1/messages?receive_id_type=chat_id"
         payload = {
             "receive_id": chat_id,
             "msg_type": "text",
-            "content": json.dumps({"text": text}, ensure_ascii=False),
+            "content": json.dumps({"text": safe_text}, ensure_ascii=False),
         }
         headers = {
             "Authorization": f"Bearer {token}",

@@ -12,6 +12,10 @@ openai>=1.0
 httpx>=0.24
 mcp>=1.0
 
+# Markdown parsing & HTML to text (Feishu filter)
+markdown-it-py>=3.0.0
+beautifulsoup4>=4.12.0
+
 # Web / API server (Feishu integration, future web UI)
 fastapi>=0.115.0
 uvicorn>=0.30.0

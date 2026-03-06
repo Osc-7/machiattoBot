@@ -1,5 +1,26 @@
 # Schedule Agent 开发进度
 
+## 2026-03-06 - 为飞书集成添加 Markdown 过滤
+
+### 完成内容:
+- 新增 `mdclense` 依赖（Markdown → 纯文本），在 `requirements.txt` 中声明。
+- 新增 `src/agent/frontend/feishu/markdown_filter.py`：
+  - 封装 `filter_markdown_for_feishu`，基于 `mdclense` 将 Markdown 文本转换为适合飞书文本消息展示的纯文本。
+  - 预处理链接/图片语法（`[文本](url)` / `![alt](url)`）为可读的 `文本 (url)` / `[图片: alt] (url)` 形式，避免 URL 被解析过程丢弃。
+  - 对输出做轻量换行归一化，最多保留 2 个连续空行，提升在飞书中的可读性。
+- 更新 `src/agent/frontend/feishu/client.py`：
+  - 在 `FeishuClient.send_text_message` 内统一调用 `filter_markdown_for_feishu`，确保所有飞书回复（HTTP 回调、WS 网关、中间输出）都会自动去除 Markdown 语法噪音。
+- 新增测试 `tests/test_feishu_markdown_filter.py`：
+  - 验证标题/粗体/斜体等标记被剥离但文本内容保留。
+  - 验证 Markdown 链接被转换为 `文本 (url)` 形式且 URL 不丢失。
+  - 验证多余空行会被压缩为最多 2 行，避免输出过于稀疏。
+
+### 测试:
+- 运行 `pytest tests/test_feishu_markdown_filter.py -v`：3 passed。
+
+### 备注:
+- 当前仅对 msg_type="text" 的飞书消息做 Markdown → 纯文本过滤，未来如接入富文本（post/card）可以在上层选择性跳过该过滤。
+
 ## 2026-02-20 - 实现网页抓取工具（解决 agent_max 与工具冲突问题）
 
 ### 完成内容:
