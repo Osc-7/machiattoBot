@@ -186,6 +186,7 @@ async def _main() -> None:
         user_id=owner_id,
         source=source,
         session_logger=session_logger,
+        defer_mcp_connect=True,
     ) as core_agent:
         core_adapter = ScheduleAgentAdapter(core_agent)
 
@@ -198,6 +199,7 @@ async def _main() -> None:
                 user_id=owner_id,
                 source=source,
                 session_logger=session_logger,
+                defer_mcp_connect=True,
             )
             await created_agent.__aenter__()
             adapter = ScheduleAgentAdapter(created_agent)
@@ -231,6 +233,38 @@ async def _main() -> None:
         await ipc.start()
         logger.info("Automation daemon started. socket=%s", ipc.socket_path)
 
+        async def _connect_mcp_in_background() -> None:
+            try:
+                if await core_agent.ensure_mcp_connected():
+                    logger.info("MCP connected (deferred)")
+            except Exception as exc:
+                # 单行警告，不刷屏；若需排查可开启 DEBUG 或查看 logs/automation_daemon.log
+                logger.warning(
+                    "MCP deferred connect failed: %s (%s). Daemon works without MCP tools.",
+                    type(exc).__name__,
+                    exc,
+                )
+                logger.debug("MCP deferred connect traceback", exc_info=True)
+
+        mcp_task = asyncio.create_task(_connect_mcp_in_background(), name="daemon-mcp-connect")
+
+        def _mcp_done_cb(task: asyncio.Task[None]) -> None:
+            try:
+                exc = task.exception()
+            except asyncio.CancelledError:
+                return
+            if exc is None:
+                return
+            # 抑制 anyio/mcp 在异步生成器关闭时的已知噪音，避免 "Task exception was never retrieved"
+            msg = str(exc)
+            if "Attempted to exit cancel scope in a different task" in msg or (
+                isinstance(exc, RuntimeError) and "cancel scope" in msg
+            ):
+                logger.debug("MCP background connect teardown (ignored): %s", exc)
+            # 其他异常已在 _connect_mcp_in_background 的 except 中打过，此处不再重复
+
+        mcp_task.add_done_callback(_mcp_done_cb)
+
         try:
             while True:
                 await asyncio.sleep(1.0)
@@ -258,16 +292,30 @@ def main() -> None:
     stop_event = asyncio.Event()
 
     def _loop_exception_handler(loop_obj: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
-        # 屏蔽 anyio/mcp 在 shutdown_asyncgens 阶段偶发的已知噪音：
+        # 屏蔽 anyio/mcp 在异步生成器/子任务关闭时的已知噪音：
         # RuntimeError: Attempted to exit cancel scope in a different task than it was entered in
         message = str(context.get("message") or "")
         exc = context.get("exception")
-        if (
-            "an error occurred during closing of asynchronous generator" in message
-            and isinstance(exc, RuntimeError)
-            and "Attempted to exit cancel scope in a different task" in str(exc)
-        ):
+
+        def _is_anyio_cancel_scope(e: Any) -> bool:
+            return (
+                isinstance(e, RuntimeError)
+                and e is not None
+                and "cancel scope" in str(e)
+            )
+
+        if "an error occurred during closing of asynchronous generator" in message and _is_anyio_cancel_scope(exc):
             return
+        # 子任务（如 MCP stdio_client 内部 task）未被 await 时，asyncio 会报 "Task exception was never retrieved"
+        if "Task exception was never retrieved" in message:
+            task = context.get("task")
+            if task is not None and task.done() and not task.cancelled():
+                try:
+                    task_exc = task.exception()
+                except Exception:
+                    task_exc = None
+                if _is_anyio_cancel_scope(task_exc):
+                    return
         loop_obj.default_exception_handler(context)
 
     loop.set_exception_handler(_loop_exception_handler)

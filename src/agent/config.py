@@ -743,6 +743,17 @@ def load_config(config_path: Optional[Path] = None) -> Config:
         FileNotFoundError: 配置文件不存在
         ValueError: 配置文件格式错误
     """
+    # 优先从 .env 加载环境变量（TAVILY_API_KEY 等），即使用户未在 shell 里 source .env / init.sh 也能生效
+    try:
+        from dotenv import load_dotenv
+        for base in [Path.cwd(), Path(__file__).resolve().parents[2]]:
+            env_file = base / ".env"
+            if env_file.is_file():
+                load_dotenv(env_file)
+                break
+    except ImportError:
+        pass
+
     if config_path is None:
         config_path = find_config_file()
 

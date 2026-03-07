@@ -205,20 +205,14 @@ mcp:
       tool_name_prefix: "mcp_local"
       init_timeout_seconds: 15
       call_timeout_seconds: 30
-    # Tavily 远程 MCP（用于 web_search / extract_web_content）
-    # 使用方式：
-    #   export TAVILY_API_KEY="tvly-xxxx"  # 从 https://tavily.com 获取 API Key
-    #   # 启动程序，${TAVILY_API_KEY} 会被自动替换为环境变量值
+    # Tavily 联网搜索 MCP（本地 stdio，推荐：避免 mcp-remote 远程握手在国内易超时）
+    # 在 .env 中配置 TAVILY_API_KEY=tvly-xxx 后启用；从 https://tavily.com 获取 Key
     - name: "tavily"
       enabled: false
       transport: "stdio"
       command: "npx"
-      args:
-        - "-y"
-        - "mcp-remote"
-        - "https://mcp.tavily.com/mcp/?tavilyApiKey=${TAVILY_API_KEY}"
+      args: ["-y", "tavily-mcp@latest"]
       env:
-        # 禁用 mcp-remote 的调试日志输出，避免污染 CLI
         NODE_NO_WARNINGS: "1"
         NODE_ENV: "production"
       cwd: "."

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from contextlib import AsyncExitStack
@@ -18,6 +19,8 @@ from agent.config import MCPConfig, MCPServerConfig
 from agent.core.tools.base import ToolResult
 
 from .proxy_tool import MCPProxyTool
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -58,65 +61,73 @@ class MCPClientManager:
             if server.transport != "stdio":
                 continue
 
-            # 合并环境变量：确保 stderr 被重定向，避免 MCP server 日志污染 CLI
-            merged_env = {**os.environ, **(server.env or {})}
-            # 使用 NODE_OPTIONS 禁用 Node.js 的警告输出
-            merged_env["NODE_NO_WARNINGS"] = "1"
-            merged_env["NODE_ENV"] = "production"
+            args_preview = " ".join(server.args)
+            if len(args_preview) > 60:
+                args_preview = args_preview[:57] + "..."
+            logger.info("Connecting to MCP server: %s (%s %s)...", server.name, server.command, args_preview)
+            try:
+                # 合并环境变量：确保 stderr 被重定向，避免 MCP server 日志污染 CLI
+                merged_env = {**os.environ, **(server.env or {})}
+                # 使用 NODE_OPTIONS 禁用 Node.js 的警告输出
+                merged_env["NODE_NO_WARNINGS"] = "1"
+                merged_env["NODE_ENV"] = "production"
 
-            server_params = StdioServerParameters(
-                command=server.command,
-                args=server.args,
-                env=merged_env,
-                cwd=server.cwd,
-            )
-
-            # 对 mcp-remote 进程静默 stderr，避免其调试日志污染主 CLI 输出。
-            if server.command == "npx" and any(arg == "mcp-remote" for arg in server.args):
-                errlog = self._exit_stack.enter_context(open(os.devnull, "w"))
-            else:
-                errlog = sys.stderr
-
-            read_stream, write_stream = await self._exit_stack.enter_async_context(
-                stdio_client(server_params, errlog=errlog)
-            )
-            session = await self._exit_stack.enter_async_context(
-                ClientSession(read_stream, write_stream)
-            )
-
-            await asyncio.wait_for(
-                session.initialize(),
-                timeout=server.init_timeout_seconds,
-            )
-
-            self._servers[server.name] = _ServerRuntime(config=server, session=session)
-
-            tool_resp = await asyncio.wait_for(
-                session.list_tools(),
-                timeout=server.init_timeout_seconds,
-            )
-            tools = getattr(tool_resp, "tools", []) or []
-            for tool in tools:
-                remote_name = getattr(tool, "name", "")
-                if not remote_name:
-                    continue
-                local_prefix = server.tool_name_prefix or server.name
-                local_name = f"{local_prefix}.{remote_name}"
-                if any(t.name == local_name for t in self._proxy_tools):
-                    raise ValueError(f"MCP 工具名冲突: {local_name}")
-
-                self._proxy_tools.append(
-                    MCPProxyTool(
-                        manager=self,
-                        local_name=local_name,
-                        server_name=server.name,
-                        remote_name=remote_name,
-                        description=getattr(tool, "description", "") or "MCP 远程工具",
-                        input_schema=getattr(tool, "inputSchema", None)
-                        or getattr(tool, "input_schema", None)
-                        or {"type": "object", "properties": {}},
-                    )
+                server_params = StdioServerParameters(
+                    command=server.command,
+                    args=server.args,
+                    env=merged_env,
+                    cwd=server.cwd,
                 )
+
+                # 对 mcp-remote 进程静默 stderr，避免其调试日志污染主 CLI 输出。
+                if server.command == "npx" and any(arg == "mcp-remote" for arg in server.args):
+                    errlog = self._exit_stack.enter_context(open(os.devnull, "w"))
+                else:
+                    errlog = sys.stderr
+
+                read_stream, write_stream = await self._exit_stack.enter_async_context(
+                    stdio_client(server_params, errlog=errlog)
+                )
+                session = await self._exit_stack.enter_async_context(
+                    ClientSession(read_stream, write_stream)
+                )
+
+                await asyncio.wait_for(
+                    session.initialize(),
+                    timeout=server.init_timeout_seconds,
+                )
+
+                self._servers[server.name] = _ServerRuntime(config=server, session=session)
+
+                tool_resp = await asyncio.wait_for(
+                    session.list_tools(),
+                    timeout=server.init_timeout_seconds,
+                )
+                tools = getattr(tool_resp, "tools", []) or []
+                for tool in tools:
+                    remote_name = getattr(tool, "name", "")
+                    if not remote_name:
+                        continue
+                    local_prefix = server.tool_name_prefix or server.name
+                    local_name = f"{local_prefix}.{remote_name}"
+                    if any(t.name == local_name for t in self._proxy_tools):
+                        raise ValueError(f"MCP 工具名冲突: {local_name}")
+
+                    self._proxy_tools.append(
+                        MCPProxyTool(
+                            manager=self,
+                            local_name=local_name,
+                            server_name=server.name,
+                            remote_name=remote_name,
+                            description=getattr(tool, "description", "") or "MCP 远程工具",
+                            input_schema=getattr(tool, "inputSchema", None)
+                            or getattr(tool, "input_schema", None)
+                            or {"type": "object", "properties": {}},
+                        )
+                    )
+            except Exception as exc:
+                logger.warning("MCP server %s failed: %s (%s)", server.name, type(exc).__name__, exc)
+                raise RuntimeError(f"MCP server '{server.name}' failed: {exc}") from exc
 
         self._connected = True
 

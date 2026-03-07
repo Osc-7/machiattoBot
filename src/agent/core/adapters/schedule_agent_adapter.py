@@ -33,6 +33,13 @@ class ScheduleAgentAdapter:
             await self._emit_event(hooks, CoreEvent(name="agent_start"))
             self._agent_started = True
 
+        # 若底层 Agent 使用 defer_mcp_connect，在首轮或后续轮次前确保 MCP 已连接
+        ensure_mcp = getattr(self._agent, "ensure_mcp_connected", None)
+        if callable(ensure_mcp):
+            maybe = ensure_mcp()
+            if inspect.isawaitable(maybe):
+                await maybe
+
         await self._emit_event(hooks, CoreEvent(name="turn_start"))
 
         async def on_stream_delta(delta: str) -> None:

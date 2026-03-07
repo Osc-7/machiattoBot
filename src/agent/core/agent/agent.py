@@ -116,6 +116,7 @@ class ScheduleAgent:
         session_logger: Optional["SessionLogger"] = None,
         user_id: str = "root",
         source: str = "cli",
+        defer_mcp_connect: bool = False,
     ):
         """
         初始化 Agent。
@@ -128,6 +129,7 @@ class ScheduleAgent:
             session_logger: 会话日志记录器，用于记录完整 session 日志
             user_id: 记忆命名空间用户 ID（同一 user_id 可跨终端共享记忆）
             source: 来源命名空间（如 cli/qq/whatsapp）
+            defer_mcp_connect: 为 True 时 __aenter__ 不连接 MCP，需稍后调用 ensure_mcp_connected()（用于 daemon 先完成启动再连 MCP）
         """
         self._config = config or get_config()
         self._user_id = user_id.strip() or "root"
@@ -239,9 +241,10 @@ class ScheduleAgent:
                     )
                 )
 
-        # MCP 客户端（在 __aenter__ 中连接）
+        # MCP 客户端（在 __aenter__ 中连接，或 defer 时由 ensure_mcp_connected 连接）
         self._mcp_manager: Optional[MCPClientManager] = None
         self._mcp_connected = False
+        self._defer_mcp_connect = defer_mcp_connect
 
         # 联网工具（基于 Tavily MCP）
         if self._config.mcp.enabled:
@@ -956,10 +959,20 @@ class ScheduleAgent:
         if self._config.mcp.enabled and not self._mcp_connected:
             self._config.mcp.servers = self._build_runtime_mcp_servers(self._config.mcp.servers)
             self._mcp_manager = MCPClientManager(self._config.mcp)
-            await self._mcp_manager.connect()
-            self._tool_registry.update_tools(self._mcp_manager.get_proxy_tools())
-            self._mcp_connected = True
+            if not self._defer_mcp_connect:
+                await self._mcp_manager.connect()
+                self._tool_registry.update_tools(self._mcp_manager.get_proxy_tools())
+                self._mcp_connected = True
         return self
+
+    async def ensure_mcp_connected(self) -> bool:
+        """若启用了 MCP 且为延迟连接，则执行连接并更新工具注册表。用于 daemon 启动后再连 MCP。"""
+        if not self._config.mcp.enabled or self._mcp_connected or self._mcp_manager is None:
+            return self._mcp_connected
+        await self._mcp_manager.connect()
+        self._tool_registry.update_tools(self._mcp_manager.get_proxy_tools())
+        self._mcp_connected = True
+        return True
 
     def _build_runtime_mcp_servers(self, servers: List[MCPServerConfig]) -> List[MCPServerConfig]:
         """
