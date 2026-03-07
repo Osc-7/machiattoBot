@@ -1,5 +1,31 @@
 # Schedule Agent 开发进度
 
+## 2026-03-07 - 飞书消息图片/文件/视频解析（ContentResolver 与前端解耦）
+
+### 完成内容:
+- 新增 `src/agent/content/` 包：与前端解耦的内容解析协议
+  - `models.py`：ContentReference 统一引用模型
+  - `resolver.py`：ContentResolver 基类与 resolve_content_refs 入口
+  - `resolvers/local.py`：LocalContentResolver（封装现有 media.resolve_media_to_content_item）
+  - `resolvers/feishu.py`：FeishuContentResolver（调用飞书 API 下载消息资源）
+- 飞书 client 新增 `download_message_resource(message_id, file_key, resource_type)`
+  - 调用 `GET /open-apis/im/v1/messages/{message_id}/resources/{file_key}?type=image|file`
+- 新增 `src/agent/frontend/feishu/content_parser.py`：parse_feishu_message
+  - 将 image/file/media/audio 消息 content 解析为 ContentReference 列表
+- 飞书 router 扩展：支持 message_type 为 text/image/file/media/audio
+  - 将 content_refs 放入 metadata 随 IPC 传给 Agent
+- ScheduleAgentAdapter：从 metadata 提取 content_refs，调用 resolve_content_refs 后传入 process_input
+- ScheduleAgent.process_input：新增 content_items 参数，注入 _pending_multimodal_items
+
+### 测试:
+- `pytest tests/test_content_resolver.py -v`：5 passed
+- `pytest tests/test_feishu_content_parser.py -v`：3 passed
+- 全量测试：582 passed
+
+### 备注:
+- 飞书需订阅「接收消息 v2」并开启对应权限才能收到 image/file/media/audio 事件
+- 文档类型（PDF/Office）可后续扩展：通过 Feishu drive 接口下载后用 markitdown 转 Markdown
+
 ## 2026-03-06 - 为飞书集成添加 Markdown 过滤
 
 ### 完成内容:

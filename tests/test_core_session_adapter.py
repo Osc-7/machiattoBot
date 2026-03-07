@@ -14,7 +14,9 @@ from agent.core.interfaces import AgentHooks, AgentRunInput
 async def test_run_turn_forwards_callbacks_and_events():
     agent = MagicMock()
 
-    async def _process_input(text, on_stream_delta=None, on_reasoning_delta=None, on_trace_event=None):
+    async def _process_input(
+        text, content_items=None, on_stream_delta=None, on_reasoning_delta=None, on_trace_event=None
+    ):
         assert text == "hello"
         if on_stream_delta:
             await on_stream_delta("A")

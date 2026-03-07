@@ -355,6 +355,7 @@ class ScheduleAgent:
     async def process_input(
         self,
         user_input: str,
+        content_items: Optional[List[Dict[str, Any]]] = None,
         on_stream_delta: Optional[Callable[[str], Any]] = None,
         on_reasoning_delta: Optional[Callable[[str], Any]] = None,
         on_trace_event: Optional[Callable[[Dict[str, Any]], Any]] = None,
@@ -370,6 +371,7 @@ class ScheduleAgent:
 
         Args:
             user_input: 用户输入
+            content_items: 前端解析的多模态内容（image_url/video_url），与 user_input 一并注入本轮 LLM
             on_stream_delta: 流式文本增量回调（仅文本内容）
             on_reasoning_delta: 思维链增量回调（reasoning_content）
             on_trace_event: 轨迹事件回调（工具调用、结果、轮次）
@@ -397,6 +399,10 @@ class ScheduleAgent:
 
         # 1. 添加用户消息到上下文
         self._context.add_user_message(user_input)
+
+        # 1.1 将前端解析的 content_items（如图片/视频）注入到下一轮 LLM 调用
+        if content_items:
+            self._pending_multimodal_items.extend(content_items)
 
         if self._session_logger:
             self._session_logger.on_user_message(turn_id, user_input)

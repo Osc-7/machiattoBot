@@ -27,6 +27,7 @@ import lark_oapi as lark
 from agent.config import get_config
 
 from .client import FeishuClient
+from .content_parser import parse_feishu_message
 from .event_models import FeishuMessage, FeishuMessageEvent, FeishuSender, FeishuSenderId
 from .ipc_bridge import AutomationDaemonUnavailable, FeishuIPCBridge
 from .router import _is_duplicate_event  # 复用去重缓存
@@ -56,10 +57,11 @@ async def _handle_im_message_event_async(data: Any) -> None:
         logger.warning("Received unexpected Feishu ws event payload, skip: %r", data)
         return
 
-    # 仅处理文本消息
-    message_type = getattr(msg, "message_type", None)
-    if message_type != "text":
-        logger.debug("ignore non-text ws message_type=%s", message_type)
+    # 支持 text / image / file / media / audio
+    message_type = getattr(msg, "message_type", None) or ""
+    supported_types = ("text", "image", "file", "media", "audio")
+    if message_type not in supported_types:
+        logger.debug("ignore unsupported ws message_type=%s", message_type)
         return
 
     # 去重：基于 message_id 做幂等
@@ -88,9 +90,13 @@ async def _handle_im_message_event_async(data: Any) -> None:
     )
     event_model = FeishuMessageEvent(sender=feishu_sender, message=feishu_message)
 
-    text = feishu_message.text.strip()
-    if not text:
-        logger.debug("ignore empty text ws message")
+    content_refs, text = parse_feishu_message(
+        message_id=message_id,
+        message_type=message_type,
+        content=getattr(msg, "content", "") or "",
+    )
+    if not text and not content_refs:
+        logger.debug("ignore empty ws message")
         return
 
     # 便于配置 automation_activity_chat_id：在日志中输出当前会话 chat_id
@@ -107,6 +113,8 @@ async def _handle_im_message_event_async(data: Any) -> None:
         "feishu_chat_id": feishu_message.chat_id,
         "feishu_chat_type": feishu_message.chat_type,
     }
+    if content_refs:
+        metadata["content_refs"] = [r.to_dict() for r in content_refs]
 
     ipc = FeishuIPCBridge(timeout_seconds=cfg.llm.request_timeout_seconds)
     try:

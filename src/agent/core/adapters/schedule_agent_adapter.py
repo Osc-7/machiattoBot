@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Dict, Optional
+import logging
+from typing import Any, Dict, List, Optional
 
+from agent.content import ContentReference, resolve_content_refs
 from agent.core.interfaces import (
     AgentHooks,
     AgentRunInput,
@@ -62,9 +64,22 @@ class ScheduleAgentAdapter:
             if mapped is not None:
                 await self._emit_event(hooks, mapped)
 
+        # 解析 content_refs（如飞书图片/视频）为 LLM content items
+        content_items: List[Dict[str, Any]] = []
+        raw_refs = agent_input.metadata.get("content_refs")
+        if isinstance(raw_refs, list) and raw_refs:
+            refs = [ContentReference.from_dict(r) for r in raw_refs]
+            try:
+                content_items = await resolve_content_refs(refs)
+            except Exception as exc:
+                logging.getLogger(__name__).warning(
+                    "content_refs resolve failed: %s", exc
+                )
+
         try:
             output = await self._agent.process_input(
                 agent_input.text,
+                content_items=content_items,
                 on_stream_delta=on_stream_delta,
                 on_reasoning_delta=on_reasoning_delta,
                 on_trace_event=on_trace_event,

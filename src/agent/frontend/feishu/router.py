@@ -21,8 +21,11 @@ from fastapi.responses import JSONResponse
 
 from agent.config import get_config
 
+from agent.content import ContentReference
+
 from .client import FeishuClient
 from .config import get_feishu_config
+from .content_parser import parse_feishu_message
 from .event_models import FeishuChallengeRequest, FeishuEventEnvelope
 from .ipc_bridge import AutomationDaemonUnavailable, FeishuIPCBridge
 from .session_mapping import map_event_to_session
@@ -116,12 +119,19 @@ async def handle_feishu_event(request: Request) -> JSONResponse:
 
     event = envelope.event
     msg = event.message
-    if msg.message_type != "text":
-        logger.debug("ignore non-text message_type=%s", msg.message_type)
-        return JSONResponse({"code": 0, "msg": "ignored_non_text"})
+    # 支持 text / image / file / media / audio
+    supported_types = ("text", "image", "file", "media", "audio")
+    if msg.message_type not in supported_types:
+        logger.debug("ignore unsupported message_type=%s", msg.message_type)
+        return JSONResponse({"code": 0, "msg": "ignored_unsupported"})
 
-    text = msg.text.strip()
-    if not text:
+    content_refs, text = parse_feishu_message(
+        message_id=msg.message_id,
+        message_type=msg.message_type,
+        content=msg.content,
+    )
+    # 纯媒体消息时 text 为占位描述；若两者都空则忽略
+    if not text and not content_refs:
         return JSONResponse({"code": 0, "msg": "ignored_empty"})
 
     # 便于配置 automation_activity_chat_id：在日志中输出当前会话 chat_id
@@ -136,6 +146,8 @@ async def handle_feishu_event(request: Request) -> JSONResponse:
         "source": "feishu",
         "feishu_event_id": header.event_id,
     }
+    if content_refs:
+        metadata["content_refs"] = [r.to_dict() for r in content_refs]
 
     ipc = _build_ipc_bridge()
     try:

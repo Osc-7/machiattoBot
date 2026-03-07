@@ -239,6 +239,20 @@
       "priority": "medium"
     },
     {
+      "category": "frontend",
+      "id": "FEI-001",
+      "description": "飞书消息图片/文件/视频解析（ContentResolver 与前端解耦）",
+      "steps": [
+        "创建 ContentReference 与 ContentResolver 抽象层",
+        "实现 LocalContentResolver、FeishuContentResolver",
+        "飞书 client 新增 download_message_resource",
+        "飞书事件解析 image/file/media/audio → content_refs",
+        "IPC/Agent 支持 content_refs 注入多模态内容"
+      ],
+      "passes": true,
+      "priority": "high"
+    },
+    {
       "category": "memory",
       "id": "MEM-001",
       "description": "四层记忆库架构（工作/短期/长期/内容记忆）",

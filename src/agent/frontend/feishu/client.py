@@ -3,13 +3,13 @@ from __future__ import annotations
 """
 飞书开放平台 HTTP 客户端封装。
 
-当前仅实现发送文本消息的最小能力；Token 获取与缓存逻辑根据
-飞书官方文档（tenant_access_token internal 模式）实现。
+- 发送文本消息
+- 下载消息中的资源文件（图片、视频、音频、文件）
 """
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Tuple
 
 import json
 import httpx
@@ -100,4 +100,45 @@ class FeishuClient:
         if int(data.get("code", 0)) != 0:
             # 失败时抛出异常，由上层记录日志并向用户返回友好错误
             raise RuntimeError(f"发送飞书消息失败: {data}")
+
+    async def download_message_resource(
+        self,
+        *,
+        message_id: str,
+        file_key: str,
+        resource_type: str,
+    ) -> Tuple[bytes, str]:
+        """
+        下载消息中的资源文件（图片、视频、音频、文件）。
+
+        飞书接口: GET /open-apis/im/v1/messages/{message_id}/resources/{file_key}
+        参考: https://open.feishu.cn/document/server-docs/im-v1/message-resource/get
+
+        Args:
+            message_id: 消息 ID
+            file_key: 资源 key（图片用 image_key，文件/视频/音频用 file_key）
+            resource_type: "image" 或 "file"
+
+        Returns:
+            (bytes, mime_type) 或抛出 RuntimeError
+        """
+        if not message_id or not file_key:
+            raise ValueError("message_id 和 file_key 不能为空")
+        if resource_type not in ("image", "file"):
+            resource_type = "file"
+
+        token = await self._get_tenant_access_token()
+        url = (
+            f"{self._base_url}/open-apis/im/v1/messages/{message_id}/resources/{file_key}"
+            f"?type={resource_type}"
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+
+        async with httpx.AsyncClient(timeout=max(self._timeout, 60.0)) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+
+        content_type = resp.headers.get("content-type", "application/octet-stream")
+        mime = content_type.split(";")[0].strip() or "application/octet-stream"
+        return resp.content, mime
 
