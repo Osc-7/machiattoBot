@@ -4,9 +4,9 @@ from __future__ import annotations
 Automation IPC Bridge for Feishu.
 
 封装 AutomationIPCClient，提供面向飞书前端的简单消息发送接口。
+支持斜杠指令（/clear、/usage、/session、/help）与 CLI 对齐。
 """
 
-import json
 import logging
 from typing import Any, Dict, Optional
 
@@ -14,12 +14,43 @@ from agent.automation import AutomationIPCClient, default_socket_path
 from agent.core.interfaces import AgentHooks, AgentRunInput, AgentRunResult
 
 from .client import FeishuClient
+from .slash_commands import try_handle_slash_command
 
 logger = logging.getLogger(__name__)
 
 
 class AutomationDaemonUnavailable(RuntimeError):
     """当 automation daemon 未运行或 IPC 连接失败时抛出。"""
+
+
+async def try_handle_slash_command_via_ipc(
+    *,
+    session_id: str,
+    text: str,
+    socket_path: Optional[str] = None,
+    timeout_seconds: float = 120.0,
+    owner_id: str = "root",
+    source: str = "feishu",
+) -> Optional[str]:
+    """
+    尝试处理斜杠指令（/clear、/usage、/session、/help）。
+
+    Returns:
+        若为斜杠指令则返回回复文本，否则返回 None
+    """
+    client = AutomationIPCClient(
+        owner_id=owner_id,
+        source=source,
+        socket_path=socket_path or default_socket_path(),
+        timeout_seconds=timeout_seconds,
+    )
+    if not await client.ping():
+        raise AutomationDaemonUnavailable(
+            f"automation daemon is not reachable via IPC socket: {socket_path or default_socket_path()}"
+        )
+    await client.switch_session(session_id, create_if_missing=True)
+    handled, reply = await try_handle_slash_command(client, text)
+    return reply if handled else None
 
 
 class FeishuIPCBridge:

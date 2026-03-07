@@ -21,13 +21,11 @@ from fastapi.responses import JSONResponse
 
 from agent.config import get_config
 
-from agent.content import ContentReference
-
 from .client import FeishuClient
 from .config import get_feishu_config
 from .content_parser import parse_feishu_message
 from .event_models import FeishuChallengeRequest, FeishuEventEnvelope
-from .ipc_bridge import AutomationDaemonUnavailable, FeishuIPCBridge
+from .ipc_bridge import AutomationDaemonUnavailable, FeishuIPCBridge, try_handle_slash_command_via_ipc
 from .session_mapping import map_event_to_session
 
 logger = logging.getLogger(__name__)
@@ -148,6 +146,27 @@ async def handle_feishu_event(request: Request) -> JSONResponse:
     }
     if content_refs:
         metadata["content_refs"] = [r.to_dict() for r in content_refs]
+
+    # 斜杠指令：仅对纯文本消息且以 / 开头时处理
+    if not content_refs and text.strip().startswith("/"):
+        try:
+            reply = await try_handle_slash_command_via_ipc(
+                session_id=session_id,
+                text=text,
+                timeout_seconds=get_config().llm.request_timeout_seconds,
+            )
+            if reply is not None:
+                feishu_client = _build_feishu_client()
+                try:
+                    await feishu_client.send_text_message(chat_id=msg.chat_id, text=reply)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("failed to send feishu slash command reply: %s", exc)
+                return JSONResponse({"code": 0, "msg": "ok"})
+        except AutomationDaemonUnavailable:
+            # fallthrough，后续 send_message 会返回 503
+            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("slash command failed, fallback to agent: %s", exc)
 
     ipc = _build_ipc_bridge()
     try:

@@ -29,7 +29,7 @@ from agent.config import get_config
 from .client import FeishuClient
 from .content_parser import parse_feishu_message
 from .event_models import FeishuMessage, FeishuMessageEvent, FeishuSender, FeishuSenderId
-from .ipc_bridge import AutomationDaemonUnavailable, FeishuIPCBridge
+from .ipc_bridge import AutomationDaemonUnavailable, FeishuIPCBridge, try_handle_slash_command_via_ipc
 from .router import _is_duplicate_event  # 复用去重缓存
 from .session_mapping import map_event_to_session
 
@@ -115,6 +115,32 @@ async def _handle_im_message_event_async(data: Any) -> None:
     }
     if content_refs:
         metadata["content_refs"] = [r.to_dict() for r in content_refs]
+
+    # 斜杠指令：仅对纯文本消息且以 / 开头时处理
+    if not content_refs and text.strip().startswith("/"):
+        try:
+            reply = await try_handle_slash_command_via_ipc(
+                session_id=session_id,
+                text=text,
+                socket_path=None,
+                timeout_seconds=cfg.llm.request_timeout_seconds,
+            )
+            if reply is not None:
+                feishu_client = FeishuClient(timeout_seconds=feishu_cfg.timeout_seconds)
+                try:
+                    await feishu_client.send_text_message(
+                        chat_id=feishu_message.chat_id,
+                        text=reply,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("failed to send feishu slash command reply: %s", exc)
+                return
+        except AutomationDaemonUnavailable as exc:
+            logger.warning("automation daemon unavailable for feishu slash command: %s", exc)
+            #  fallthrough to send_message，会再次触发 AutomationDaemonUnavailable
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("slash command failed, fallback to agent: %s", exc)
+            # 非斜杠或处理失败，继续走 Agent
 
     ipc = FeishuIPCBridge(timeout_seconds=cfg.llm.request_timeout_seconds)
     try:

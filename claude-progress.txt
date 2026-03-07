@@ -1,5 +1,24 @@
 # Schedule Agent 开发进度
 
+## 2026-03-07 - 飞书斜杠指令支持（与 CLI 对齐）
+
+### 完成内容:
+- 新增 `src/agent/frontend/feishu/slash_commands.py`：斜杠指令解析与 IPC 调用
+  - `/clear`：清空对话历史
+  - `/usage` / `/stats`：本会话 token 用量
+  - `/session` 系列：show/whoami/list/switch/new/delete
+  - `/help`：显示可用指令
+- `ipc_bridge.py` 新增 `try_handle_slash_command_via_ipc`：创建 IPC 客户端、切换会话后调用 slash_commands
+- `ws_client.py`、`router.py`：在纯文本且以 `/` 开头时拦截，执行指令并直接回复飞书
+- 新增测试 `tests/test_feishu_slash_commands.py`：6 passed
+
+### 测试:
+- `pytest tests/test_feishu_slash_commands.py -v`：6 passed
+- 全量测试：596 passed
+
+### 备注:
+- 仅对纯文本消息且以 `/` 开头时触发；媒体消息的占位文本不触发
+
 ## 2026-03-07 - 飞书消息图片/文件/视频解析（ContentResolver 与前端解耦）
 
 ### 完成内容:
