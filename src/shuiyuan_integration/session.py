@@ -86,7 +86,7 @@ def is_invocation_valid_from_raw(raw_message: str, *, config: Optional[Config] =
 
 
 from agent.core import ScheduleAgent
-from agent.core.tools import ShuiyuanGetTopicTool, ShuiyuanSearchTool
+from agent.core.tools import ShuiyuanGetTopicTool, ShuiyuanRetortTool, ShuiyuanSearchTool
 
 
 async def run_shuiyuan_reply(
@@ -94,6 +94,7 @@ async def run_shuiyuan_reply(
     topic_id: int,
     user_message: str,
     reply_to_post_number: Optional[int] = None,
+    reply_to_post_id: Optional[int] = None,
     *,
     config: Optional[Config] = None,
     extra_tools: Optional[List[Any]] = None,
@@ -107,6 +108,7 @@ async def run_shuiyuan_reply(
         topic_id: 话题 ID
         user_message: 用户发来的消息内容
         reply_to_post_number: 要回复的楼层号（可选）
+        reply_to_post_id: 触发帖的真实 post_id（可选；connector 传入后可注入供贴表情工具使用，避免 post_number≠post_id 导致 404）
         config: 配置对象，默认 get_config()
         extra_tools: 额外工具列表，可与 get_default_tools 合并
         thread_posts: 可选，该楼最近 N 条帖子（connector 已抓取时可传入，避免重复 API 请求导致 429）
@@ -156,9 +158,12 @@ async def run_shuiyuan_reply(
     thread_lines: List[str] = []
     for p in posts:
         pn = p.get("post_number", 0)
+        pid = p.get("id")
         uname = p.get("username", "")
         raw = (p.get("raw") or p.get("cooked", ""))[:500]
-        thread_lines.append(f"[{pn}L] @{uname}: {raw}")
+        # 包含 post_id，供 shuiyuan_post_retort 使用（post_number≠post_id）
+        pid_str = f" post_id={pid}" if pid is not None else ""
+        thread_lines.append(f"[{pn}L]{pid_str} @{uname}: {raw}")
 
     chat_rows = db.get_chat(username)
     chat_lines: List[str] = []
@@ -172,8 +177,23 @@ async def run_shuiyuan_reply(
         ctx_user += "## 该楼最近帖子\n\n" + "\n".join(thread_lines) + "\n\n"
     if chat_lines:
         ctx_user += "## 你与该用户的聊天历史（节选）\n\n" + "\n".join(chat_lines) + "\n\n"
+    # 若已知触发楼层，补充该楼 post_id 供贴表情工具使用（post_number≠post_id，Retort API 需真实 post_id）
+    trigger_post_id: Optional[int] = None
+    if reply_to_post_id is not None:
+        trigger_post_id = int(reply_to_post_id)
+    elif reply_to_post_number is not None:
+        for p in posts:
+            pn = p.get("post_number")
+            if pn is not None and int(pn) == int(reply_to_post_number):
+                trigger_post_id = p.get("id")
+                if trigger_post_id is not None:
+                    trigger_post_id = int(trigger_post_id)
+                break
     ctx_user += f"---\n用户 @了你，在当前话题 {topic_id}" + (
-        f" 的第 {reply_to_post_number} 楼" if reply_to_post_number else ""
+        f" 的第 {reply_to_post_number} 楼"
+        + (f"（post_id={trigger_post_id}）" if trigger_post_id is not None else "")
+        if reply_to_post_number is not None
+        else ""
     ) + f"，说了：\n\n{user_message}\n\n请根据上文理解语境，直接输出你的回复正文（automation 层会自动发帖，不要调用发帖工具）。"
 
     # 水源 session 日志（与主 Agent 分开，存到 logs/sessions/shuiyuan/）
@@ -195,6 +215,7 @@ async def run_shuiyuan_reply(
     tools: List[Any] = [
         ShuiyuanSearchTool(config=cfg, max_results=max_posts),
         ShuiyuanGetTopicTool(config=cfg, posts_limit=max_posts),
+        ShuiyuanRetortTool(config=cfg),
     ]
     if extra_tools:
         tools.extend(extra_tools)

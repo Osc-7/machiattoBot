@@ -283,7 +283,7 @@ class ShuiyuanGetTopicTool(BaseTool):
             "title": topic.get("title"),
             "fancy_title": topic.get("fancy_title"),
             "posts_count": topic.get("posts_count"),
-            "posts": [{"post_number": p.get("post_number"), "username": p.get("username"), "raw": (p.get("raw") or p.get("cooked") or "")[:500]} for p in posts],
+            "posts": [{"id": p.get("id"), "post_number": p.get("post_number"), "username": p.get("username"), "raw": (p.get("raw") or p.get("cooked") or "")[:500]} for p in posts],
             "_posts_limit": self._posts_limit,
             "_truncated": (topic.get("posts_count") or 0) > self._posts_limit,
         }
@@ -291,6 +291,142 @@ class ShuiyuanGetTopicTool(BaseTool):
             success=True,
             message=f"已获取话题「{topic.get('title', '')}」（最近 {len(posts)} 条）",
             data=result,
+        )
+
+
+class ShuiyuanRetortTool(BaseTool):
+    """对水源帖子贴表情（Retort 插件）。toggle：已贴则取消，未贴则添加。"""
+
+    def __init__(self, config: Optional[Config] = None):
+        self._config = config
+
+    @property
+    def name(self) -> str:
+        return "shuiyuan_post_retort"
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name="shuiyuan_post_retort",
+            description="""对水源社区帖子贴表情。
+
+使用 Retort 插件，与水源助手（Greasy Fork）一致。toggle 行为：已贴则取消，未贴则添加。
+
+适用场景：
+- 用户说「给这个帖点个赞」「贴个心」「加个笑哭」等
+- 对某条帖子表示认同、感谢、有趣等
+
+emoji 使用标准名，如：thumbsup、+1、heart、smile、joy、fire、100 等，不要带冒号。
+post_id 可从 shuiyuan_get_topic 返回的 posts 中的 id 字段获取。""",
+            parameters=[
+                ToolParameter(
+                    name="post_id",
+                    type="integer",
+                    description="帖子 ID，可从 shuiyuan_get_topic 的 posts[].id 获取",
+                    required=True,
+                ),
+                ToolParameter(
+                    name="emoji",
+                    type="string",
+                    description="表情名，如 thumbsup、heart、smile、joy、fire、100，不要带冒号",
+                    required=True,
+                ),
+                ToolParameter(
+                    name="topic_id",
+                    type="integer",
+                    description="可选，话题 ID，用于部分场景下的校验",
+                    required=False,
+                ),
+            ],
+            examples=[
+                {"description": "给帖子点赞", "params": {"post_id": 123456, "emoji": "thumbsup"}},
+                {"description": "贴个心", "params": {"post_id": 123456, "emoji": "heart"}},
+                {"description": "贴笑哭", "params": {"post_id": 123456, "emoji": "joy"}},
+            ],
+            usage_notes=[
+                "需配置 shuiyuan.enabled=true 和 user_api_key（或 SHUIYUAN_USER_API_KEY）",
+                "支持水源自定义表情，如 sjtu、shuiyuan 等",
+            ],
+            tags=["水源", "水源社区", "贴表情", "Retort", "Discourse"],
+        )
+
+    async def execute(self, **kwargs) -> ToolResult:
+        client_info = _get_shuiyuan_client(self._config)
+        if client_info is None:
+            if self._config and self._config.shuiyuan.enabled:
+                return ToolResult(
+                    success=False,
+                    error="SHUIYUAN_API_KEY_MISSING",
+                    message="水源社区已启用但未配置 User-Api-Key，请设置 shuiyuan.user_api_key 或 SHUIYUAN_USER_API_KEY",
+                )
+            return ToolResult(
+                success=False,
+                error="SHUIYUAN_DISABLED",
+                message="水源社区工具未启用，请在 config.yaml 中设置 shuiyuan.enabled=true",
+            )
+
+        try:
+            from shuiyuan_integration import ShuiyuanClient
+        except ImportError as e:
+            return ToolResult(
+                success=False,
+                error="SHUIYUAN_IMPORT_ERROR",
+                message=f"无法导入水源集成模块: {e}",
+            )
+
+        key, site_url = client_info
+        post_id = kwargs.get("post_id")
+        emoji_raw = (kwargs.get("emoji") or "").strip()
+        topic_id = kwargs.get("topic_id")
+
+        if post_id is None:
+            return ToolResult(
+                success=False,
+                error="MISSING_POST_ID",
+                message="请提供 post_id",
+            )
+        try:
+            post_id = int(post_id)
+        except (TypeError, ValueError):
+            return ToolResult(
+                success=False,
+                error="INVALID_POST_ID",
+                message="post_id 必须为整数",
+            )
+
+        if not emoji_raw:
+            return ToolResult(
+                success=False,
+                error="MISSING_EMOJI",
+                message="请提供 emoji，如 thumbsup、heart",
+            )
+
+        topic_id_int: Optional[int] = None
+        if topic_id is not None:
+            try:
+                topic_id_int = int(topic_id)
+            except (TypeError, ValueError):
+                pass
+
+        try:
+            client = ShuiyuanClient(user_api_key=key, site_url=site_url)
+            ok, status, detail = client.toggle_retort(post_id, emoji_raw, topic_id_int)
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                error="SHUIYUAN_RETORT_FAILED",
+                message=f"贴表情失败: {e}",
+            )
+
+        if ok:
+            return ToolResult(
+                success=True,
+                message=f"已对帖子 {post_id} toggle 表情 :{emoji_raw}:",
+                data={"post_id": post_id, "emoji": emoji_raw},
+            )
+        return ToolResult(
+            success=False,
+            error="SHUIYUAN_RETORT_ERROR",
+            message=f"贴表情失败 (HTTP {status}): {detail or '未知错误'}",
         )
 
 

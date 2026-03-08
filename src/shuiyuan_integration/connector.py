@@ -208,6 +208,7 @@ async def _poll_topic_watch(
                 topic_id=int(topic_id),
                 user_message=raw,
                 reply_to_post_number=int(post_number) if post_number else None,
+                reply_to_post_id=int(post_id) if post_id else None,
                 config=config,
                 thread_posts=thread_posts,
             )
@@ -295,6 +296,7 @@ async def _poll_once(
                 topic_id=int(topic_id),
                 user_message=raw,
                 reply_to_post_number=int(post_number) if post_number else None,
+                reply_to_post_id=int(post_id) if post_id else None,
                 config=config,
             )
             if result:

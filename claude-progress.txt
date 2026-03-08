@@ -1,5 +1,18 @@
 # Schedule Agent 开发进度
 
+## 2026-03-09 - 水源贴表情功能修复
+
+### 完成内容:
+- **post_id 注入**：connector 将 reply_to_post_id 传入 run_shuiyuan_reply，避免 LLM 误用 post_number 导致 404
+- **Retort API 修正**：水源使用 ShuiyuanSJTU/retort，路由为 `PUT /retorts/:post_id`（非 POST），优先尝试无 .json 后缀
+- 修改文件：session.py、connector.py、client.py
+
+### 测试:
+- 水源贴表情已能正常成功
+
+### 备注:
+- 水源 Retort 见 https://github.com/ShuiyuanSJTU/retort；post_id 来源于 Discourse API 的 post.id
+
 ## 2026-03-07 - 飞书斜杠指令支持（与 CLI 对齐）
 
 ### 完成内容:

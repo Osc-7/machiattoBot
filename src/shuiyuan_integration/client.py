@@ -8,6 +8,7 @@
 import threading
 import time
 from typing import Any, Optional
+from urllib.parse import quote
 
 import requests
 
@@ -224,6 +225,77 @@ class ShuiyuanClient:
             return None
         post_id = int(stream[post_number - 1])
         return self.get_post_by_id(topic_id, post_id)
+
+    def toggle_retort(
+        self,
+        post_id: int,
+        emoji: str,
+        topic_id: Optional[int] = None,
+    ) -> tuple[bool, int, str]:
+        """
+        对帖子贴表情（toggle，已有则取消）。
+
+        水源使用 ShuiyuanSJTU/retort：PUT /retorts/:post_id；gdpelican/retort 使用 POST。
+        emoji 为表情名，如 thumbsup、heart、+1，不要带冒号。
+
+        Returns:
+            (success, status_code, error_detail)
+        """
+        emoji_clean = (emoji or "").strip().strip(":").lower()
+        if not emoji_clean:
+            return False, 0, "emoji 不能为空"
+
+        payload: dict[str, str] = {
+            "retort": emoji_clean,
+            # 某些部署可能使用 emoji 字段名，双写提升兼容性。
+            "emoji": emoji_clean,
+        }
+        if topic_id is not None:
+            payload["topic_id"] = str(topic_id)
+
+        emoji_encoded = quote(emoji_clean, safe="")
+        # 水源 ShuiyuanSJTU/retort 使用 PUT /retorts/:post_id（无 .json，见其 routes.rb）
+        attempts: list[tuple[str, str, Optional[dict[str, str]]]] = [
+            ("PUT", f"{self._base}/retorts/{post_id}", payload),  # 水源 retort 优先
+            ("PUT", f"{self._base}/retorts/{post_id}.json", payload),
+            ("POST", f"{self._base}/retorts/{post_id}.json", payload),
+            ("POST", f"{self._base}/retorts/{post_id}", payload),
+            (
+                "POST",
+                f"{self._base}/discourse-reactions/posts/{post_id}/custom-reactions/{emoji_encoded}/toggle.json",
+                None,
+            ),
+            (
+                "PUT",
+                f"{self._base}/discourse-reactions/posts/{post_id}/custom-reactions/{emoji_encoded}/toggle.json",
+                None,
+            ),
+        ]
+
+        last_status = 0
+        last_body = ""
+        for method, url, data in attempts:
+            _ensure_rate_limit()
+            r = requests.request(
+                method,
+                url,
+                data=data,
+                headers=self._headers,
+                timeout=self._timeout,
+            )
+            if r.status_code in (200, 201, 204):
+                return True, r.status_code, ""
+            try:
+                body = (r.text or "")[:300].replace("\n", " ").strip()
+            except Exception:
+                body = ""
+            last_status = r.status_code
+            last_body = body
+            # 接口不存在时继续尝试回退；其它错误（如 4xx 参数错误、5xx）直接返回。
+            if r.status_code != 404:
+                return False, r.status_code, body
+
+        return False, last_status, last_body
 
     def create_post(
         self,
