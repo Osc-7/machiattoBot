@@ -122,6 +122,14 @@ automation:
       job_type: "sync.email"
       user_id: "default"
       enabled: true
+    # 水源归档总结：每 5 分钟检查 shuiyuan_archive，满足 50 条/用户时触发 LLM 总结并写入 entries
+    # 需 shuiyuan.enabled=true；任务状态持久化在 job_definitions.json，daemon 重启后不重置
+    - name: "shuiyuan_archive_summarize"
+      description: "调用 shuiyuan_summarize_archive() 总结水源归档的聊天记录。"
+      interval_minutes: 5
+      job_type: "shuiyuan.archive_summarize"
+      user_id: "default"
+      enabled: false  # 启用水源后设为 true
 
 # 时间配置
 time:
@@ -181,14 +189,25 @@ file_tools:
   allow_modify: false # 允许修改/追加文件（建议按需启用）
   base_dir: "."       # 相对路径的基准目录；绝对路径可访问任意位置（/etc、~/.config 等）
 
+# 命令执行工具配置
+command_tools:
+  enabled: true       # 是否启用 run_command 工具
+  allow_run: true     # 是否允许执行终端命令
+  allow_run_in_select_mode: false  # select mode 下是否允许 run_command；开启后仅执行白名单内命令
+  # select mode 白名单（仅非破坏性命令，可自定义）
+  # select_mode_command_whitelist: ["ls", "pwd", "cat", "head", "tail", "grep", "echo", "which", "file", "stat", "wc", "date", "whoami", "id"]
+
 # Agent 配置
 agent:
   max_iterations: 10
   enable_debug: true
   # 工具暴露模式：
-  # - full: 每轮将全部工具发送给 LLM（兼容旧行为）
-  # - kernel: 仅暴露核心工具 + working set（推荐用于控制 token）
-  tool_mode: "full"
+  # - kernel: 核心工具 search_tools/call_tool + pinned + working set（CLI/飞书）
+  # - select: 仅使用传入的工具列表（水源等小内核场景）
+  tool_mode: "kernel"
+  # 按 source 覆盖 tool_mode；水源使用 select，cli/feishu 默认 kernel
+  source_overrides:
+    shuiyuan: "select"
   # kernel 模式下 LRU 工作集大小（不含 pinned_tools）
   working_set_size: 6
   # 核心工具 + pinned_tools，kernel 模式下始终暴露

@@ -162,7 +162,15 @@ class ScheduleAgent:
         self._max_iterations = max_iterations
         self._timezone = timezone
         self._session_logger = session_logger
-        self._kernel_enabled = (self._config.agent.tool_mode or "full").lower() == "kernel"
+        # 按 source 覆盖 tool_mode；full 视为 kernel 向后兼容
+        agent_cfg = self._config.agent
+        raw_mode = (agent_cfg.source_overrides or {}).get(
+            self._source, agent_cfg.tool_mode or "kernel"
+        ) or "kernel"
+        if (raw_mode or "").lower() == "full":
+            raw_mode = "kernel"
+        self._effective_tool_mode = (raw_mode or "kernel").lower()
+        self._kernel_enabled = self._effective_tool_mode == "kernel"
         pinned_tools = list(self._config.agent.pinned_tools or [])
         for core_name in ["search_tools", "call_tool"]:
             if core_name not in pinned_tools:
@@ -644,10 +652,18 @@ class ScheduleAgent:
                 "long_term_dir",
                 "./data/memory/long_term/shuiyuan",
             )
+            recent_topics: List[Any] = []
+            if self._memory_enabled:
+                recall_n = getattr(self._config.memory, "recall_top_n", 5) or 5
+                recent_topics = self._long_term_memory.get_recent_topics(
+                    n=recall_n,
+                    owner_id=self._user_id,
+                )
             return build_shuiyuan_system_prompt(
                 time_context=time_str,
                 config=self._config,
                 memory_dir=mem_dir,
+                recent_topics=recent_topics,
             )
 
         prompt = build_prompt(
@@ -655,7 +671,7 @@ class ScheduleAgent:
             config=self._config,
             has_web_extractor=self._tool_registry.has("extract_web_content"),
             has_file_tools=self._tool_registry.has("read_file"),
-            tool_mode=self._config.agent.tool_mode or "full",
+            tool_mode=self._effective_tool_mode,
         )
 
         # 记忆上下文
@@ -785,6 +801,13 @@ class ScheduleAgent:
         else:
             kwargs = tool_call.arguments
 
+        # 注入执行上下文（供 run_command 等工具做 select mode 鉴权）
+        kwargs = dict(kwargs)
+        kwargs["__execution_context__"] = {
+            "tool_mode": self._effective_tool_mode,
+            "source": self._source,
+        }
+
         # 执行工具
         return await self._tool_registry.execute(tool_call.name, **kwargs)
 
@@ -888,10 +911,14 @@ class ScheduleAgent:
         )
 
         # 将本次会话摘要写入 recent_topic（替代旧的 ShortTermMemory → distill 流程）
+        owner_id: Optional[str] = None
+        if self._source == "shuiyuan":
+            owner_id = self._user_id
         self._long_term_memory.add_recent_topic(
             summary=session_summary.summary,
             session_id=self._session_id,
             tags=session_summary.tags,
+            owner_id=owner_id,
         )
 
         return session_summary

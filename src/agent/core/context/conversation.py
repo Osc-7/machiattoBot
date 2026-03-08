@@ -154,9 +154,21 @@ class ConversationContext:
             else:
                 blocks.append([m])
                 i += 1
+        def _is_incomplete_block(block: List[Dict[str, Any]]) -> bool:
+            """assistant+tool_calls 后必须有 tool 消息，否则为不完整块"""
+            first = block[0] if block else {}
+            return (
+                first.get("role") == "assistant"
+                and bool(first.get("tool_calls"))
+                and len(block) == 1
+            )
+
         # 保留最后若干块，使总条数 <= keep_count，且不以孤立 tool 开头
+        # 跳过不完整块（assistant+tool_calls 无 tool 结果），否则会产出非法 API 请求
         result: List[Dict[str, Any]] = []
         for block in reversed(blocks):
+            if _is_incomplete_block(block):
+                continue
             if len(result) + len(block) > keep_count:
                 break
             result = block + result

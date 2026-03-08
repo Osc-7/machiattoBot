@@ -213,7 +213,7 @@ def build_system_prompt(
     has_file_tools: bool = False,
     mode: PromptMode = "full",
     max_section_chars: int = DEFAULT_MAX_SECTION_CHARS,
-    tool_mode: str = "full",
+    tool_mode: str = "kernel",
 ) -> str:
     """
     构建 Agent 系统提示。按 OpenClaw 风格固定部分 + 工作区引导注入顺序组装。
@@ -223,7 +223,7 @@ def build_system_prompt(
 
     # ---------- 1. Tooling（工具列表与使用说明）----------
     if mode in ("full", "minimal"):
-        if (tool_mode or "full").lower() == "kernel":
+        if (tool_mode or "kernel").lower() == "kernel":
             _maybe_append(parts, load("tools_kernel"))
         else:
             _maybe_append(parts, load("tools"))
@@ -284,11 +284,12 @@ def build_shuiyuan_system_prompt(
     time_context: str,
     config: Config,
     memory_dir: str = "./data/memory/long_term/shuiyuan",
+    recent_topics: Optional[list] = None,
 ) -> str:
     """
     构建水源社区 Agent 的系统提示。
 
-    使用 prompts/shuiyuan/system.md + 水源 MEMORY.md + 时间上下文，
+    使用 prompts/shuiyuan/system.md + 水源 MEMORY.md + 最近话题 + 时间上下文，
     与主 Agent 隔离。
     """
     parts: list[str] = []
@@ -301,6 +302,15 @@ def build_shuiyuan_system_prompt(
         memory_content = memory_path.read_text(encoding="utf-8").strip()
         if memory_content:
             parts.append("---\n## 水源社区长期记忆 (MEMORY.md)\n\n" + memory_content)
+
+    if recent_topics:
+        topic_lines = []
+        for t in recent_topics:
+            ts = (getattr(t, "created_at", "") or "")[:10]
+            content = getattr(t, "content", "") or ""
+            prefix = f"[{ts}] " if ts else ""
+            topic_lines.append(f"- {prefix}{content}")
+        parts.append("---\n## 与该用户的最近话题\n\n" + "\n".join(topic_lines))
 
     parts.append("---\n## 当前时间\n\n" + time_context)
 

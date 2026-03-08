@@ -38,7 +38,12 @@ from .automation_tools import (
     CreateScheduledJobTool,
 )
 from .sjtu_jw_tools import FetchSjtuUndergradScheduleTool
-from .shuiyuan_tools import ShuiyuanPostReplyTool, ShuiyuanSearchTool, ShuiyuanGetTopicTool
+from .shuiyuan_tools import (
+    ShuiyuanPostReplyTool,
+    ShuiyuanSearchTool,
+    ShuiyuanGetTopicTool,
+    ShuiyuanSummarizeArchiveTool,
+)
 
 __all__ = [
     "BaseTool",
@@ -90,4 +95,5 @@ __all__ = [
     "ShuiyuanSearchTool",
     "ShuiyuanGetTopicTool",
     "ShuiyuanPostReplyTool",
+    "ShuiyuanSummarizeArchiveTool",
 ]

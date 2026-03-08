@@ -6,6 +6,8 @@ import os
 
 import pytest
 
+from typing import Optional
+
 from agent.config import CommandToolsConfig, Config, LLMConfig
 from agent.core.tools.command_tools import RunCommandTool
 
@@ -14,6 +16,8 @@ def _make_config(
     *,
     enabled: bool = True,
     allow_run: bool = True,
+    allow_run_in_select_mode: bool = False,
+    select_mode_command_whitelist: Optional[list] = None,
     base_dir: str = ".",
     default_timeout_seconds: float = 2.0,
     max_timeout_seconds: float = 10.0,
@@ -25,6 +29,10 @@ def _make_config(
         command_tools=CommandToolsConfig(
             enabled=enabled,
             allow_run=allow_run,
+            allow_run_in_select_mode=allow_run_in_select_mode,
+            select_mode_command_whitelist=select_mode_command_whitelist
+            if select_mode_command_whitelist is not None
+            else ["ls", "pwd", "cat", "head", "tail", "echo"],
             base_dir=base_dir,
             default_timeout_seconds=default_timeout_seconds,
             max_timeout_seconds=max_timeout_seconds,
@@ -129,3 +137,70 @@ class TestRunCommandTool:
         result = await tool.execute(command="echo hi")
         assert not result.success
         assert result.error == "PERMISSION_DENIED"
+
+    @pytest.mark.asyncio
+    async def test_run_command_select_mode_denied(self, tmp_path):
+        """select mode 下默认禁止 run_command"""
+        config = _make_config(base_dir=str(tmp_path))
+        tool = RunCommandTool(config=config)
+        result = await tool.execute(
+            command="echo hi",
+            __execution_context__={"tool_mode": "select", "source": "shuiyuan"},
+        )
+        assert not result.success
+        assert result.error == "PERMISSION_DENIED"
+        assert "select mode" in result.message
+
+    @pytest.mark.asyncio
+    async def test_run_command_select_mode_allowed(self, tmp_path):
+        """select mode 下白名单内命令可执行"""
+        config = _make_config(
+            base_dir=str(tmp_path), allow_run_in_select_mode=True
+        )
+        tool = RunCommandTool(config=config)
+        result = await tool.execute(
+            command="echo ok",
+            __execution_context__={"tool_mode": "select", "source": "shuiyuan"},
+        )
+        assert result.success
+        assert "ok" in result.data["stdout"]
+
+    @pytest.mark.asyncio
+    async def test_run_command_select_mode_not_whitelisted(self, tmp_path):
+        """select mode 下非白名单命令拒绝"""
+        config = _make_config(
+            base_dir=str(tmp_path), allow_run_in_select_mode=True
+        )
+        tool = RunCommandTool(config=config)
+        result = await tool.execute(
+            command="rm -rf /tmp/test",
+            __execution_context__={"tool_mode": "select", "source": "shuiyuan"},
+        )
+        assert not result.success
+        assert result.error == "COMMAND_NOT_WHITELISTED"
+        assert "白名单" in result.message
+
+    @pytest.mark.asyncio
+    async def test_run_command_select_mode_shell_operator_denied(self, tmp_path):
+        """select mode 下禁止管道等 shell 运算符"""
+        config = _make_config(
+            base_dir=str(tmp_path), allow_run_in_select_mode=True
+        )
+        tool = RunCommandTool(config=config)
+        result = await tool.execute(
+            command="ls | grep x",
+            __execution_context__={"tool_mode": "select", "source": "shuiyuan"},
+        )
+        assert not result.success
+        assert result.error == "COMMAND_NOT_WHITELISTED"
+        assert "|" in result.message or "shell" in result.message
+
+    @pytest.mark.asyncio
+    async def test_run_command_kernel_mode_no_context(self, tmp_path):
+        """kernel mode 或无 context 时按原逻辑执行"""
+        config = _make_config(base_dir=str(tmp_path))
+        tool = RunCommandTool(config=config)
+        # 不传 __execution_context__（如 MCP、automation 调用）
+        result = await tool.execute(command="echo hi")
+        assert result.success
+        assert "hi" in result.data["stdout"]

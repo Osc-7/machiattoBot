@@ -206,7 +206,7 @@ async def run_shuiyuan_reply(
             tools=tools,
             max_iterations=cfg.agent.max_iterations,
             timezone=cfg.time.timezone,
-            user_id="shuiyuan",
+            user_id=username,
             source="shuiyuan",
             session_logger=session_logger,
         ) as agent:

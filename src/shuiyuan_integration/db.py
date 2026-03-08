@@ -1,7 +1,8 @@
 """
 水源社区 SQLite 数据库。
 
-- 聊天记录：按 username 分流，每用户保留最近 N 条
+- 聊天记录：按 username 分流，每用户保留最近 N 条；trim 时先归档到 shuiyuan_archive
+- 归档表：供 automation 任务按批总结后写入 entries.jsonl
 - 限流：按 username 记录最近回复时间，每分钟最多 M 次
 """
 
@@ -26,6 +27,19 @@ CREATE TABLE IF NOT EXISTS shuiyuan_chat (
 
 CREATE INDEX IF NOT EXISTS idx_shuiyuan_chat_username ON shuiyuan_chat(username);
 CREATE INDEX IF NOT EXISTS idx_shuiyuan_chat_username_created ON shuiyuan_chat(username, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS shuiyuan_archive (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    username     TEXT    NOT NULL,
+    topic_id     INTEGER NOT NULL,
+    post_id      INTEGER,
+    role         TEXT    NOT NULL,
+    content      TEXT    NOT NULL,
+    created_at   TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_shuiyuan_archive_username ON shuiyuan_archive(username);
+CREATE INDEX IF NOT EXISTS idx_shuiyuan_archive_username_created ON shuiyuan_archive(username, created_at ASC);
 
 CREATE TABLE IF NOT EXISTS shuiyuan_rate_limit (
     username     TEXT    NOT NULL,
@@ -101,11 +115,22 @@ class ShuiyuanDB:
                 """,
                 (username, topic_id, post_id, role, content, now),
             )
-            # 保留该用户最近 chat_limit 条，删除更早的
+            # 保留该用户最近 chat_limit 条，超出的先归档再删除
             cur.execute("SELECT COUNT(*) FROM shuiyuan_chat WHERE username = ?", (username,))
             cnt = cur.fetchone()[0]
             if cnt > self._chat_limit:
-                to_delete = cnt - self._chat_limit
+                to_evict = cnt - self._chat_limit
+                cur.execute(
+                    """
+                    INSERT INTO shuiyuan_archive (username, topic_id, post_id, role, content, created_at)
+                    SELECT username, topic_id, post_id, role, content, created_at
+                    FROM shuiyuan_chat
+                    WHERE username = ?
+                    ORDER BY created_at ASC
+                    LIMIT ?
+                    """,
+                    (username, to_evict),
+                )
                 cur.execute(
                     """
                     DELETE FROM shuiyuan_chat WHERE id IN (
@@ -113,8 +138,65 @@ class ShuiyuanDB:
                         ORDER BY created_at ASC LIMIT ?
                     )
                     """,
-                    (username, to_delete),
+                    (username, to_evict),
                 )
+
+    def get_archive_count(self, username: Optional[str] = None) -> int:
+        """获取归档表条数；传 username 时仅该用户，否则全表。"""
+        with self._cursor() as cur:
+            if username:
+                cur.execute(
+                    "SELECT COUNT(*) FROM shuiyuan_archive WHERE username = ?",
+                    (username,),
+                )
+            else:
+                cur.execute("SELECT COUNT(*) FROM shuiyuan_archive")
+            return cur.fetchone()[0]
+
+    def list_usernames_with_archive(self, min_count: int = 1) -> List[str]:
+        """返回归档条数 >= min_count 的用户名列表，供 summarization 任务迭代。"""
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                SELECT username FROM shuiyuan_archive
+                GROUP BY username
+                HAVING COUNT(*) >= ?
+                """,
+                (min_count,),
+            )
+            return [r[0] for r in cur.fetchall()]
+
+    def get_archive_oldest(
+        self,
+        username: str,
+        limit: int = 50,
+    ) -> List[dict]:
+        """获取该用户归档表中最早 limit 条记录，供 summarization 任务使用。"""
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, username, topic_id, post_id, role, content, created_at
+                FROM shuiyuan_archive
+                WHERE username = ?
+                ORDER BY created_at ASC
+                LIMIT ?
+                """,
+                (username, limit),
+            )
+            rows = cur.fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_archive_by_ids(self, ids: List[int]) -> int:
+        """按 id 列表删除归档记录，返回删除条数。"""
+        if not ids:
+            return 0
+        placeholders = ",".join("?" * len(ids))
+        with self._cursor() as cur:
+            cur.execute(
+                f"DELETE FROM shuiyuan_archive WHERE id IN ({placeholders})",
+                ids,
+            )
+            return cur.rowcount
 
     def get_chat(self, username: str, limit: Optional[int] = None) -> List[dict]:
         """获取该用户最近的聊天记录，按时间升序（旧→新）。"""

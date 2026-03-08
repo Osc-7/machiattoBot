@@ -65,6 +65,7 @@ from agent.core.tools import (
     NotifyOwnerTool,
     ShuiyuanSearchTool,
     ShuiyuanGetTopicTool,
+    ShuiyuanSummarizeArchiveTool,
 )
 from agent.core.memory import (
     ContentMemory,
@@ -160,10 +161,11 @@ def get_default_tools(config: Optional[Config] = None) -> List[BaseTool]:
     tools.append(SyncSourcesTool())
     tools.append(GetSyncStatusTool())
 
-    # 水源社区工具（只读：搜索、获取话题）
+    # 水源社区工具（只读：搜索、获取话题；automation：归档总结）
     if config and config.shuiyuan.enabled:
         tools.append(ShuiyuanSearchTool(config=config))
         tools.append(ShuiyuanGetTopicTool(config=config))
+        tools.append(ShuiyuanSummarizeArchiveTool(config=config, batch_size=50))
     tools.append(GetDigestTool())
     tools.append(NotifyOwnerTool(config=config))
     tools.append(ListNotificationsTool())

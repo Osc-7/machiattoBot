@@ -368,3 +368,22 @@ class TestConversationContext:
                 while j >= 0 and messages[j].get("role") == "tool":
                     j -= 1
                 assert j >= 0 and messages[j].get("role") == "assistant" and "tool_calls" in messages[j]
+
+    def test_trim_skips_incomplete_tool_blocks(self):
+        """裁剪时跳过不完整的 assistant+tool_calls 块，避免产出非法 API 请求（tool_calls 后无 tool 结果）"""
+        ctx = ConversationContext(max_messages=4)
+        ctx.add_user_message("1")
+        ctx.add_assistant_message("a1")
+        ctx.add_user_message("2")
+        ctx.add_assistant_message(
+            content=None,
+            tool_calls=[{"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}}],
+        )
+        # 最后一块 [assistant+tool_calls] 不完整；添加 user3 触发 trim，应跳过该块
+        ctx.add_user_message("3")
+        messages = ctx.get_messages()
+        # 任何 assistant+tool_calls 后必须有 tool 消息
+        for i, m in enumerate(messages):
+            if m.get("role") == "assistant" and m.get("tool_calls"):
+                has_following_tool = i + 1 < len(messages) and messages[i + 1].get("role") == "tool"
+                assert has_following_tool, "assistant+tool_calls 后必须有 tool 消息"

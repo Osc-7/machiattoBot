@@ -191,6 +191,35 @@ class RunCommandTool(BaseTool):
         except (OSError, ValueError) as e:
             return None, f"无效工作目录: {e}"
 
+    def _check_select_mode_whitelist(self, command: str) -> tuple[bool, str]:
+        """
+        检查 select mode 下命令是否在白名单内。
+
+        Returns:
+            (allowed, message) - 允许时 message 为空
+        """
+        whitelist = getattr(
+            self._cmd_config, "select_mode_command_whitelist", []
+        ) or []
+        whitelist_lower = {c.strip().lower() for c in whitelist if c}
+
+        # 禁止管道、重定向、子 shell 等，防止绕过
+        dangerous_chars = ("|", "&", ";", "`", "$(", ">", ">>", "<", "&&", "||")
+        for c in dangerous_chars:
+            if c in command:
+                return False, f"select mode 下禁止使用 shell 运算符（如 {c}），仅允许单条非破坏性命令"
+
+        parts = command.split()
+        if not parts:
+            return False, "命令为空"
+        base_cmd = Path(parts[0]).name.lower()
+        if base_cmd not in whitelist_lower:
+            return False, (
+                f"select mode 下命令 '{base_cmd}' 不在白名单内。"
+                f"允许的命令示例: {', '.join(sorted(whitelist_lower)[:8])}..."
+            )
+        return True, ""
+
     @staticmethod
     def _is_dangerous_command(command: str) -> bool:
         """检测是否为危险命令（需用户确认）。"""
@@ -214,6 +243,10 @@ class RunCommandTool(BaseTool):
             collector.append(stream_name, chunk)
 
     async def execute(self, **kwargs) -> ToolResult:
+        # 提取执行上下文（Agent 注入），不影响后续参数
+        exec_ctx = kwargs.pop("__execution_context__", None) or {}
+        tool_mode = (exec_ctx.get("tool_mode") or "kernel").lower()
+
         command = str(kwargs.get("command", "")).strip()
         if not command:
             return ToolResult(
@@ -221,6 +254,22 @@ class RunCommandTool(BaseTool):
                 error="MISSING_COMMAND",
                 message="缺少必需参数: command",
             )
+
+        # select mode 下：需显式开启 + 仅允许白名单内的非破坏性命令
+        if tool_mode == "select":
+            if not getattr(self._cmd_config, "allow_run_in_select_mode", False):
+                return ToolResult(
+                    success=False,
+                    error="PERMISSION_DENIED",
+                    message="select mode 下 run_command 未授权。请在 command_tools.allow_run_in_select_mode 中显式开启",
+                )
+            whitelist_result = self._check_select_mode_whitelist(command)
+            if not whitelist_result[0]:
+                return ToolResult(
+                    success=False,
+                    error="COMMAND_NOT_WHITELISTED",
+                    message=whitelist_result[1],
+                )
 
         if not self._cmd_config.enabled or not self._cmd_config.allow_run:
             return ToolResult(

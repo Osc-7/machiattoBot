@@ -65,7 +65,7 @@ class MockTool(BaseTool):
 
 @pytest.fixture
 def mock_config():
-    """创建 Mock 配置"""
+    """创建 Mock 配置。使用 select 模式使传入工具直接可见，便于单测。"""
     return Config(
         llm=LLMConfig(
             api_key="test-api-key",
@@ -76,6 +76,8 @@ def mock_config():
         agent=AgentConfig(
             max_iterations=5,
             enable_debug=False,
+            tool_mode="select",
+            source_overrides={},
         ),
     )
 
@@ -116,14 +118,14 @@ class TestScheduleAgentInit:
         assert agent._config is mock_config
         assert agent._max_iterations == 10
         assert agent._timezone == "America/New_York"
-        # 2 custom tools + 3 chat history tools (memory enabled by default)
+        # 2 custom tools + 3 chat history tools（select 模式，无 search_tools/call_tool）
         assert len(agent.tool_registry) == 5
 
     def test_init_without_tools(self, mock_config):
         """测试不传入工具时初始化"""
         agent = ScheduleAgent(config=mock_config)
 
-        # 3 chat history tools are auto-registered when memory is enabled
+        # 3 chat history tools（select 模式）
         assert len(agent.tool_registry) == 3
         assert isinstance(agent.context, ConversationContext)
 

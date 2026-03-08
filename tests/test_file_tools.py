@@ -227,6 +227,21 @@ class TestWriteFileTool:
         assert (tmp_path / "ok.txt").read_text() == "ok"
         provider.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_write_file_select_mode_denied(self, tmp_path):
+        """select mode 下禁止 write_file"""
+        config = _make_config(allow_write=True, base_dir=str(tmp_path))
+        tool = WriteFileTool(config=config)
+        result = await tool.execute(
+            path="x.txt",
+            content="x",
+            __execution_context__={"tool_mode": "select", "source": "shuiyuan"},
+        )
+        assert not result.success
+        assert result.error == "PERMISSION_DENIED"
+        assert "select mode" in result.message
+        assert not (tmp_path / "x.txt").exists()
+
 
 # ============================================================================
 # ModifyFileTool
@@ -244,6 +259,24 @@ class TestModifyFileTool:
         assert "old_text" in param_names
         assert "new_text" in param_names
         assert "content" in param_names
+
+    @pytest.mark.asyncio
+    async def test_modify_file_select_mode_denied(self, tmp_path):
+        """select mode 下禁止 modify_file"""
+        (tmp_path / "f.txt").write_text("old", encoding="utf-8")
+        config = _make_config(allow_modify=True, base_dir=str(tmp_path))
+        tool = ModifyFileTool(config=config)
+        result = await tool.execute(
+            path="f.txt",
+            mode="search_replace",
+            old_text="old",
+            new_text="new",
+            __execution_context__={"tool_mode": "select", "source": "shuiyuan"},
+        )
+        assert not result.success
+        assert result.error == "PERMISSION_DENIED"
+        assert "select mode" in result.message
+        assert (tmp_path / "f.txt").read_text() == "old"
 
     @pytest.mark.asyncio
     async def test_modify_file_search_replace_exact_success(self, tmp_path):

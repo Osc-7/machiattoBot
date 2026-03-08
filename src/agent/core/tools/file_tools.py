@@ -309,6 +309,15 @@ class WriteFileTool(BaseTool):
             return None, f"无效路径: {e}"
 
     async def execute(self, **kwargs) -> ToolResult:
+        # select mode 下禁止写入（破坏性操作）
+        exec_ctx = kwargs.pop("__execution_context__", None) or {}
+        if (exec_ctx.get("tool_mode") or "kernel").lower() == "select":
+            return ToolResult(
+                success=False,
+                error="PERMISSION_DENIED",
+                message="select mode 下禁止 write_file（破坏性操作）",
+            )
+
         path_str = kwargs.get("path")
         content = kwargs.get("content")
         if not path_str:
@@ -566,6 +575,15 @@ class ModifyFileTool(BaseTool):
             return None, f"无效路径: {e}"
 
     async def execute(self, **kwargs) -> ToolResult:
+        # select mode 下禁止修改（破坏性操作）
+        exec_ctx = kwargs.pop("__execution_context__", None) or {}
+        if (exec_ctx.get("tool_mode") or "kernel").lower() == "select":
+            return ToolResult(
+                success=False,
+                error="PERMISSION_DENIED",
+                message="select mode 下禁止 modify_file（破坏性操作）",
+            )
+
         path_str = kwargs.get("path")
         if not path_str:
             return ToolResult(

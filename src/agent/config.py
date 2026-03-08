@@ -7,7 +7,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
@@ -352,6 +352,17 @@ class CommandToolsConfig(BaseModel):
         default=True,
         description="是否允许执行终端命令",
     )
+    allow_run_in_select_mode: bool = Field(
+        default=False,
+        description="select mode 下是否允许 run_command；开启后仅执行白名单内的非破坏性命令",
+    )
+    select_mode_command_whitelist: List[str] = Field(
+        default_factory=lambda: [
+            "ls", "pwd", "cat", "head", "tail", "grep", "echo", "which",
+            "file", "stat", "wc", "date", "whoami", "id", "env", "printenv",
+        ],
+        description="select mode 下允许的命令白名单（仅非破坏性命令）",
+    )
     base_dir: str = Field(
         default=".",
         description="相对路径 cwd 的基准目录；绝对路径可指定任意有效目录（如 /etc、~/.config）",
@@ -533,8 +544,12 @@ class AgentConfig(BaseModel):
     max_iterations: int = Field(default=10, ge=1, description="最大工具调用迭代次数")
     enable_debug: bool = Field(default=False, description="是否启用调试模式")
     tool_mode: str = Field(
-        default="full",
-        description='工具暴露模式: full(全量暴露) | kernel(核心工具+工作集)',
+        default="kernel",
+        description='工具暴露模式: kernel(核心工具+工作集) | select(仅使用传入工具)',
+    )
+    source_overrides: Dict[str, str] = Field(
+        default_factory=lambda: {"shuiyuan": "select"},
+        description="按 source 覆盖 tool_mode，如 shuiyuan->select，cli/feishu 默认 kernel",
     )
     working_set_size: int = Field(
         default=6,
