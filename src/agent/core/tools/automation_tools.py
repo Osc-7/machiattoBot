@@ -284,6 +284,79 @@ class GetAutomationActivityTool(BaseTool):
         )
 
 
+class NotifyOwnerTool(BaseTool):
+    """向主人发送飞书通知。需配置 feishu.automation_activity_enabled=true 和 automation_activity_chat_id。"""
+
+    def __init__(self, config: Optional[Any] = None):
+        self._config = config or get_config()
+
+    @property
+    def name(self) -> str:
+        return "notify_owner"
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name=self.name,
+            description="""向主人发送飞书消息通知。
+
+使用场景：
+- 遇到政治敏感、合规风险等问题礼貌拒绝后，主动通知主人
+- 需要主人知晓的重要事件或异常情况
+
+消息会发送到配置的 feishu.automation_activity_chat_id 所指的飞书会话。需配置 feishu.automation_activity_enabled=true 且 automation_activity_chat_id 非空。""",
+            parameters=[
+                ToolParameter(
+                    name="message",
+                    type="string",
+                    description="要通知主人的消息内容",
+                    required=True,
+                ),
+            ],
+            usage_notes=["若未配置飞书通知目标 chat_id，本工具会返回友好提示"],
+            tags=["飞书", "通知", "主人"],
+        )
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        message = str(kwargs.get("message") or "").strip()
+        if not message:
+            return ToolResult(
+                success=False,
+                error="MISSING_MESSAGE",
+                message="请提供要通知的内容 message",
+            )
+
+        feishu_cfg = getattr(self._config, "feishu", None) or {}
+        enabled = getattr(feishu_cfg, "automation_activity_enabled", False)
+        chat_id = getattr(feishu_cfg, "automation_activity_chat_id", "") or ""
+
+        if not enabled or not chat_id:
+            return ToolResult(
+                success=False,
+                error="FEISHU_NOTIFY_NOT_CONFIGURED",
+                message="未配置飞书通知：请在 config.yaml 中设置 feishu.automation_activity_enabled=true 和 feishu.automation_activity_chat_id（接收通知的飞书 chat_id）",
+            )
+
+        try:
+            from agent.frontend.feishu.client import FeishuClient
+        except ImportError as e:
+            return ToolResult(
+                success=False,
+                error="FEISHU_IMPORT_ERROR",
+                message=f"无法导入飞书客户端: {e}",
+            )
+
+        try:
+            client = FeishuClient()
+            await client.send_text_message(chat_id=chat_id, text=message)
+            return ToolResult(success=True, message="已发送飞书通知", data={"sent": True})
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                error="FEISHU_SEND_FAILED",
+                message=f"发送飞书通知失败: {e}",
+            )
+
+
 class CreateScheduledJobTool(BaseTool):
     def __init__(self, base_dir: Optional[str] = None):
         self._repo = JobDefinitionRepository(base_dir=base_dir)

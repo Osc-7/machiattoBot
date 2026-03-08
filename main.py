@@ -62,6 +62,7 @@ from agent.core.tools import (
     GetAutomationActivityTool,
     FetchSjtuUndergradScheduleTool,
     CreateScheduledJobTool,
+    NotifyOwnerTool,
     ShuiyuanSearchTool,
     ShuiyuanGetTopicTool,
 )
@@ -164,6 +165,7 @@ def get_default_tools(config: Optional[Config] = None) -> List[BaseTool]:
         tools.append(ShuiyuanSearchTool(config=config))
         tools.append(ShuiyuanGetTopicTool(config=config))
     tools.append(GetDigestTool())
+    tools.append(NotifyOwnerTool(config=config))
     tools.append(ListNotificationsTool())
     tools.append(AckNotificationTool())
     tools.append(ConfigureAutomationPolicyTool())

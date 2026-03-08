@@ -87,9 +87,21 @@ sjtu_jw:
 # 获取 User-Api-Key：运行 python -m shuiyuan_integration.user_api_key，按提示在水源授权
 # 环境变量：SHUIYUAN_USER_API_KEY
 shuiyuan:
+  owner_username: null  # 主人水源用户名，必须 @ 此用户且消息含 invocation_trigger 才触发
+  invocation_trigger: ""  # 消息中必须包含此字符串才触发回复
+  allowed_topic_ids: []  # 非空时用 topic 监控（轮询指定话题新帖，解析正文 @owner+trigger，含自 @）；为空时用 user_actions+notifications
+  # 需同时运行 connector 轮询通知：python -m shuiyuan_integration.connector
   enabled: false
   user_api_key: null
   site_url: "https://shuiyuan.sjtu.edu.cn"
+  db_path: "./data/shuiyuan/shuiyuan.db"
+  memory:
+    chat_limit_per_user: 100
+    long_term_dir: "./data/memory/long_term/shuiyuan"
+    thread_posts_count: 50
+    tool_max_posts: 50  # 水源工具 search/get_topic 返回的最大帖子数
+  rate_limit:
+    replies_per_minute: 5
 
 # 自动化定时任务配置（可选）
 # 这里提供一个高层的“任务描述 + 时间间隔”入口，运行时会被转换为 automation 子系统的 JobDefinition，

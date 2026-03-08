@@ -165,6 +165,44 @@ class SjtuJwConfig(BaseModel):
     )
 
 
+class ShuiyuanMemoryConfig(BaseModel):
+    """水源社区记忆配置"""
+
+    chat_limit_per_user: int = Field(
+        default=100,
+        ge=1,
+        le=1000,
+        description="每用户保留的最近聊天记录条数",
+    )
+    long_term_dir: str = Field(
+        default="./data/memory/long_term/shuiyuan",
+        description="长期记忆目录，存放 MEMORY.md（与主 Agent 隔离，可手动维护）",
+    )
+    thread_posts_count: int = Field(
+        default=50,
+        ge=10,
+        le=200,
+        description="回复时读取的该楼最近帖子上文条数",
+    )
+    tool_max_posts: int = Field(
+        default=50,
+        ge=10,
+        le=100,
+        description="水源工具（search/get_topic）返回结果的最大帖子数，避免上下文过长",
+    )
+
+
+class ShuiyuanRateLimitConfig(BaseModel):
+    """水源社区限流配置"""
+
+    replies_per_minute: int = Field(
+        default=5,
+        ge=1,
+        le=60,
+        description="每用户每分钟最多回复次数",
+    )
+
+
 class ShuiyuanConfig(BaseModel):
     """水源社区（上海交通大学 Discourse 论坛）配置"""
 
@@ -179,6 +217,30 @@ class ShuiyuanConfig(BaseModel):
     site_url: str = Field(
         default="https://shuiyuan.sjtu.edu.cn",
         description="水源社区站点 URL",
+    )
+    db_path: str = Field(
+        default="./data/shuiyuan/shuiyuan.db",
+        description="水源社区 SQLite 数据库路径，用于聊天记录与限流",
+    )
+    memory: ShuiyuanMemoryConfig = Field(
+        default_factory=ShuiyuanMemoryConfig,
+        description="水源社区记忆配置",
+    )
+    rate_limit: ShuiyuanRateLimitConfig = Field(
+        default_factory=ShuiyuanRateLimitConfig,
+        description="水源社区限流配置",
+    )
+    owner_username: Optional[str] = Field(
+        default=None,
+        description="主人水源用户名，调用时需被 @ 此用户才触发",
+    )
+    invocation_trigger: str = Field(
+        default="【玛奇朵】",
+        description="消息中必须包含此字符串才触发回复（同时需 @ 主人）",
+    )
+    allowed_topic_ids: List[int] = Field(
+        default_factory=list,
+        description="仅在这些话题中响应 @。非空时使用 topic 监控模式（解析正文 @owner+trigger），不依赖 user_actions/notifications；为空时使用 user_actions+notifications 模式",
     )
 
 

@@ -278,3 +278,30 @@ def build_system_prompt(
             _maybe_append(parts, load("runtime_memory"))
 
     return "\n\n".join(parts)
+
+
+def build_shuiyuan_system_prompt(
+    time_context: str,
+    config: Config,
+    memory_dir: str = "./data/memory/long_term/shuiyuan",
+) -> str:
+    """
+    构建水源社区 Agent 的系统提示。
+
+    使用 prompts/shuiyuan/system.md + 水源 MEMORY.md + 时间上下文，
+    与主 Agent 隔离。
+    """
+    parts: list[str] = []
+    shuiyuan_prompt_dir = _get_prompts_dir() / "shuiyuan"
+    shuiyuan_system = (shuiyuan_prompt_dir / "system.md").read_text(encoding="utf-8").strip()
+    parts.append(shuiyuan_system)
+
+    memory_path = Path(memory_dir) / "MEMORY.md"
+    if memory_path.exists():
+        memory_content = memory_path.read_text(encoding="utf-8").strip()
+        if memory_content:
+            parts.append("---\n## 水源社区长期记忆 (MEMORY.md)\n\n" + memory_content)
+
+    parts.append("---\n## 当前时间\n\n" + time_context)
+
+    return "\n\n".join(parts)

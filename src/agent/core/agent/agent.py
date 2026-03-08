@@ -22,7 +22,7 @@ from agent.core.context import ConversationContext, get_time_context
 from agent.utils.billing import compute_cost_from_calls
 from agent.core.mcp import MCPClientManager
 from agent.core.orchestrator import ToolSnapshot, ToolWorkingSetManager
-from agent.prompts import build_system_prompt as build_prompt
+from agent.prompts import build_system_prompt as build_prompt, build_shuiyuan_system_prompt
 from agent.core.llm import (
     LLMClient,
     LLMResponse,
@@ -74,15 +74,31 @@ def _namespace_file(path: str, user_id: str) -> str:
     return str(base.with_name(f"{stem}.{user_id}"))
 
 
-def _resolve_memory_owner_paths(mem_cfg: MemoryConfig, user_id: str) -> Dict[str, str]:
+def _resolve_memory_owner_paths(
+    mem_cfg: MemoryConfig,
+    user_id: str,
+    config: Optional["Config"] = None,
+    source: str = "cli",
+) -> Dict[str, str]:
     """
     根据 user_id 计算各类记忆存储路径。
 
-    注意：
-    - 短期 / 长期 / 内容记忆以及 chat_history DB 仍按 user_id 做命名空间隔离；
-    - MEMORY.md 保持使用全局配置路径（通常是项目根的 ./MEMORY.md），
-      避免出现多份「长期偏好」副本，当前阶段不做多用户级别的 MEMORY.md 拆分。
+    当 source=="shuiyuan" 且 config 启用水源时，使用水源专用路径（与主 Agent 隔离）。
     """
+    if source == "shuiyuan" and config and getattr(config, "shuiyuan", None):
+        shuiyuan_cfg = config.shuiyuan
+        if shuiyuan_cfg.enabled and shuiyuan_cfg.memory:
+            mem = shuiyuan_cfg.memory
+            long_term = mem.long_term_dir
+            base = Path(shuiyuan_cfg.db_path).parent
+            return {
+                "short_term_dir": str(Path(long_term).parent / "short_term" / "shuiyuan"),
+                "long_term_dir": long_term,
+                "content_dir": str(Path(long_term).parent / "content" / "shuiyuan"),
+                "chat_history_db_path": str(base / "shuiyuan_chat_history.db"),
+                "memory_md_path": str(Path(long_term) / "MEMORY.md"),
+            }
+
     return {
         "short_term_dir": _namespace_dir(mem_cfg.short_term_dir, user_id),
         "long_term_dir": _namespace_dir(mem_cfg.long_term_dir, user_id),
@@ -178,7 +194,9 @@ class ScheduleAgent:
         # 四层记忆系统
         mem_cfg: MemoryConfig = self._config.memory
         self._memory_enabled = mem_cfg.enabled
-        source_paths = _resolve_memory_owner_paths(mem_cfg, self._user_id)
+        source_paths = _resolve_memory_owner_paths(
+            mem_cfg, self._user_id, config=self._config, source=self._source
+        )
 
         self._working_memory = WorkingMemory(
             context=self._context,
@@ -615,18 +633,25 @@ class ScheduleAgent:
         """
         构建系统提示。
 
-        从 prompts/system/ 加载片段并组合，包含：
-        - Agent 身份和能力说明
-        - 当前时间上下文
-        - 工具使用指南
-        - 记忆上下文（若有）
-
-        Returns:
-            系统提示字符串
+        当 source=="shuiyuan" 时使用水源专用 prompt，否则使用主 Agent prompt。
         """
         time_ctx = get_time_context(self._timezone)
+        time_str = time_ctx.to_prompt_string()
+
+        if self._source == "shuiyuan":
+            mem_dir = getattr(
+                getattr(getattr(self._config, "shuiyuan", None), "memory", None),
+                "long_term_dir",
+                "./data/memory/long_term/shuiyuan",
+            )
+            return build_shuiyuan_system_prompt(
+                time_context=time_str,
+                config=self._config,
+                memory_dir=mem_dir,
+            )
+
         prompt = build_prompt(
-            time_context=time_ctx.to_prompt_string(),
+            time_context=time_str,
             config=self._config,
             has_web_extractor=self._tool_registry.has("extract_web_content"),
             has_file_tools=self._tool_registry.has("read_file"),

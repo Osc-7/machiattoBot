@@ -27,6 +27,7 @@ from .media_tools import AttachMediaTool, AttachImageToReplyTool
 from .load_skill_tool import LoadSkillTool
 from .canvas_tools import SyncCanvasTool, FetchCanvasOverviewTool, FetchCanvasCourseContentTool
 from .automation_tools import (
+    NotifyOwnerTool,
     SyncSourcesTool,
     GetSyncStatusTool,
     GetDigestTool,
@@ -37,7 +38,7 @@ from .automation_tools import (
     CreateScheduledJobTool,
 )
 from .sjtu_jw_tools import FetchSjtuUndergradScheduleTool
-from .shuiyuan_tools import ShuiyuanSearchTool, ShuiyuanGetTopicTool
+from .shuiyuan_tools import ShuiyuanPostReplyTool, ShuiyuanSearchTool, ShuiyuanGetTopicTool
 
 __all__ = [
     "BaseTool",
@@ -84,7 +85,9 @@ __all__ = [
     "ConfigureAutomationPolicyTool",
     "GetAutomationActivityTool",
     "CreateScheduledJobTool",
+    "NotifyOwnerTool",
     "FetchSjtuUndergradScheduleTool",
     "ShuiyuanSearchTool",
     "ShuiyuanGetTopicTool",
+    "ShuiyuanPostReplyTool",
 ]

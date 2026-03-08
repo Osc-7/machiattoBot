@@ -29,7 +29,7 @@ ALL_SCOPES = [
     "bookmarks_calendar",
     "user_status",
 ]
-DEFAULT_SCOPES = ["read"]
+DEFAULT_SCOPES = ["read", "write"]  # 发帖需 write，建议默认包含
 
 
 @dataclass
@@ -123,10 +123,10 @@ def generate_user_api_key(
 
 
 def main() -> None:
-    """CLI 入口：生成 User-Api-Key 并测试。"""
+    """CLI 入口：生成 User-Api-Key 并测试。默认包含 read+write 权限。"""
     import requests
 
-    result = generate_user_api_key("Shuiyuan Sample App")
+    result = generate_user_api_key("Shuiyuan Sample App", scopes=["read", "write"])
     print(f"client_id: {result.client_id}")
     print(f"api_key: {result.payload.key}")
     print("\n正在测试...")

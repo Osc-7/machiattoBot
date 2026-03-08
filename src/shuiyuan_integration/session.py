@@ -1,0 +1,240 @@
+"""
+水源社区 Agent 会话入口。
+
+设计：shuiyuan 前端 -> automation(connector) -> core(Agent) -> automation -> shuiyuan
+
+1. automation 层：connector 轮询 @ 提及，准备上下文，调用 core
+2. core 层：Agent 理解上下文，直接输出回复正文
+3. automation 层：收到输出后调用 post_reply 发帖到水源
+
+调用规则：必须同时满足「@ 主人」且「消息包含【玛奇朵】」才触发回复。
+"""
+
+from __future__ import annotations
+
+from typing import Any, List, Optional
+
+from agent.config import Config, get_config
+
+
+def is_invocation_valid(
+    raw_message: str,
+    mentioned_usernames: List[str],
+    *,
+    config: Optional[Config] = None,
+) -> tuple[bool, str]:
+    """
+    判断是否满足水源 Agent 调用规则：@ 主人 且 消息包含 invocation_trigger（默认【玛奇朵】）。
+
+    Args:
+        raw_message: 帖子原文
+        mentioned_usernames: 被 @ 的用户名列表（来自 Discourse API）
+        config: 配置对象，默认 get_config()
+
+    Returns:
+        (是否有效, 原因说明)
+    """
+    cfg = config or get_config()
+    if not cfg.shuiyuan.enabled:
+        return False, "水源未启用"
+
+    owner = (cfg.shuiyuan.owner_username or "").strip()
+    trigger = (cfg.shuiyuan.invocation_trigger or "【玛奇朵】").strip()
+
+    if not trigger:
+        return True, ""
+
+    if trigger not in (raw_message or ""):
+        return False, f"消息需包含 {trigger}"
+
+    if owner:
+        mentions = [u.strip().lower() for u in (mentioned_usernames or []) if u and isinstance(u, str)]
+        if owner.lower() not in mentions:
+            return False, f"需 @ {owner}"
+
+    return True, ""
+
+
+def is_invocation_valid_from_raw(raw_message: str, *, config: Optional[Config] = None) -> tuple[bool, str]:
+    """
+    从正文解析判断是否满足调用规则：@ 主人 且 消息包含 trigger。
+    用于 topic 监控模式（无 user_actions/notifications，直接解析 raw）。
+
+    Returns:
+        (是否有效, 原因说明)
+    """
+    cfg = config or get_config()
+    if not cfg.shuiyuan.enabled:
+        return False, "水源未启用"
+
+    owner = (cfg.shuiyuan.owner_username or "").strip()
+    trigger = (cfg.shuiyuan.invocation_trigger or "【玛奇朵】").strip()
+
+    raw = (raw_message or "").strip()
+    if not trigger or trigger not in raw:
+        return False, f"消息需包含 {trigger}"
+
+    if owner:
+        # raw 中 @ 格式：@username 或 /u/username（链接）
+        owner_lower = owner.lower()
+        raw_lower = raw.lower()
+        at_owner = f"@{owner_lower}"
+        if at_owner not in raw_lower and f"/u/{owner_lower}" not in raw_lower:
+            return False, f"需 @ {owner}"
+
+    return True, ""
+
+
+from agent.core import ScheduleAgent
+from agent.core.tools import ShuiyuanGetTopicTool, ShuiyuanSearchTool
+
+
+async def run_shuiyuan_reply(
+    username: str,
+    topic_id: int,
+    user_message: str,
+    reply_to_post_number: Optional[int] = None,
+    *,
+    config: Optional[Config] = None,
+    extra_tools: Optional[List[Any]] = None,
+    thread_posts: Optional[List[dict]] = None,
+) -> str:
+    """
+    水源社区 @ 触发时的回复流程。
+
+    Args:
+        username: 触发 @ 的用户名
+        topic_id: 话题 ID
+        user_message: 用户发来的消息内容
+        reply_to_post_number: 要回复的楼层号（可选）
+        config: 配置对象，默认 get_config()
+        extra_tools: 额外工具列表，可与 get_default_tools 合并
+        thread_posts: 可选，该楼最近 N 条帖子（connector 已抓取时可传入，避免重复 API 请求导致 429）
+
+    Returns:
+        Agent 的回复文本（若调用了 shuiyuan_post_reply 则可能已发帖）
+    """
+    cfg = config or get_config()
+    if not cfg.shuiyuan.enabled:
+        return "水源社区未启用"
+
+    # 调用规则：消息必须包含 invocation_trigger（默认【玛奇朵】）
+    trigger = (cfg.shuiyuan.invocation_trigger or "【玛奇朵】").strip()
+    if trigger and trigger not in (user_message or ""):
+        return ""
+
+    try:
+        from shuiyuan_integration import (
+            ShuiyuanDB,
+            get_shuiyuan_client_from_config,
+            record_user_message,
+        )
+        from shuiyuan_integration.reply import post_reply
+    except ImportError as e:
+        return f"无法加载水源集成: {e}"
+
+    client = get_shuiyuan_client_from_config(cfg)
+    if not client:
+        return "水源社区未配置 User-Api-Key，请设置 shuiyuan.user_api_key 或 SHUIYUAN_USER_API_KEY"
+
+    db = ShuiyuanDB(
+        db_path=cfg.shuiyuan.db_path,
+        chat_limit_per_user=cfg.shuiyuan.memory.chat_limit_per_user,
+        replies_per_minute=cfg.shuiyuan.rate_limit.replies_per_minute,
+    )
+    record_user_message(username, topic_id, user_message, db=db)
+
+    # 组装初始上下文：该楼最近 N 条 + 用户聊天历史
+    # 若 connector 已传入 thread_posts（topic 监控模式），直接复用，避免重复 get_topic_recent_posts 导致 429
+    if thread_posts is not None:
+        posts = thread_posts[: cfg.shuiyuan.memory.thread_posts_count]
+    else:
+        posts = client.get_topic_recent_posts(
+            topic_id,
+            limit=cfg.shuiyuan.memory.thread_posts_count,
+        )
+    thread_lines: List[str] = []
+    for p in posts:
+        pn = p.get("post_number", 0)
+        uname = p.get("username", "")
+        raw = (p.get("raw") or p.get("cooked", ""))[:500]
+        thread_lines.append(f"[{pn}L] @{uname}: {raw}")
+
+    chat_rows = db.get_chat(username)
+    chat_lines: List[str] = []
+    for row in chat_rows[-20:]:
+        role = row.get("role", "user")
+        content = row.get("content", "")[:300]
+        chat_lines.append(f"[{role}]: {content}")
+
+    ctx_user = ""
+    if thread_lines:
+        ctx_user += "## 该楼最近帖子\n\n" + "\n".join(thread_lines) + "\n\n"
+    if chat_lines:
+        ctx_user += "## 你与该用户的聊天历史（节选）\n\n" + "\n".join(chat_lines) + "\n\n"
+    ctx_user += f"---\n用户 @了你，在当前话题 {topic_id}" + (
+        f" 的第 {reply_to_post_number} 楼" if reply_to_post_number else ""
+    ) + f"，说了：\n\n{user_message}\n\n请根据上文理解语境，直接输出你的回复正文（automation 层会自动发帖，不要调用发帖工具）。"
+
+    # 水源 session 日志（与主 Agent 分开，存到 logs/sessions/shuiyuan/）
+    session_logger = None
+    if getattr(cfg, "logging", None) and getattr(cfg.logging, "enable_session_log", False):
+        from agent.utils.session_logger import SessionLogger
+        from pathlib import Path
+        log_dir = str(Path(getattr(cfg.logging, "session_log_dir", "./logs/sessions")).resolve() / "shuiyuan")
+        session_logger = SessionLogger(
+            log_dir=log_dir,
+            enable_detailed_log=getattr(cfg.logging, "enable_detailed_log", False),
+            max_system_prompt_log_len=getattr(cfg.logging, "max_system_prompt_log_len", 2000),
+        )
+        session_logger.on_session_start()
+
+    # 水源 Agent 保留：联网搜索、URL 解析、水源搜索、获取话题（发帖由 automation 层负责）
+    # web_search 和 extract_web_content 由 Agent 在 mcp.enabled 时自动注册
+    max_posts = getattr(cfg.shuiyuan.memory, "tool_max_posts", 50) or 50
+    tools: List[Any] = [
+        ShuiyuanSearchTool(config=cfg, max_results=max_posts),
+        ShuiyuanGetTopicTool(config=cfg, posts_limit=max_posts),
+    ]
+    if extra_tools:
+        tools.extend(extra_tools)
+
+    agent_ref = None
+    try:
+        async with ScheduleAgent(
+            config=cfg,
+            tools=tools,
+            max_iterations=cfg.agent.max_iterations,
+            timezone=cfg.time.timezone,
+            user_id="shuiyuan",
+            source="shuiyuan",
+            session_logger=session_logger,
+        ) as agent:
+            agent_ref = agent
+            output = await agent.process_input(ctx_user)
+            reply_text = (output or "").strip()
+            if reply_text:
+                success, msg = post_reply(
+                    username=username,
+                    topic_id=topic_id,
+                    raw=reply_text,
+                    reply_to_post_number=reply_to_post_number,
+                    db=db,
+                    client=client,
+                )
+                if not success:
+                    import logging
+                    logging.getLogger("shuiyuan_session").warning("发帖失败: %s", msg)
+            return reply_text
+    finally:
+        if session_logger is not None:
+            turn_count = 1
+            total_usage = None
+            if agent_ref is not None:
+                try:
+                    turn_count = agent_ref.get_turn_count()
+                    total_usage = agent_ref.get_token_usage()
+                except Exception:
+                    pass
+            session_logger.on_session_end(turn_count=turn_count, total_usage=total_usage)
+            session_logger.close()
