@@ -23,6 +23,8 @@ from system.automation import (
     SessionCutPolicy,
     default_socket_path,
 )
+from system.kernel import AgentKernel, CorePool, KernelScheduler, SessionSummarizer
+from system.tools import build_tool_registry
 from agent_core import ScheduleAgent, ScheduleAgentAdapter
 from agent_core.interfaces import AgentHooks, AgentRunInput
 from frontend.cli import run_interactive_loop
@@ -311,6 +313,17 @@ async def main_async(args: Optional[List[str]] = None):
             user_id=user_id,
             source=source,
         ) as agent:
+            kernel_tool_registry = build_tool_registry(config=config)
+            kernel = AgentKernel(tool_registry=kernel_tool_registry)
+            summarizer = SessionSummarizer()
+            core_pool = CorePool(
+                config=config,
+                tools_factory=lambda: get_default_tools(config=config),
+                kernel=kernel,
+                summarizer=summarizer,
+            )
+            scheduler_runtime = KernelScheduler(kernel=kernel, core_pool=core_pool)
+            await scheduler_runtime.start()
             core_session = ScheduleAgentAdapter(agent)
             async def _build_core_session(session_key: str) -> ScheduleAgentAdapter:
                 # 新会话使用独立 Agent，确保多会话上下文隔离。
@@ -343,6 +356,7 @@ async def main_async(args: Optional[List[str]] = None):
                 owner_id=user_id,
                 source=source,
             )
+            gateway.attach_scheduler(scheduler_runtime)
             await gateway.activate_primary_session()
             agent_ref = gateway
             try:
@@ -361,6 +375,8 @@ async def main_async(args: Optional[List[str]] = None):
                         await agent_ref.close()
                     except Exception:
                         pass
+                await scheduler_runtime.stop()
+                await core_pool.evict_all()
     finally:
         if session_logger:
             turn_count: int = 0

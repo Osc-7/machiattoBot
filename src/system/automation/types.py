@@ -28,6 +28,8 @@ class JobDefinition(BaseModel):
     job_id: str = Field(default_factory=lambda: f"job-{uuid4().hex[:8]}")
     job_type: str
     enabled: bool = True
+    one_shot: bool = False
+    run_at: Optional[datetime] = None
     interval_seconds: int = Field(default=3600, ge=1)
     # 统一默认时区为上海（与 Config.time.timezone 保持一致）。
     timezone: str = "Asia/Shanghai"

@@ -23,7 +23,6 @@ from system.automation import (
     AutomationScheduler,
     IPCServerPolicy,
     SessionCutPolicy,
-    SessionManager,
     SessionRegistry,
     default_socket_path,
 )
@@ -33,6 +32,9 @@ from system.automation.logging_utils import AutomationTaskLogger
 from system.automation.repositories import JobDefinitionRepository, JobRunRepository
 from agent_core.config import get_config
 from agent_core import ScheduleAgent, ScheduleAgentAdapter
+from agent_core.interfaces import AgentHooks
+from system.kernel import AgentKernel, CorePool, CoreProfile, KernelRequest, KernelScheduler, SessionSummarizer
+from system.tools import build_tool_registry
 from agent_core.utils.session_logger import SessionLogger
 
 from frontend.feishu.client import FeishuClient
@@ -58,7 +60,7 @@ POLL_INTERVAL_SECONDS = 5
 
 async def _consume_loop(
     queue: AgentTaskQueue,
-    session_manager: SessionManager,
+    scheduler: KernelScheduler,
     stop_event: asyncio.Event,
 ) -> None:
     while not stop_event.is_set():
@@ -76,12 +78,35 @@ async def _consume_loop(
             async def on_trace_event(event: dict) -> None:
                 task_logger.log_trace_event(event)
 
-            result = await session_manager.run_task(
-                session_id=task.session_id,
-                instruction=task.instruction,
-                context_policy=task.context_policy,
-                on_trace_event=on_trace_event,
+            hooks = AgentHooks(on_trace_event=on_trace_event)
+            # job_type 从 source 解析：cron:heartbeat.monitor -> heartbeat.monitor
+            job_type = task.source.split(":", 1)[1] if ":" in task.source else ""
+            is_heartbeat = (job_type or "").startswith("heartbeat")
+            profile = (
+                CoreProfile.default_heartbeat(
+                    frontend_id=task.source,
+                    dialog_window_id=task.user_id,
+                )
+                if is_heartbeat
+                else CoreProfile.default_cron(
+                    frontend_id=task.source,
+                    dialog_window_id=task.user_id,
+                )
             )
+            request = KernelRequest.create(
+                text=task.instruction,
+                session_id=task.session_id,
+                frontend_id=task.source,
+                metadata={
+                    "source": "cron",
+                    "user_id": task.user_id,
+                    "_hooks": hooks,
+                },
+                profile=profile,
+            )
+            future = await scheduler.submit(request)
+            run_result = await future
+            result = run_result.output_text
             op_ok, op_problems = task_logger.evaluate_required_operations()
             if op_ok:
                 queue.update_status(task.task_id, TaskStatus.SUCCESS, result=result)
@@ -173,9 +198,21 @@ async def _main() -> None:
     sync_job_definitions_from_config(config=cfg, job_def_repo=job_def_repo)
     scheduler = AutomationScheduler(job_def_repo=job_def_repo, job_run_repo=job_run_repo, task_queue=queue)
 
-    session_manager = SessionManager(config=cfg, tools_factory=lambda: get_default_tools(config=cfg))
+    kernel_tool_registry = build_tool_registry(config=cfg)
+    kernel = AgentKernel(tool_registry=kernel_tool_registry)
+    summarizer = SessionSummarizer()
+    core_pool = CorePool(
+        config=cfg,
+        tools_factory=lambda: get_default_tools(config=cfg),
+        kernel=kernel,
+        summarizer=summarizer,
+    )
+    scheduler_runtime = KernelScheduler(kernel=kernel, core_pool=core_pool)
     stop_event = asyncio.Event()
-    consumer_task = asyncio.create_task(_consume_loop(queue, session_manager, stop_event), name="automation-consumer")
+    consumer_task = asyncio.create_task(
+        _consume_loop(queue, scheduler_runtime, stop_event),
+        name="automation-consumer",
+    )
 
     # IPC core session and gateway (interactive frontends)
     async with ScheduleAgent(
@@ -219,6 +256,7 @@ async def _main() -> None:
             source=source,
             session_registry=SessionRegistry(),
         )
+        gateway.attach_scheduler(scheduler_runtime)
         await gateway.activate_primary_session()
 
         ipc = AutomationIPCServer(
@@ -229,6 +267,7 @@ async def _main() -> None:
             policy=IPCServerPolicy(expire_check_interval_seconds=60),
         )
 
+        await scheduler_runtime.start()
         await scheduler.start()
         await ipc.start()
         logger.info("Automation daemon started. socket=%s", ipc.socket_path)
@@ -274,9 +313,9 @@ async def _main() -> None:
         finally:
             await ipc.stop()
             await scheduler.stop()
+            await scheduler_runtime.stop()
+            await core_pool.evict_all()
             await gateway.close()
-
-    await session_manager.close_all()
     consumer_task.cancel()
     await asyncio.gather(consumer_task, return_exceptions=True)
 

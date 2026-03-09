@@ -41,6 +41,12 @@ _JOB_INSTRUCTIONS: Dict[str, str] = {
         "调用 shuiyuan_summarize_archive() 总结水源归档的聊天记录。"
         '然后仅输出"操作 + 结果"，不要提出追问或建议。'
     ),
+    "heartbeat.monitor": (
+        "这是心跳/监控任务。请执行轻量检查："
+        "调用 get_sync_status() 获取同步状态，如有异常再调用 get_events/get_tasks 简要确认。"
+        "仅在发现需要人工关注的情况时调用 notify_owner 通知。"
+        '然后仅输出"检查结果"（1-2 句），不要追问或建议。'
+    ),
 }
 
 
@@ -132,6 +138,10 @@ class AutomationScheduler:
         finally:
             run.finished_at = datetime.now()
             self._job_run_repo.update(run)
+            if job.one_shot and job.enabled:
+                job.enabled = False
+                job.updated_at = datetime.now()
+                self._job_def_repo.update(job)
         return run
 
     async def _run_loop(self, job: JobDefinition) -> None:
@@ -149,11 +159,14 @@ class AutomationScheduler:
             if not self._running:
                 break
             await self.run_job_once(job)
+            if job.one_shot:
+                break
 
     def _compute_sleep_seconds(self, job: JobDefinition) -> float:
         """根据 JobDefinition 计算下一次调度前应 sleep 的秒数。
 
         优先顺序：
+        0. one_shot + run_at: 指定时间触发一次
         1. payload['times']: 每天多个闹钟时间点（HH:MM 列表）
         2. payload['start_time'] + job.interval_seconds: 起始时刻 + 间隔
         3. payload['daily_time']: 每天单个闹钟时间点
@@ -167,6 +180,15 @@ class AutomationScheduler:
             tz = ZoneInfo(job.timezone or "Asia/Shanghai")
         except Exception:
             tz = ZoneInfo("Asia/Shanghai")
+
+        # 0) 一次性闹钟：one_shot + run_at
+        if job.one_shot and job.run_at is not None:
+            if job.run_at.tzinfo is None:
+                target = job.run_at.replace(tzinfo=tz)
+            else:
+                target = job.run_at.astimezone(tz)
+            now = datetime.now(tz)
+            return max(0.0, (target - now).total_seconds())
 
         # 1) 多个闹钟时间点：payload['times'] = ["08:00", "14:00", ...]
         times_raw = payload.get("times")
@@ -251,6 +273,10 @@ class AutomationScheduler:
         if old.enabled != new.enabled:
             return True
         if old.interval_seconds != new.interval_seconds:
+            return True
+        if old.one_shot != new.one_shot:
+            return True
+        if old.run_at != new.run_at:
             return True
         if (old.timezone or "") != (new.timezone or ""):
             return True

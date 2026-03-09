@@ -126,6 +126,11 @@ class AutomationCoreGateway:
 
     def list_sessions(self) -> list[str]:
         seen = set(self._sessions.keys())
+        if self._kernel_scheduler is not None:
+            try:
+                seen.update(self._kernel_scheduler.core_pool.list_sessions())
+            except Exception:
+                pass
         for sid in self._session_registry.list_sessions(self._owner_id, self._source):
             seen.add(sid)
         return sorted(seen)
@@ -143,10 +148,20 @@ class AutomationCoreGateway:
         existed_any = session_id in self._sessions or self._session_registry.session_exists(
             self._owner_id, self._source, session_id
         )
+        if self._kernel_scheduler is not None:
+            try:
+                existed_any = existed_any or self._kernel_scheduler.core_pool.has_session(session_id)
+            except Exception:
+                pass
         if session_id not in self._sessions:
             if not create_if_missing and not existed_any:
                 raise KeyError(f"session not found: {session_id}")
-            await self._create_session(session_id)
+            # scheduler 模式下，CorePool 会在首个请求时懒加载，不强制创建本地 CoreSession。
+            if self._kernel_scheduler is None:
+                await self._create_session(session_id)
+            else:
+                self._session_registry.upsert_session(self._owner_id, self._source, session_id)
+                self._last_activity[session_id] = datetime.now()
         return not existed_any
 
     async def switch_session(self, session_id: str, *, create_if_missing: bool = True) -> bool:
@@ -212,11 +227,13 @@ class AutomationCoreGateway:
         if hooks is not None:
             metadata["_hooks"] = hooks
 
+        profile = metadata.pop("_core_profile", None)
         request = KernelRequest.create(
             text=agent_input.text,
             session_id=session_id,
             frontend_id=self._source,
             metadata=metadata,
+            profile=profile,
         )
         future = await self._kernel_scheduler.submit(request)
         result: AgentRunResult = await future
@@ -262,6 +279,14 @@ class AutomationCoreGateway:
 
     async def expire_session(self, reason: str = "session_expire", *, session_id: Optional[str] = None) -> None:
         sid = session_id or self._active_session_id
+        if self._kernel_scheduler is not None:
+            try:
+                await self._kernel_scheduler.core_pool.evict(sid)
+            except Exception as exc:
+                logger.warning("evict session failed (session_id=%s, reason=%s): %s", sid, reason, exc)
+            self._session_registry.mark_expired(self._owner_id, self._source, sid)
+            self._last_activity[sid] = datetime.now()
+            return
         # 未加载到内存的冷会话不做 finalize（避免重放整段历史再重复摘要）；
         # 仅标记为 expired，等待下次显式激活后重新计时。
         if sid not in self._sessions:
@@ -288,18 +313,40 @@ class AutomationCoreGateway:
         self.mark_activity(sid)
 
     async def clear_context_for_session(self, session_id: str) -> None:
+        if self._kernel_scheduler is not None:
+            entry = self._kernel_scheduler.core_pool.get_entry(session_id)
+            if entry is not None:
+                clear_fn = getattr(entry.agent, "clear_context", None)
+                if callable(clear_fn):
+                    clear_fn()
+                return
         session = await self._get_or_create_session(session_id)
         clear_fn = getattr(session, "clear_context", None)
         if callable(clear_fn):
             clear_fn()
 
     def clear_context(self) -> None:
+        if self._kernel_scheduler is not None:
+            entry = self._kernel_scheduler.core_pool.get_entry(self._active_session_id)
+            if entry is not None:
+                clear_fn = getattr(entry.agent, "clear_context", None)
+                if callable(clear_fn):
+                    clear_fn()
+                return
         clear_fn = getattr(self._active_session(), "clear_context", None)
         if callable(clear_fn):
             clear_fn()
 
     def get_token_usage(self, session_id: Optional[str] = None) -> dict:
         sid = session_id or self._active_session_id
+        if self._kernel_scheduler is not None:
+            entry = self._kernel_scheduler.core_pool.get_entry(sid)
+            if entry is not None:
+                fn = getattr(entry.agent, "get_token_usage", None)
+                if callable(fn):
+                    result = fn()
+                    return result if isinstance(result, dict) else {}
+            return {}
         session = self._sessions.get(sid)
         if session is None:
             return {}
@@ -311,6 +358,17 @@ class AutomationCoreGateway:
 
     def get_turn_count(self, session_id: Optional[str] = None) -> int:
         sid = session_id or self._active_session_id
+        if self._kernel_scheduler is not None:
+            entry = self._kernel_scheduler.core_pool.get_entry(sid)
+            if entry is None:
+                return 0
+            fn = getattr(entry.agent, "get_turn_count", None)
+            if callable(fn):
+                try:
+                    return int(fn())
+                except Exception:
+                    return 0
+            return 0
         session = self._sessions.get(sid)
         if session is None:
             return 0

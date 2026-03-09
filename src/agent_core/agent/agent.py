@@ -11,18 +11,16 @@ import json
 import os
 import sys
 import time
-import uuid
 from datetime import datetime
 from datetime import timezone as dt_timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from agent_core.config import Config, MemoryConfig, MCPServerConfig, get_config
-from agent_core.context import ConversationContext, get_time_context
+from agent_core.context import ConversationContext
 from agent_core.utils.billing import compute_cost_from_calls
 from agent_core.mcp import MCPClientManager
 from agent_core.orchestrator import ToolSnapshot, ToolWorkingSetManager
-from agent_core.prompts import build_system_prompt as build_prompt, build_shuiyuan_system_prompt
 from agent_core.llm import (
     LLMClient,
     LLMResponse,
@@ -55,62 +53,17 @@ from agent_core.memory import (
     SessionSummary,
     ChatHistoryDB,
 )
+from .media_helpers import (
+    append_pending_multimodal_messages,
+    collect_outgoing_attachment,
+    queue_media_for_next_call,
+)
+from .memory_paths import new_session_id, resolve_memory_owner_paths
+from .prompt_builder import build_agent_system_prompt
 
 if TYPE_CHECKING:
     from agent_core.interfaces import AgentHooks, AgentRunResult
     from agent_core.utils.session_logger import SessionLogger
-
-
-def _namespace_dir(path: str, user_id: str) -> str:
-    base = Path(path)
-    return str(base / user_id)
-
-
-def _namespace_file(path: str, user_id: str) -> str:
-    base = Path(path)
-    suffix = base.suffix
-    stem = base.stem if suffix else base.name
-    if suffix:
-        return str(base.with_name(f"{stem}.{user_id}{suffix}"))
-    return str(base.with_name(f"{stem}.{user_id}"))
-
-
-def _resolve_memory_owner_paths(
-    mem_cfg: MemoryConfig,
-    user_id: str,
-    config: Optional["Config"] = None,
-    source: str = "cli",
-) -> Dict[str, str]:
-    """
-    根据 user_id 计算各类记忆存储路径。
-
-    当 source=="shuiyuan" 且 config 启用水源时，使用水源专用路径（与主 Agent 隔离）。
-    """
-    if source == "shuiyuan" and config and getattr(config, "shuiyuan", None):
-        shuiyuan_cfg = config.shuiyuan
-        if shuiyuan_cfg.enabled and shuiyuan_cfg.memory:
-            mem = shuiyuan_cfg.memory
-            long_term = mem.long_term_dir
-            base = Path(shuiyuan_cfg.db_path).parent
-            return {
-                "short_term_dir": str(Path(long_term).parent / "short_term" / "shuiyuan"),
-                "long_term_dir": long_term,
-                "content_dir": str(Path(long_term).parent / "content" / "shuiyuan"),
-                "chat_history_db_path": str(base / "shuiyuan_chat_history.db"),
-                "memory_md_path": str(Path(long_term) / "MEMORY.md"),
-            }
-
-    return {
-        "short_term_dir": _namespace_dir(mem_cfg.short_term_dir, user_id),
-        "long_term_dir": _namespace_dir(mem_cfg.long_term_dir, user_id),
-        "content_dir": _namespace_dir(mem_cfg.content_dir, user_id),
-        "chat_history_db_path": _namespace_file(mem_cfg.chat_history_db_path, user_id),
-        "memory_md_path": mem_cfg.memory_md_path,
-    }
-
-
-def _new_session_id() -> str:
-    return f"sess-{int(time.time())}-{uuid.uuid4().hex[:6]}"
 
 
 class ScheduleAgent:
@@ -196,7 +149,7 @@ class ScheduleAgent:
         # 会话起始时间
         self._session_start_time = datetime.now(dt_timezone.utc).isoformat()
         # 会话 ID（用于 ChatHistoryDB 写入分组）
-        self._session_id = _new_session_id()
+        self._session_id = new_session_id()
         # ChatHistoryDB 最后同步到的消息 ID（用于跨终端增量同步）
         self._last_history_id: int = 0
         # CoreProfile — Kernel 注入的权限配置；None 表示无限制（向后兼容）
@@ -205,7 +158,7 @@ class ScheduleAgent:
         # 四层记忆系统
         mem_cfg: MemoryConfig = self._config.memory
         self._memory_enabled = mem_cfg.enabled
-        source_paths = _resolve_memory_owner_paths(
+        source_paths = resolve_memory_owner_paths(
             mem_cfg, self._user_id, config=self._config, source=self._source
         )
 
@@ -717,109 +670,7 @@ class ScheduleAgent:
 
         当 source=="shuiyuan" 时使用水源专用 prompt，否则使用主 Agent prompt。
         """
-        time_ctx = get_time_context(self._timezone)
-        time_str = time_ctx.to_prompt_string()
-
-        if self._source == "shuiyuan":
-            mem_dir = getattr(
-                getattr(getattr(self._config, "shuiyuan", None), "memory", None),
-                "long_term_dir",
-                "./data/memory/long_term/shuiyuan",
-            )
-            recent_topics: List[Any] = []
-            if self._memory_enabled:
-                recall_n = getattr(self._config.memory, "recall_top_n", 5) or 5
-                recent_topics = self._long_term_memory.get_recent_topics(
-                    n=recall_n,
-                    owner_id=self._user_id,
-                )
-            return build_shuiyuan_system_prompt(
-                time_context=time_str,
-                config=self._config,
-                memory_dir=mem_dir,
-                recent_topics=recent_topics,
-            )
-
-        prompt = build_prompt(
-            time_context=time_str,
-            config=self._config,
-            has_web_extractor=self._tool_registry.has("extract_web_content"),
-            has_file_tools=self._tool_registry.has("read_file"),
-            tool_mode=self._effective_tool_mode,
-        )
-
-        # 记忆上下文
-        if self._memory_enabled:
-            parts: List[str] = []
-            # 最近话题（来自 entries.jsonl 中 category=recent_topic 的最近 N 条）
-            recent_topics = self._long_term_memory.get_recent_topics(
-                self._config.memory.recall_top_n
-            )
-            if recent_topics:
-                parts.append("## 最近话题")
-                for topic in recent_topics:
-                    ts = topic.created_at[:10] if topic.created_at else ""
-                    ts_prefix = f"[{ts}] " if ts else ""
-                    parts.append(f"- {ts_prefix}{topic.content}")
-            md_content = self._long_term_memory.read_memory_md()
-            if md_content and len(md_content) > 50:
-                excerpt = md_content if len(md_content) <= 1000 else md_content[:1000] + "\n..."
-                parts.append("\n## 核心记忆 (MEMORY.md)")
-                parts.append(excerpt)
-            recall_ctx = getattr(self, "_last_recall_result", RecallResult())
-            recall_text = recall_ctx.to_context_string()
-            if recall_text:
-                parts.append(f"\n{recall_text}")
-            if parts:
-                prompt += "\n\n# 记忆上下文\n\n" + "\n".join(parts)
-
-            if self._working_memory.running_summary:
-                prompt += (
-                    f"\n\n# 工作记忆摘要\n\n{self._working_memory.running_summary}"
-                )
-
-        # 自动化摘要（最近日结 / 周结），帮助 Agent 感知近期整体节奏
-        try:
-            from system.automation.repositories import DigestRepository  # type: ignore[import]
-
-            digest_repo = DigestRepository()
-            daily_digest = digest_repo.latest("daily")
-            weekly_digest = digest_repo.latest("weekly")
-        except Exception:
-            daily_digest = None
-            weekly_digest = None
-
-        digest_sections: List[str] = []
-        if daily_digest is not None:
-            digest_sections.append("## 最近日摘要")
-            # 先展示高亮条目
-            for item in (daily_digest.highlights or [])[:5]:
-                digest_sections.append(f"- {item}")
-            # 再展示正文节选，避免 prompt 过长
-            if daily_digest.content_md:
-                content = daily_digest.content_md
-                max_len = 800
-                excerpt = content if len(content) <= max_len else content[:max_len] + "\n..."
-                digest_sections.append("")
-                digest_sections.append(excerpt)
-
-        if weekly_digest is not None:
-            if digest_sections:
-                digest_sections.append("")
-            digest_sections.append("## 最近周摘要")
-            for item in (weekly_digest.highlights or [])[:5]:
-                digest_sections.append(f"- {item}")
-            if weekly_digest.content_md:
-                content = weekly_digest.content_md
-                max_len = 800
-                excerpt = content if len(content) <= max_len else content[:max_len] + "\n..."
-                digest_sections.append("")
-                digest_sections.append(excerpt)
-
-        if digest_sections:
-            prompt += "\n\n# 自动化摘要\n\n" + "\n".join(digest_sections)
-
-        return prompt
+        return build_agent_system_prompt(self)
 
     def _add_assistant_message_with_tool_calls(self, response: LLMResponse) -> None:
         """
@@ -887,50 +738,15 @@ class ScheduleAgent:
 
     def _queue_media_for_next_call(self, result: ToolResult) -> None:
         """将工具结果中声明的媒体挂载到下一次 LLM 调用。"""
-        if not result.success:
-            return
-        if not isinstance(result.metadata, dict):
-            return
-        if not result.metadata.get("embed_in_next_call"):
-            return
-
-        candidate_paths: List[str] = []
-        data = result.data
-        if isinstance(data, dict):
-            path = data.get("path")
-            if isinstance(path, str) and path.strip():
-                candidate_paths.append(path.strip())
-            paths = data.get("paths")
-            if isinstance(paths, list):
-                for item in paths:
-                    if isinstance(item, str) and item.strip():
-                        candidate_paths.append(item.strip())
-
-        meta_path = result.metadata.get("path")
-        if isinstance(meta_path, str) and meta_path.strip():
-            candidate_paths.append(meta_path.strip())
-        meta_paths = result.metadata.get("paths")
-        if isinstance(meta_paths, list):
-            for item in meta_paths:
-                if isinstance(item, str) and item.strip():
-                    candidate_paths.append(item.strip())
-
-        for media_path in candidate_paths:
-            content_item, _err = resolve_media_to_content_item(media_path)
-            if content_item:
-                self._pending_multimodal_items.append(content_item)
+        queue_media_for_next_call(
+            result,
+            self._pending_multimodal_items,
+            media_resolver=resolve_media_to_content_item,
+        )
 
     def _collect_outgoing_attachment(self, result: ToolResult) -> None:
         """将工具结果中声明的「随回复发给用户的附件」加入本轮待发送列表。"""
-        if not result.success or not isinstance(result.metadata, dict):
-            return
-        att = result.metadata.get("outgoing_attachment")
-        if not att or not isinstance(att, dict):
-            return
-        if att.get("type") != "image":
-            return
-        if "path" in att or "url" in att:
-            self._outgoing_attachments.append(dict(att))
+        collect_outgoing_attachment(result, self._outgoing_attachments)
 
     def get_outgoing_attachments(self) -> List[Dict[str, Any]]:
         """返回本轮登记的要随回复一起发给用户的附件列表（只读副本）。"""
@@ -944,17 +760,7 @@ class ScheduleAgent:
 
         注意：这是一次性注入，不写入长期对话上下文，避免 data URL 污染历史消息。
         """
-        if not self._pending_multimodal_items:
-            return messages
-
-        content: List[Dict[str, Any]] = [
-            {
-                "type": "text",
-                "text": "以下是你在上一轮工具调用中请求附加的媒体，请结合当前任务继续分析。",
-            }
-        ]
-        content.extend(self._pending_multimodal_items)
-        return [*messages, {"role": "user", "content": content}]
+        return append_pending_multimodal_messages(messages, self._pending_multimodal_items)
 
     async def finalize_session(self) -> Optional[SessionSummary]:
         """
@@ -1099,7 +905,7 @@ class ScheduleAgent:
         调用方应先调用 finalize_session()，再调用此方法。
         """
         self._context.clear()
-        self._session_id = _new_session_id()
+        self._session_id = new_session_id()
         self._last_history_id = 0
         self._session_start_time = datetime.now(dt_timezone.utc).isoformat()
         self._current_turn_id = 0

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from datetime import datetime
 from typing import Any, Optional
 
 from agent_core.config import Config
@@ -33,12 +34,21 @@ def _config_job_to_definition(cfg: Config, job_config: Any) -> JobDefinition:
     user_id = job_config.user_id or "default"
     timezone = cfg.time.timezone
 
-    # interval_seconds: 有 daily_time/times 时用 24h；否则用 interval_minutes*60；默认 24h
-    interval_seconds = 24 * 3600
-    if job_config.interval_minutes is not None and job_config.interval_minutes >= 1:
+    run_at: Optional[datetime] = None
+    run_at_raw = getattr(job_config, "run_at", None)
+    if run_at_raw:
+        try:
+            run_at = datetime.fromisoformat(str(run_at_raw).replace("Z", "+00:00"))
+        except Exception:
+            run_at = None
+
+    one_shot = bool(getattr(job_config, "one_shot", False) or run_at is not None)
+
+    # interval_seconds: one-shot 用最小合法值；其余模式沿用原策略。
+    interval_seconds = 1 if one_shot else 24 * 3600
+    if not one_shot and job_config.interval_minutes is not None and job_config.interval_minutes >= 1:
         interval_seconds = job_config.interval_minutes * 60
-    # times / daily_time 模式下 scheduler 会按闹钟算下一次触发，这里给 24h 即可
-    if job_config.times or job_config.daily_time:
+    if not one_shot and (job_config.times or job_config.daily_time):
         interval_seconds = 24 * 3600
 
     payload = {
@@ -58,6 +68,8 @@ def _config_job_to_definition(cfg: Config, job_config: Any) -> JobDefinition:
         job_id=job_id,
         job_type=job_type,
         enabled=job_config.enabled,
+        one_shot=one_shot,
+        run_at=run_at,
         interval_seconds=interval_seconds,
         timezone=timezone,
         payload_template=payload,

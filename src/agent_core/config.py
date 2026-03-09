@@ -628,6 +628,7 @@ class AutomationJobConfig(BaseModel):
     2. “任务描述 + 每天单个时刻”（daily_time）
     3. “任务描述 + 每天多个时刻”（times）
     4. “任务描述 + 起始时刻 + 间隔时间”（start_time + interval）
+    5. “任务描述 + 一次性触发时间”（run_at / once_at，触发一次后自动停用）
     加载时会被转换为 automation 子系统中的 JobDefinition。
     """
 
@@ -656,6 +657,14 @@ class AutomationJobConfig(BaseModel):
         default=None,
         description="可选：起始时间（HH:MM），与 interval_minutes 搭配，表示“从 start_time 开始，每隔 interval_minutes 分钟触发一次”。",
     )
+    run_at: Optional[str] = Field(
+        default=None,
+        description="可选：一次性触发时间（ISO-8601），例如 2026-03-09T21:30:00+08:00。触发一次后自动停用。",
+    )
+    one_shot: bool = Field(
+        default=False,
+        description="是否按一次性任务执行。若提供 run_at 则会自动视为 true。",
+    )
     job_type: str = Field(
         default="agent.custom",
         description="任务类型标识，用于区分不同类的定时任务。",
@@ -673,8 +682,15 @@ class AutomationJobConfig(BaseModel):
     @classmethod
     def _interval_time_alias(cls, data: Any) -> Any:
         """兼容 config 里写的 interval_time（与 interval_minutes 同义）。"""
-        if isinstance(data, dict) and "interval_minutes" not in data and "interval_time" in data:
-            data = {**data, "interval_minutes": data.get("interval_time")}
+        if isinstance(data, dict):
+            out = dict(data)
+            if "interval_minutes" not in out and "interval_time" in out:
+                out["interval_minutes"] = out.get("interval_time")
+            if "run_at" not in out and "once_at" in out:
+                out["run_at"] = out.get("once_at")
+            if out.get("run_at"):
+                out["one_shot"] = True
+            data = out
         return data
 
 

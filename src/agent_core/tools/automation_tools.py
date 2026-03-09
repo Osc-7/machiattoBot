@@ -372,7 +372,8 @@ class CreateScheduledJobTool(BaseTool):
                 "创建一个新的定时自动化任务。\n\n"
                 "典型用法：当用户用自然语言描述“每隔多久做什么事情”或“每天几点/几点做什么事情”时，"
                 "使用本工具将其注册为后台定时任务，由 automation_daemon 在后台以 ephemeral 会话周期性执行。\n\n"
-                "支持三种主要语义：\n"
+                "支持四种主要语义：\n"
+                "0）one-shot alarm：run_at（或 once_at）指定一次性触发时间；\n"
                 "1）interval：基于 interval_minutes/interval_seconds 的固定间隔执行；\n"
                 "2）daily_time/times：基于每天一个或多个固定时间点（HH:MM，本地时区）执行；\n"
                 "3）start_time + interval：从某个起始时间开始，按给定间隔滚动触发。"
@@ -383,6 +384,18 @@ class CreateScheduledJobTool(BaseTool):
                     type="string",
                     description="定时任务触发时给 Agent 的自然语言指令，例如“请调用 sync_sources(source='email') 并输出操作+结果”。",
                     required=True,
+                ),
+                ToolParameter(
+                    name="run_at",
+                    type="string",
+                    description="可选：一次性触发时间（ISO-8601）。示例：2026-03-09T21:30:00+08:00。设置后该任务触发一次即自动停用。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="once_at",
+                    type="string",
+                    description="run_at 的别名（兼容参数）。",
+                    required=False,
                 ),
                 ToolParameter(
                     name="interval_minutes",
@@ -450,6 +463,21 @@ class CreateScheduledJobTool(BaseTool):
         daily_time_raw = kwargs.get("daily_time")
         times_raw = kwargs.get("times")
         start_time_raw = kwargs.get("start_time")
+        run_at_raw = kwargs.get("run_at")
+        once_at_raw = kwargs.get("once_at")
+
+        run_at: Optional[datetime] = None
+        run_at_text = str(run_at_raw or once_at_raw or "").strip()
+        if run_at_text:
+            try:
+                parsed_run_at = datetime.fromisoformat(run_at_text.replace("Z", "+00:00"))
+                run_at = parsed_run_at
+            except Exception:
+                return ToolResult(
+                    success=False,
+                    error="INVALID_RUN_AT",
+                    message="run_at/once_at 必须是合法的 ISO-8601 时间，例如 2026-03-09T21:30:00+08:00。",
+                )
 
         interval_seconds: Optional[int] = None
         # daily_time / times / start_time 语义配置
@@ -468,46 +496,58 @@ class CreateScheduledJobTool(BaseTool):
         if start_time_raw:
             start_time = str(start_time_raw).strip() or None
 
-        # 解析 interval_seconds
-        if interval_seconds_raw is not None:
-            try:
-                interval_seconds = int(interval_seconds_raw)
-            except (TypeError, ValueError):
-                return ToolResult(
-                    success=False,
-                    error="INVALID_INTERVAL_SECONDS",
-                    message="interval_seconds 必须是正整数（秒）。",
-                )
-        elif interval_minutes_raw is not None:
-            try:
-                minutes = int(interval_minutes_raw)
-            except (TypeError, ValueError):
-                return ToolResult(
-                    success=False,
-                    error="INVALID_INTERVAL_MINUTES",
-                    message="interval_minutes 必须是正整数（分钟）。",
-                )
-            interval_seconds = minutes * 60
-
-        # times / daily_time 模式未显式提供间隔时，默认按 24 小时周期。
-        if (times or daily_time) and (interval_seconds is None or interval_seconds <= 0):
-            interval_seconds = 24 * 3600
-
-        # start_time + interval 语义需要有效的 interval
-        if start_time is not None and (interval_seconds is None or interval_seconds <= 0):
+        one_shot = run_at is not None
+        if one_shot and any([interval_seconds_raw, interval_minutes_raw, daily_time, times, start_time]):
             return ToolResult(
                 success=False,
-                error="MISSING_INTERVAL_FOR_START_TIME",
-                message="使用 start_time 时必须提供 interval_minutes 或 interval_seconds，且为正数。",
+                error="MIXED_SCHEDULE_MODE",
+                message="run_at/once_at 为一次性闹钟模式，不能与 interval/daily_time/times/start_time 混用。",
             )
 
-        # 完全没有任何时间语义且没有间隔
-        if interval_seconds is None or interval_seconds <= 0:
-            return ToolResult(
-                success=False,
-                error="MISSING_INTERVAL",
-                message="必须至少提供 interval_minutes 或 interval_seconds，或设置 daily_time/times/start_time。",
-            )
+        # 解析 interval_seconds（仅循环模式）
+        if not one_shot:
+            if interval_seconds_raw is not None:
+                try:
+                    interval_seconds = int(interval_seconds_raw)
+                except (TypeError, ValueError):
+                    return ToolResult(
+                        success=False,
+                        error="INVALID_INTERVAL_SECONDS",
+                        message="interval_seconds 必须是正整数（秒）。",
+                    )
+            elif interval_minutes_raw is not None:
+                try:
+                    minutes = int(interval_minutes_raw)
+                except (TypeError, ValueError):
+                    return ToolResult(
+                        success=False,
+                        error="INVALID_INTERVAL_MINUTES",
+                        message="interval_minutes 必须是正整数（分钟）。",
+                    )
+                interval_seconds = minutes * 60
+
+            # times / daily_time 模式未显式提供间隔时，默认按 24 小时周期。
+            if (times or daily_time) and (interval_seconds is None or interval_seconds <= 0):
+                interval_seconds = 24 * 3600
+
+            # start_time + interval 语义需要有效的 interval
+            if start_time is not None and (interval_seconds is None or interval_seconds <= 0):
+                return ToolResult(
+                    success=False,
+                    error="MISSING_INTERVAL_FOR_START_TIME",
+                    message="使用 start_time 时必须提供 interval_minutes 或 interval_seconds，且为正数。",
+                )
+
+            # 完全没有任何时间语义且没有间隔
+            if interval_seconds is None or interval_seconds <= 0:
+                return ToolResult(
+                    success=False,
+                    error="MISSING_INTERVAL",
+                    message="必须至少提供 interval_minutes 或 interval_seconds，或设置 daily_time/times/start_time，或使用 run_at/once_at。",
+                )
+        else:
+            # one-shot 模式下保持 interval_seconds 的最小合法值（不会参与下一轮调度）
+            interval_seconds = 1
 
         job_type = str(kwargs.get("job_type") or "agent.custom")
         user_id = str(kwargs.get("user_id") or "default")
@@ -523,6 +563,8 @@ class CreateScheduledJobTool(BaseTool):
         job = JobDefinition(
             job_type=job_type,
             enabled=enabled,
+            one_shot=one_shot,
+            run_at=run_at,
             interval_seconds=interval_seconds,
             timezone=timezone,
             payload_template={

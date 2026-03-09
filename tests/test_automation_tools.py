@@ -11,6 +11,7 @@ from system.automation.runtime import reset_runtime
 from agent_core.tools.automation_tools import (
     AckNotificationTool,
     ConfigureAutomationPolicyTool,
+    CreateScheduledJobTool,
     GetAutomationActivityTool,
     GetDigestTool,
     GetSyncStatusTool,
@@ -158,3 +159,31 @@ async def test_get_automation_activity_tool_reads_compact_records(tmp_path, monk
     assert result.success is True
     assert len(result.data["activities"]) == 1
     assert result.data["activities"][0]["task_id"] == "task-2"
+
+
+@pytest.mark.asyncio
+async def test_create_scheduled_job_supports_one_shot_alarm(tmp_path):
+    tool = CreateScheduledJobTool(base_dir=str(tmp_path / "automation"))
+    result = await tool.execute(
+        instruction="到点后提醒我喝水",
+        run_at="2026-03-09T21:30:00+08:00",
+        user_id="u1",
+    )
+
+    assert result.success is True
+    job = result.data["job"]
+    assert job["one_shot"] is True
+    assert job["run_at"] is not None
+    assert job["enabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_create_scheduled_job_rejects_mixed_one_shot_and_interval(tmp_path):
+    tool = CreateScheduledJobTool(base_dir=str(tmp_path / "automation"))
+    result = await tool.execute(
+        instruction="闹钟+循环冲突示例",
+        run_at="2026-03-09T21:30:00+08:00",
+        interval_minutes=5,
+    )
+    assert result.success is False
+    assert result.error == "MIXED_SCHEDULE_MODE"

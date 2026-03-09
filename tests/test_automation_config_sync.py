@@ -19,6 +19,30 @@ def _make_base_config(tmp_path: Path) -> Config:
     )
 
 
+def test_sync_supports_one_shot_run_at(tmp_path: Path) -> None:
+    repo = JobDefinitionRepository(base_dir=str(tmp_path / "automation"))
+    cfg = _make_base_config(tmp_path)
+    cfg.automation.jobs = [
+        AutomationJobConfig(
+            name="alarm_once",
+            description="一次性提醒",
+            run_at="2026-03-09T21:30:00+08:00",
+            job_type="agent.custom",
+            user_id="default",
+            enabled=True,
+        ),
+    ]
+
+    count = sync_job_definitions_from_config(config=cfg, job_def_repo=repo)
+    assert count == 1
+    jobs = repo.get_all()
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job.one_shot is True
+    assert job.run_at is not None
+    assert job.enabled is True
+
+
 @pytest.mark.asyncio
 async def test_sync_creates_and_disables_config_jobs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """config.jobs 新增/删除时，应创建或禁用对应的 job-config-* 任务，而不影响其他任务。"""
@@ -100,4 +124,3 @@ async def test_sync_creates_and_disables_config_jobs(tmp_path: Path, monkeypatch
     # job_b 仍然存在，但应被自动标记为 disabled
     assert "job_b" in all_jobs2
     assert all_jobs2["job_b"].enabled is False
-

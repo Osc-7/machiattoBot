@@ -39,6 +39,8 @@ env/
 htmlcov/
 
 # Project specific
+# prompts 文件夹不纳入版本控制（可能包含私有配置）
+src/agent_core/prompts/
 data/*.json
 !data/.gitkeep
 config.yaml
@@ -61,3 +63,4 @@ data/
 user_file/
 pictures/
 scripts/
+docs/

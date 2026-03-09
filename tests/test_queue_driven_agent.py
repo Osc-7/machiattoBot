@@ -425,3 +425,38 @@ class TestSchedulerQueueDispatch:
         await scheduler.run_job_once(job)
 
         assert "sync.requested" in received_topics
+
+    @pytest.mark.asyncio
+    async def test_run_job_once_disables_one_shot_job(self, tmp_path):
+        from datetime import datetime, timedelta
+        from system.automation.repositories import (
+            JobDefinitionRepository,
+            JobRunRepository,
+        )
+        from system.automation.scheduler import AutomationScheduler
+        from system.automation.types import JobDefinition
+
+        queue = AgentTaskQueue(db_path=str(tmp_path / "tasks.db"))
+        repo_dir = str(tmp_path / "automation")
+        job_def_repo = JobDefinitionRepository(base_dir=repo_dir)
+        job_run_repo = JobRunRepository(base_dir=repo_dir)
+
+        scheduler = AutomationScheduler(
+            job_def_repo=job_def_repo,
+            job_run_repo=job_run_repo,
+            task_queue=queue,
+        )
+
+        job = JobDefinition(
+            job_type="sync.email",
+            one_shot=True,
+            run_at=datetime.now() + timedelta(seconds=1),
+            interval_seconds=1,
+        )
+        job_def_repo.create(job)
+        await scheduler.run_job_once(job)
+
+        stored = job_def_repo.get(job.job_id)
+        assert stored is not None
+        assert stored.enabled is False
+        assert stored.one_shot is True

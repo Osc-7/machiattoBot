@@ -130,6 +130,13 @@ automation:
       job_type: "shuiyuan.archive_summarize"
       user_id: "default"
       enabled: false  # 启用水源后设为 true
+    # 心跳/监控：轻量检查同步状态，仅在有异常时通知；使用 CoreProfile.default_heartbeat（只读权限、极短 TTL）
+    - name: "heartbeat_monitor"
+      description: "这是心跳/监控任务。请调用 get_sync_status() 获取同步状态，如有异常再调用 get_events/get_tasks 简要确认，仅在需要人工关注时调用 notify_owner。然后仅输出检查结果（1-2 句）。"
+      interval_minutes: 15
+      job_type: "heartbeat.monitor"
+      user_id: "default"
+      enabled: false  # 按需启用
 
 # 时间配置
 time:
