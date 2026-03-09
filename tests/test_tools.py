@@ -5,7 +5,7 @@
 import pytest
 from typing import Any, Dict
 
-from agent.core.tools import (
+from agent_core.tools import (
     BaseTool,
     ToolDefinition,
     ToolParameter,

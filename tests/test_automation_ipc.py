@@ -7,13 +7,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agent.automation import (
+from system.automation import (
     AutomationCoreGateway,
     AutomationIPCClient,
     AutomationIPCServer,
     SessionRegistry,
 )
-from agent.core.interfaces import AgentHooks, AgentRunInput, AgentRunResult
+from agent_core.interfaces import AgentHooks, AgentRunInput, AgentRunResult
 
 
 @pytest.mark.asyncio

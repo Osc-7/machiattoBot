@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from agent.models import Event, Task, EventStatus, EventPriority, TaskStatus, TaskPriority
-from agent.storage import JSONRepository, EventRepository, TaskRepository
+from agent_core.models import Event, Task, EventStatus, EventPriority, TaskStatus, TaskPriority
+from agent_core.storage import JSONRepository, EventRepository, TaskRepository
 
 
 # ============ 测试夹具 ============

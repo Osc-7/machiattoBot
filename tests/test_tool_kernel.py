@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agent.config import AgentConfig, Config, LLMConfig
-from agent.core.agent import ScheduleAgent
-from agent.core.llm import LLMResponse, ToolCall
-from agent.core.orchestrator import ToolWorkingSetManager
-from agent.core.tools import (
+from agent_core.config import AgentConfig, Config, LLMConfig
+from agent_core.agent import ScheduleAgent
+from agent_core.llm import LLMResponse, ToolCall
+from agent_core.orchestrator import ToolWorkingSetManager
+from agent_core.tools import (
     BaseTool,
     CallToolTool,
     SearchToolsTool,

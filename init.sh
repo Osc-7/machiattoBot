@@ -34,7 +34,7 @@ if [ -f "requirements.txt" ]; then
     log_success "依赖检查完成"
 fi
 
-# 3. 设置 PYTHONPATH (确保 src 目录下的模块可以被导入)
+# 3. 设置 PYTHONPATH (frontend / system / agent_core 三个一级包)
 export PYTHONPATH=$(pwd)/src:$PYTHONPATH
 log_info "PYTHONPATH 已设置: $PYTHONPATH"
 

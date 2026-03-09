@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.core.memory.long_term import LongTermMemory
+from agent_core.memory.long_term import LongTermMemory
 
 
 def test_long_term_memory_recent_topic_appends_across_instances(tmp_path):

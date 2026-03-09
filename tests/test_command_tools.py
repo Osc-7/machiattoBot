@@ -8,8 +8,8 @@ import pytest
 
 from typing import Optional
 
-from agent.config import CommandToolsConfig, Config, LLMConfig
-from agent.core.tools.command_tools import RunCommandTool
+from agent_core.config import CommandToolsConfig, Config, LLMConfig
+from agent_core.tools.command_tools import RunCommandTool
 
 
 def _make_config(

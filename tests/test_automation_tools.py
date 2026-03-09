@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from agent.automation.agent_task import AgentTask
-from agent.automation.logging_utils import AutomationTaskLogger
-from agent.automation.repositories import AutomationPolicyRepository
-from agent.automation.runtime import reset_runtime
-from agent.core.tools.automation_tools import (
+from system.automation.agent_task import AgentTask
+from system.automation.logging_utils import AutomationTaskLogger
+from system.automation.repositories import AutomationPolicyRepository
+from system.automation.runtime import reset_runtime
+from agent_core.tools.automation_tools import (
     AckNotificationTool,
     ConfigureAutomationPolicyTool,
     GetAutomationActivityTool,

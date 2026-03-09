@@ -1,4 +1,4 @@
-from shuiyuan_integration.client import ShuiyuanClient
+from frontend.shuiyuan_integration.client import ShuiyuanClient
 
 
 class _Resp:
@@ -14,8 +14,8 @@ def test_toggle_retort_prefers_put_retorts_without_json(monkeypatch):
         calls.append((method, url, kwargs))
         return _Resp(200)
 
-    monkeypatch.setattr("shuiyuan_integration.client._ensure_rate_limit", lambda: None)
-    monkeypatch.setattr("shuiyuan_integration.client.requests.request", _fake_request)
+    monkeypatch.setattr("frontend.shuiyuan_integration.client._ensure_rate_limit", lambda: None)
+    monkeypatch.setattr("frontend.shuiyuan_integration.client.requests.request", _fake_request)
 
     client = ShuiyuanClient(user_api_key="k")
     ok, status, detail = client.toggle_retort(post_id=123, emoji="thumbsup")
@@ -39,8 +39,8 @@ def test_toggle_retort_fallbacks_from_json_to_legacy_retorts(monkeypatch):
         calls.append((method, url, kwargs))
         return responses[len(calls) - 1]
 
-    monkeypatch.setattr("shuiyuan_integration.client._ensure_rate_limit", lambda: None)
-    monkeypatch.setattr("shuiyuan_integration.client.requests.request", _fake_request)
+    monkeypatch.setattr("frontend.shuiyuan_integration.client._ensure_rate_limit", lambda: None)
+    monkeypatch.setattr("frontend.shuiyuan_integration.client.requests.request", _fake_request)
 
     client = ShuiyuanClient(user_api_key="k")
     ok, status, detail = client.toggle_retort(post_id=456, emoji="heart")
@@ -75,8 +75,8 @@ def test_toggle_retort_fallbacks_to_discourse_reactions(monkeypatch):
         calls.append((method, url, kwargs))
         return responses[len(calls) - 1]
 
-    monkeypatch.setattr("shuiyuan_integration.client._ensure_rate_limit", lambda: None)
-    monkeypatch.setattr("shuiyuan_integration.client.requests.request", _fake_request)
+    monkeypatch.setattr("frontend.shuiyuan_integration.client._ensure_rate_limit", lambda: None)
+    monkeypatch.setattr("frontend.shuiyuan_integration.client.requests.request", _fake_request)
 
     client = ShuiyuanClient(user_api_key="k")
     ok, status, detail = client.toggle_retort(post_id=789, emoji="+1")

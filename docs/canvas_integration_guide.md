@@ -36,7 +36,7 @@ Canvas 集成模块已成功开发并测试通过，可以：
 ```python
 # 在 main.py 或专门的 schedule_sync.py 中
 import asyncio
-from canvas_integration import CanvasConfig, CanvasClient, CanvasSync
+from frontend.canvas_integration import CanvasConfig, CanvasClient, CanvasSync
 
 async def sync_canvas_schedule():
     """同步 Canvas 到日程"""
@@ -128,7 +128,7 @@ async def handle_canvas_sync_command():
 ### 1. 创建日程事件
 
 ```python
-from canvas_integration import CanvasSync
+from frontend.canvas_integration import CanvasSync
 
 sync = CanvasSync(client)
 
@@ -278,7 +278,7 @@ export CANVAS_DEFAULT_DAYS_AHEAD="60"
 ### 配置类
 
 ```python
-from canvas_integration import CanvasConfig
+from frontend.canvas_integration import CanvasConfig
 
 config = CanvasConfig.from_env()
 

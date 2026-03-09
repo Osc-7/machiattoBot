@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from agent.automation import (
+from system.automation import (
     AgentTaskQueue,
     AutomationCoreGateway,
     AutomationIPCServer,
@@ -27,15 +27,15 @@ from agent.automation import (
     SessionRegistry,
     default_socket_path,
 )
-from agent.automation.config_sync import sync_job_definitions_from_config
-from agent.automation.agent_task import TaskStatus
-from agent.automation.logging_utils import AutomationTaskLogger
-from agent.automation.repositories import JobDefinitionRepository, JobRunRepository
-from agent.config import get_config
-from agent.core import ScheduleAgent, ScheduleAgentAdapter
-from agent.utils.session_logger import SessionLogger
+from system.automation.config_sync import sync_job_definitions_from_config
+from system.automation.agent_task import TaskStatus
+from system.automation.logging_utils import AutomationTaskLogger
+from system.automation.repositories import JobDefinitionRepository, JobRunRepository
+from agent_core.config import get_config
+from agent_core import ScheduleAgent, ScheduleAgentAdapter
+from agent_core.utils.session_logger import SessionLogger
 
-from agent.frontend.feishu.client import FeishuClient
+from frontend.feishu.client import FeishuClient
 
 from main import get_default_tools
 

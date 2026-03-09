@@ -2,7 +2,7 @@
 
 import pytest
 
-from agent.utils.billing import (
+from agent_core.utils.billing import (
     compute_cost,
     compute_cost_from_calls,
     get_model_prices,

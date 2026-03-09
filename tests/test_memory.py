@@ -15,17 +15,17 @@ from pathlib import Path
 
 import pytest
 
-from agent.core.memory.types import MemoryEntry, SessionSummary
-from agent.core.memory.working_memory import (
+from agent_core.memory.types import MemoryEntry, SessionSummary
+from agent_core.memory.working_memory import (
     WorkingMemory,
     estimate_messages_tokens,
     estimate_tokens,
 )
-from agent.core.memory.short_term import ShortTermMemory
-from agent.core.memory.long_term import LongTermMemory
-from agent.core.memory.content_memory import ContentMemory
-from agent.core.memory.recall import RecallPolicy, RecallResult
-from agent.core.context.conversation import ConversationContext
+from agent_core.memory.short_term import ShortTermMemory
+from agent_core.memory.long_term import LongTermMemory
+from agent_core.memory.content_memory import ContentMemory
+from agent_core.memory.recall import RecallPolicy, RecallResult
+from agent_core.context.conversation import ConversationContext
 
 
 class TestEstimateTokens:

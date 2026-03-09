@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from agent.content import ContentReference
-from agent.frontend.feishu.content_parser import parse_feishu_message
+from agent_core.content import ContentReference
+from frontend.feishu.content_parser import parse_feishu_message
 
 
 def test_parse_text_message():

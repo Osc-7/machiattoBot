@@ -4,7 +4,7 @@
 
 import pytest
 
-from agent.core.tools import VersionedToolRegistry, WebSearchTool
+from agent_core.tools import VersionedToolRegistry, WebSearchTool
 
 
 class _FakeSearchTool:

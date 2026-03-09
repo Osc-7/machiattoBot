@@ -2,9 +2,9 @@
 
 import pytest
 
-from agent.config import Config, LLMConfig, CanvasIntegrationConfig
-from agent.core.tools.canvas_tools import SyncCanvasTool, FetchCanvasOverviewTool
-from agent.storage.json_repository import EventRepository, TaskRepository
+from agent_core.config import Config, LLMConfig, CanvasIntegrationConfig
+from agent_core.tools.canvas_tools import SyncCanvasTool, FetchCanvasOverviewTool
+from agent_core.storage.json_repository import EventRepository, TaskRepository
 
 
 class _FakeCanvasConfig:
@@ -132,9 +132,9 @@ async def test_sync_canvas_success_creates_task_and_deadline(monkeypatch, tmp_pa
         task_repository=task_repo,
     )
 
-    monkeypatch.setattr("agent.core.tools.canvas_tools.CanvasConfig", _FakeCanvasConfig)
-    monkeypatch.setattr("agent.core.tools.canvas_tools.CanvasClient", _FakeCanvasClient)
-    monkeypatch.setattr("agent.core.tools.canvas_tools.CanvasSync", _FakeCanvasSync)
+    monkeypatch.setattr("agent_core.tools.canvas_tools.CanvasConfig", _FakeCanvasConfig)
+    monkeypatch.setattr("agent_core.tools.canvas_tools.CanvasClient", _FakeCanvasClient)
+    monkeypatch.setattr("agent_core.tools.canvas_tools.CanvasSync", _FakeCanvasSync)
 
     result = await tool.execute(days_ahead=7, include_submitted=True)
     assert result.success is True
@@ -191,9 +191,9 @@ async def test_sync_canvas_submitted_marks_task_and_event_completed(monkeypatch,
         task_repository=task_repo,
     )
 
-    monkeypatch.setattr("agent.core.tools.canvas_tools.CanvasConfig", _FakeCanvasConfig)
-    monkeypatch.setattr("agent.core.tools.canvas_tools.CanvasClient", _FakeCanvasClient)
-    monkeypatch.setattr("agent.core.tools.canvas_tools.CanvasSync", _SubmittedCanvasSync)
+    monkeypatch.setattr("agent_core.tools.canvas_tools.CanvasConfig", _FakeCanvasConfig)
+    monkeypatch.setattr("agent_core.tools.canvas_tools.CanvasClient", _FakeCanvasClient)
+    monkeypatch.setattr("agent_core.tools.canvas_tools.CanvasSync", _SubmittedCanvasSync)
 
     result = await tool.execute(include_submitted=True)
     assert result.success is True
@@ -210,7 +210,7 @@ async def test_fetch_canvas_overview_success(monkeypatch, tmp_path):
 
     class _FakeOverviewCanvasClient(_FakeCanvasClient):
         async def get_upcoming_assignments(self, days: int = 60, include_submitted: bool = False):
-            from canvas_integration.models import CanvasAssignment
+            from frontend.canvas_integration.models import CanvasAssignment
 
             return [
                 CanvasAssignment(
@@ -223,7 +223,7 @@ async def test_fetch_canvas_overview_success(monkeypatch, tmp_path):
             ]
 
         async def get_upcoming_events(self, days: int = 60):
-            from canvas_integration.models import CanvasEvent
+            from frontend.canvas_integration.models import CanvasEvent
             from datetime import datetime, timedelta, timezone
 
             start = datetime.now(timezone.utc)
@@ -239,7 +239,7 @@ async def test_fetch_canvas_overview_success(monkeypatch, tmp_path):
             ]
 
         async def get_planner_items(self, filter: str | None = None):
-            from canvas_integration.models import CanvasPlannerItem
+            from frontend.canvas_integration.models import CanvasPlannerItem
 
             return [
                 CanvasPlannerItem(
@@ -261,8 +261,8 @@ async def test_fetch_canvas_overview_success(monkeypatch, tmp_path):
 
     tool = FetchCanvasOverviewTool(config=config)
 
-    monkeypatch.setattr("agent.core.tools.canvas_tools.CanvasConfig", _FakeCanvasConfig)
-    monkeypatch.setattr("agent.core.tools.canvas_tools.CanvasClient", _FakeOverviewCanvasClient)
+    monkeypatch.setattr("agent_core.tools.canvas_tools.CanvasConfig", _FakeCanvasConfig)
+    monkeypatch.setattr("agent_core.tools.canvas_tools.CanvasClient", _FakeOverviewCanvasClient)
 
     result = await tool.execute(days_ahead=7, include_submitted=True)
     assert result.success is True

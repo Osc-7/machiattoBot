@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from agent.config import AutomationConfig, AutomationJobConfig, Config, LLMConfig
-from agent.automation.config_sync import sync_job_definitions_from_config
-from agent.automation.repositories import JobDefinitionRepository
-from agent.automation.types import JobDefinition
+from agent_core.config import AutomationConfig, AutomationJobConfig, Config, LLMConfig
+from system.automation.config_sync import sync_job_definitions_from_config
+from system.automation.repositories import JobDefinitionRepository
+from system.automation.types import JobDefinition
 
 
 def _make_base_config(tmp_path: Path) -> Config:

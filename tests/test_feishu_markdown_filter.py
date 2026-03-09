@@ -2,7 +2,7 @@
 飞书 Markdown 过滤工具测试。
 """
 
-from agent.frontend.feishu.markdown_filter import filter_markdown_for_feishu
+from frontend.feishu.markdown_filter import filter_markdown_for_feishu
 
 
 class TestFeishuMarkdownFilter:

@@ -5,9 +5,9 @@ LLM 客户端测试
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from agent.core.llm import LLMClient, LLMResponse, ToolCall
-from agent.core.llm.client import _strip_thinking_content
-from agent.config import Config, LLMConfig, SearchOptionsConfig
+from agent_core.llm import LLMClient, LLMResponse, ToolCall
+from agent_core.llm.client import _strip_thinking_content
+from agent_core.config import Config, LLMConfig, SearchOptionsConfig
 
 
 class TestStripThinkingContent:
@@ -144,7 +144,7 @@ class TestLLMClient:
     @pytest.mark.asyncio
     async def test_chat_basic(self, mock_config, mock_openai_response):
         """测试基础对话"""
-        with patch("agent.core.llm.client.AsyncOpenAI") as mock_openai:
+        with patch("agent_core.llm.client.AsyncOpenAI") as mock_openai:
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(
                 return_value=mock_openai_response
@@ -174,7 +174,7 @@ class TestLLMClient:
         self, mock_config, mock_openai_response_with_tools
     ):
         """测试带工具的对话"""
-        with patch("agent.core.llm.client.AsyncOpenAI") as mock_openai:
+        with patch("agent_core.llm.client.AsyncOpenAI") as mock_openai:
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(
                 return_value=mock_openai_response_with_tools
@@ -220,7 +220,7 @@ class TestLLMClient:
     @pytest.mark.asyncio
     async def test_chat_with_image(self, mock_config):
         """测试多模态识图请求参数构造"""
-        with patch("agent.core.llm.client.AsyncOpenAI") as mock_openai:
+        with patch("agent_core.llm.client.AsyncOpenAI") as mock_openai:
             mock_client = AsyncMock()
             mock_response = MagicMock()
             mock_response.choices = [MagicMock()]
@@ -252,7 +252,7 @@ class TestLLMClient:
     @pytest.mark.asyncio
     async def test_chat_without_tools(self, mock_config, mock_openai_response):
         """测试不带工具的 chat_with_tools"""
-        with patch("agent.core.llm.client.AsyncOpenAI") as mock_openai:
+        with patch("agent_core.llm.client.AsyncOpenAI") as mock_openai:
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(
                 return_value=mock_openai_response
@@ -277,7 +277,7 @@ class TestLLMClient:
     @pytest.mark.asyncio
     async def test_close(self, mock_config):
         """测试关闭客户端"""
-        with patch("agent.core.llm.client.AsyncOpenAI") as mock_openai:
+        with patch("agent_core.llm.client.AsyncOpenAI") as mock_openai:
             mock_client = AsyncMock()
             mock_client.close = AsyncMock()
             mock_openai.return_value = mock_client
@@ -307,7 +307,7 @@ class TestLLMClient:
             )
         )
 
-        with patch("agent.core.llm.client.AsyncOpenAI") as mock_openai:
+        with patch("agent_core.llm.client.AsyncOpenAI") as mock_openai:
             mock_client = AsyncMock()
             mock_response = MagicMock()
             mock_response.choices = [MagicMock()]
@@ -354,7 +354,7 @@ class TestLLMClient:
             )
         )
 
-        with patch("agent.core.llm.client.AsyncOpenAI") as mock_openai:
+        with patch("agent_core.llm.client.AsyncOpenAI") as mock_openai:
             mock_client = AsyncMock()
             mock_response = MagicMock()
             mock_response.choices = [MagicMock()]
@@ -395,7 +395,7 @@ class TestLLMClient:
             )
         )
 
-        with patch("agent.core.llm.client.AsyncOpenAI") as mock_openai:
+        with patch("agent_core.llm.client.AsyncOpenAI") as mock_openai:
             mock_client = AsyncMock()
             mock_response = MagicMock()
             mock_response.choices = [MagicMock()]
@@ -439,7 +439,7 @@ class TestLLMClient:
             )
         )
 
-        with patch("agent.core.llm.client.AsyncOpenAI") as mock_openai:
+        with patch("agent_core.llm.client.AsyncOpenAI") as mock_openai:
             mock_client = AsyncMock()
             mock_response = MagicMock()
             mock_response.choices = [MagicMock()]
@@ -486,7 +486,7 @@ class TestLLMClient:
             )
         )
 
-        with patch("agent.core.llm.client.AsyncOpenAI") as mock_openai:
+        with patch("agent_core.llm.client.AsyncOpenAI") as mock_openai:
             mock_client = AsyncMock()
             mock_response = MagicMock()
             mock_response.choices = [MagicMock()]
@@ -535,7 +535,7 @@ class TestLLMClient:
             )
         )
 
-        with patch("agent.core.llm.client.AsyncOpenAI") as mock_openai:
+        with patch("agent_core.llm.client.AsyncOpenAI") as mock_openai:
             mock_client = AsyncMock()
             mock_response = MagicMock()
             mock_response.choices = [MagicMock()]
@@ -573,8 +573,8 @@ class TestLLMClientIntegration:
         """测试真实 API 调用（跳过）"""
         # 此测试需要真实的 API Key 和端点
         # 这里为真实 API 集成测试示例，需填写有效 KEY 后启用
-        from agent.config import get_config
-        from agent.core.llm import LLMClient
+        from agent_core.config import get_config
+        from agent_core.llm import LLMClient
 
         config = get_config()
         client = LLMClient(config=config)

@@ -6,7 +6,7 @@ from typing import Any, Dict
 import pytest
 
 import automation_daemon as daemon
-from agent.config import get_config, reset_config
+from agent_core.config import get_config, reset_config
 
 
 @pytest.fixture(autouse=True)

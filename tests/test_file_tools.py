@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent.config import Config, LLMConfig, FileToolsConfig
-from agent.core.tools.file_tools import ReadFileTool, WriteFileTool, ModifyFileTool
-from agent.core.tools.base import ToolDefinition
+from agent_core.config import Config, LLMConfig, FileToolsConfig
+from agent_core.tools.file_tools import ReadFileTool, WriteFileTool, ModifyFileTool
+from agent_core.tools.base import ToolDefinition
 
 
 def _make_config(

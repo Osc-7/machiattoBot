@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from agent.config import (
+from agent_core.config import (
     Config,
     LLMConfig,
     TimeConfig,
@@ -410,7 +410,7 @@ class TestFindConfigFile:
         # 而项目根目录有 config.yaml，所以这个测试验证的是
         # 当配置文件不在当前目录时能正确回退到项目根目录
         # 我们需要 mock 一个场景让两个位置都没有配置文件
-        import agent.config as config_module
+        import agent_core.config as config_module
 
         # Mock __file__ 使项目根目录指向一个没有配置文件的位置
         fake_file = str(tmp_path / "fake_location" / "config.py")

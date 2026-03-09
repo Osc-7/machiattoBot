@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agent.frontend.feishu.slash_commands import (
+from frontend.feishu.slash_commands import (
     _format_token_usage,
     _help_text,
     try_handle_slash_command,

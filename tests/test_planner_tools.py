@@ -7,14 +7,14 @@ from datetime import datetime, date, timedelta
 import tempfile
 import os
 
-from agent.config import (
+from agent_core.config import (
     PlanningConfig,
     PlanningWorkingHoursConfig,
     PlanningWeightsConfig,
 )
-from agent.core.tools.planner_tools import GetFreeSlotsTool, PlanTasksTool
-from agent.storage.json_repository import EventRepository, TaskRepository
-from agent.models import Event, Task, EventStatus, TaskStatus, TaskPriority
+from agent_core.tools.planner_tools import GetFreeSlotsTool, PlanTasksTool
+from agent_core.storage.json_repository import EventRepository, TaskRepository
+from agent_core.models import Event, Task, EventStatus, TaskStatus, TaskPriority
 
 
 @pytest.fixture

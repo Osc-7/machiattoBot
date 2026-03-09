@@ -36,7 +36,7 @@ if env_path.exists():
 else:
     print(f"Warning: .env file not found at {env_path}")
 
-from canvas_integration import CanvasConfig, CanvasClient
+from frontend.canvas_integration import CanvasConfig, CanvasClient
 
 # 配置日志
 logging.basicConfig(
@@ -154,7 +154,7 @@ async def test_sync():
     print("同步功能测试")
     print("=" * 60)
     
-    from canvas_integration import CanvasSync
+    from frontend.canvas_integration import CanvasSync
     
     config = CanvasConfig.from_env()
     

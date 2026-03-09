@@ -8,8 +8,8 @@ from typing import Any, Dict, List
 
 import pytest
 
-from agent.config import SjtuJwConfig
-from agent.core.tools.sjtu_jw_tools import (
+from agent_core.config import SjtuJwConfig
+from agent_core.tools.sjtu_jw_tools import (
     FetchSjtuUndergradScheduleTool,
     SjtuJwClientError,
     guess_academic_year_and_term,

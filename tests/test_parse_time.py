@@ -6,7 +6,7 @@ import pytest
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from agent.core.tools import ParseTimeTool, ParsedTime, TimeParser
+from agent_core.tools import ParseTimeTool, ParsedTime, TimeParser
 
 
 class TestTimeParser:

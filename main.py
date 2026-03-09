@@ -16,18 +16,18 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Awaitable, List, Optional, cast
 
-from agent.config import Config, get_config
-from agent.automation import (
+from agent_core.config import Config, get_config
+from system.automation import (
     AutomationCoreGateway,
     AutomationIPCClient,
     SessionCutPolicy,
     default_socket_path,
 )
-from agent.core import ScheduleAgent, ScheduleAgentAdapter
-from agent.core.interfaces import AgentHooks, AgentRunInput
-from agent.cli import run_interactive_loop
-from agent.utils.session_logger import SessionLogger
-from agent.core.tools import (
+from agent_core import ScheduleAgent, ScheduleAgentAdapter
+from agent_core.interfaces import AgentHooks, AgentRunInput
+from frontend.cli import run_interactive_loop
+from agent_core.utils.session_logger import SessionLogger
+from agent_core.tools import (
     BaseTool,
     LoadSkillTool,
     ParseTimeTool,
@@ -67,7 +67,7 @@ from agent.core.tools import (
     ShuiyuanGetTopicTool,
     ShuiyuanSummarizeArchiveTool,
 )
-from agent.core.memory import (
+from agent_core.memory import (
     ContentMemory,
     LongTermMemory,
 )

@@ -6,9 +6,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from canvas_integration.config import CanvasConfig
-from canvas_integration.models import CanvasAssignment, CanvasEvent
-from agent.automation.connectors.canvas import CanvasConnector
+from frontend.canvas_integration.config import CanvasConfig
+from frontend.canvas_integration.models import CanvasAssignment, CanvasEvent
+from system.automation.connectors.canvas import CanvasConnector
 
 
 class _FakeCanvasClient:

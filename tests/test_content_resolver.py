@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from agent.content import ContentReference, resolve_content_refs
-from agent.content.models import ContentReference as CR
+from agent_core.content import ContentReference, resolve_content_refs
+from agent_core.content.models import ContentReference as CR
 
 
 class TestContentReference:

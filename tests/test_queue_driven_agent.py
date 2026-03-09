@@ -16,15 +16,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agent.core.interfaces import AgentRunResult
-from agent.automation.agent_task import (
+from agent_core.interfaces import AgentRunResult
+from system.automation.agent_task import (
     AgentTask,
     ContextPolicy,
     TaskStatus,
     make_cron_task,
     make_user_task,
 )
-from agent.automation.task_queue import AgentTaskQueue
+from system.automation.task_queue import AgentTaskQueue
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +216,7 @@ class TestSessionManager:
 
     @pytest.mark.asyncio
     async def test_ephemeral_creates_new_agent_each_time(self):
-        from agent.automation.session_manager import SessionManager
+        from system.automation.session_manager import SessionManager
 
         agents_created: List = []
 
@@ -246,7 +246,7 @@ class TestSessionManager:
 
     @pytest.mark.asyncio
     async def test_persistent_reuses_agent_for_same_session(self):
-        from agent.automation.session_manager import SessionManager
+        from system.automation.session_manager import SessionManager
 
         manager = SessionManager(tools_factory=lambda: [])
 
@@ -270,7 +270,7 @@ class TestSessionManager:
 
     @pytest.mark.asyncio
     async def test_persistent_different_sessions_use_different_agents(self):
-        from agent.automation.session_manager import SessionManager
+        from system.automation.session_manager import SessionManager
 
         manager = SessionManager(tools_factory=lambda: [])
         created_agents = []
@@ -288,7 +288,7 @@ class TestSessionManager:
 
     @pytest.mark.asyncio
     async def test_close_all_closes_persistent_sessions(self):
-        from agent.automation.session_manager import SessionManager
+        from system.automation.session_manager import SessionManager
 
         manager = SessionManager(tools_factory=lambda: [])
         agents = []
@@ -309,7 +309,7 @@ class TestSessionManager:
 
     @pytest.mark.asyncio
     async def test_run_task_uses_core_session_run_turn(self):
-        from agent.automation.session_manager import SessionManager
+        from system.automation.session_manager import SessionManager
 
         manager = SessionManager(tools_factory=lambda: [])
         core_session = AsyncMock()
@@ -339,12 +339,12 @@ class TestSessionManager:
 class TestSchedulerQueueDispatch:
     @pytest.mark.asyncio
     async def test_dispatch_via_queue_pushes_agent_task(self, tmp_path):
-        from agent.automation.repositories import (
+        from system.automation.repositories import (
             JobDefinitionRepository,
             JobRunRepository,
         )
-        from agent.automation.scheduler import AutomationScheduler
-        from agent.automation.types import JobDefinition
+        from system.automation.scheduler import AutomationScheduler
+        from system.automation.types import JobDefinition
 
         queue = AgentTaskQueue(db_path=str(tmp_path / "tasks.db"))
         job_def_repo = JobDefinitionRepository(base_dir=str(tmp_path / "automation"))
@@ -367,12 +367,12 @@ class TestSchedulerQueueDispatch:
 
     @pytest.mark.asyncio
     async def test_dispatch_all_default_job_types(self, tmp_path):
-        from agent.automation.repositories import (
+        from system.automation.repositories import (
             JobDefinitionRepository,
             JobRunRepository,
         )
-        from agent.automation.scheduler import AutomationScheduler
-        from agent.automation.types import JobDefinition
+        from system.automation.scheduler import AutomationScheduler
+        from system.automation.types import JobDefinition
 
         queue = AgentTaskQueue(db_path=str(tmp_path / "tasks.db"))
         job_def_repo = JobDefinitionRepository(base_dir=str(tmp_path / "automation"))
@@ -396,13 +396,13 @@ class TestSchedulerQueueDispatch:
     @pytest.mark.asyncio
     async def test_fallback_to_event_bus_when_no_queue(self, tmp_path):
         """当未配置 task_queue 时，依然通过 event_bus 触发（旧路径兼容）。"""
-        from agent.automation.event_bus import AsyncEventBus
-        from agent.automation.repositories import (
+        from system.automation.event_bus import AsyncEventBus
+        from system.automation.repositories import (
             JobDefinitionRepository,
             JobRunRepository,
         )
-        from agent.automation.scheduler import AutomationScheduler
-        from agent.automation.types import JobDefinition
+        from system.automation.scheduler import AutomationScheduler
+        from system.automation.types import JobDefinition
 
         bus = AsyncEventBus()
         received_topics: List[str] = []

@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from io import StringIO
 import sys
 
-from agent.config import (
+from agent_core.config import (
     Config,
     LLMConfig,
     LoggingConfig,
@@ -22,11 +22,11 @@ from agent.config import (
     MCPConfig,
     MCPServerConfig,
 )
-from agent.automation import AutomationCoreGateway
-from agent.core import ScheduleAgent
-from agent.core.adapters import ScheduleAgentAdapter
-from agent.core.tools import BaseTool
-from agent.cli.interactive import (
+from system.automation import AutomationCoreGateway
+from agent_core import ScheduleAgent
+from agent_core.adapters import ScheduleAgentAdapter
+from agent_core.tools import BaseTool
+from frontend.cli.interactive import (
     print_welcome,
     print_help,
     run_interactive_loop,
@@ -179,7 +179,7 @@ class TestRunInteractiveLoop:
     @pytest.fixture(autouse=True)
     def disable_prompt_toolkit(self):
         """测试时禁用 prompt_toolkit，使用标准 input()"""
-        import agent.cli.interactive as interactive_module
+        import frontend.cli.interactive as interactive_module
         with patch.object(interactive_module, '_HAS_PROMPT_TOOLKIT', False):
             yield
 
@@ -478,7 +478,7 @@ class TestMainAsync:
         )
         with patch('main.get_config', return_value=mock_config):
             # MCPClientManager 现在在 ScheduleAgent 内部处理
-            with patch('agent.core.agent.agent.MCPClientManager') as MockMCPManager:
+            with patch('agent_core.agent.agent.MCPClientManager') as MockMCPManager:
                 mock_mcp = MagicMock()
                 mock_mcp.connect = AsyncMock()
                 mock_mcp.get_proxy_tools = MagicMock(return_value=[])
@@ -501,7 +501,7 @@ class TestMainAsync:
             mcp=MCPConfig(enabled=True, servers=[]),
         )
         with patch('main.get_config', return_value=mock_config):
-            with patch('agent.core.agent.agent.MCPClientManager') as MockMCPManager:
+            with patch('agent_core.agent.agent.MCPClientManager') as MockMCPManager:
                 mock_mcp = MagicMock()
                 mock_mcp.connect = AsyncMock()
                 mock_mcp.get_proxy_tools = MagicMock(return_value=[])
@@ -543,7 +543,7 @@ class TestCLIIntegration:
     @pytest.fixture(autouse=True)
     def disable_prompt_toolkit(self):
         """测试时禁用 prompt_toolkit"""
-        import agent.cli.interactive as interactive_module
+        import frontend.cli.interactive as interactive_module
         with patch.object(interactive_module, '_HAS_PROMPT_TOOLKIT', False):
             yield
 
@@ -568,8 +568,8 @@ class TestCLIIntegration:
             "quit",            # 退出
         ]
 
-        from agent.core.interfaces import AgentRunResult
-        from agent.automation.core_gateway import AutomationCoreGateway
+        from agent_core.interfaces import AgentRunResult
+        from system.automation.core_gateway import AutomationCoreGateway
 
         with patch('main.get_config', return_value=mock_config):
             with patch('main.ScheduleAgent') as MockAgent:

@@ -13,8 +13,8 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from agent.config import get_config
-from agent.mcp_server import run_stdio_server
+from agent_core.config import get_config
+from frontend.mcp_server import run_stdio_server
 
 
 def main() -> None:

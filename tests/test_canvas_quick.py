@@ -19,7 +19,7 @@ if env_path.exists():
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from canvas_integration import CanvasConfig, CanvasClient
+from frontend.canvas_integration import CanvasConfig, CanvasClient
 
 async def quick_test():
     """快速测试核心功能"""

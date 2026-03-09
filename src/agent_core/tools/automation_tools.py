@@ -1,0 +1,543 @@
+"""Automation control and query tools."""
+
+from __future__ import annotations
+
+from datetime import datetime
+import json
+from typing import Any, Optional
+
+from system.automation.repositories import (
+    AutomationPolicyRepository,
+    JobDefinitionRepository,
+    _automation_base_dir,
+)
+from system.automation.runtime import get_runtime
+from system.automation.types import AutomationPolicy, JobDefinition
+from agent_core.config import get_config
+
+from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
+
+
+class SyncSourcesTool(BaseTool):
+    @property
+    def name(self) -> str:
+        return "sync_sources"
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name=self.name,
+            description="手动触发外部来源同步（课表/邮件）。",
+            parameters=[
+                ToolParameter(name="source", type="string", description="来源：course | email | all", required=False),
+                ToolParameter(name="account_id", type="string", description="账户 ID，默认 default", required=False),
+            ],
+            tags=["自动化", "同步"],
+        )
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        source = str(kwargs.get("source") or "all").strip().lower()
+        account_id = str(kwargs.get("account_id") or "default")
+        sources = ["course", "email"] if source == "all" else [source]
+
+        runtime = await get_runtime()
+
+        results = []
+        for source_type in sources:
+            result = await runtime.sync_service.run_source(source_type=source_type, account_id=account_id)
+            results.append(result)
+
+        return ToolResult(
+            success=True,
+            message=f"同步完成，共处理 {len(results)} 个来源",
+            data={"results": results},
+        )
+
+
+class GetSyncStatusTool(BaseTool):
+    @property
+    def name(self) -> str:
+        return "get_sync_status"
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name=self.name,
+            description="查看同步游标与最近作业运行状态。",
+            parameters=[
+                ToolParameter(name="job_type", type="string", description="可选，筛选 job_type", required=False),
+                ToolParameter(name="limit", type="integer", description="返回数量，默认 10", required=False),
+            ],
+            tags=["自动化", "同步", "状态"],
+        )
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        job_type = kwargs.get("job_type")
+        limit = int(kwargs.get("limit") or 10)
+        runtime = await get_runtime()
+        runs = runtime.run_repo.list_recent(limit=limit, job_type=job_type)
+        cursors = runtime.cursor_repo.get_all()
+
+        return ToolResult(
+            success=True,
+            message="已获取同步状态",
+            data={
+                "runs": [run.model_dump(mode="json") for run in runs],
+                "cursors": [cursor.model_dump(mode="json") for cursor in cursors],
+            },
+        )
+
+
+class GetDigestTool(BaseTool):
+    @property
+    def name(self) -> str:
+        return "get_digest"
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name=self.name,
+            description="查询日结/周结摘要，若不存在可触发生成。",
+            parameters=[
+                ToolParameter(name="digest_type", type="string", description="daily | weekly", required=False),
+                ToolParameter(name="generate_if_missing", type="boolean", description="缺失时是否生成", required=False),
+            ],
+            tags=["自动化", "总结"],
+        )
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        digest_type = str(kwargs.get("digest_type") or "daily")
+        generate_if_missing = bool(kwargs.get("generate_if_missing", True))
+
+        runtime = await get_runtime()
+        digest = runtime.digest_repo.latest(digest_type)
+        if digest is None and generate_if_missing:
+            if digest_type == "weekly":
+                digest = runtime.summary_service.generate_weekly_digest()
+                await runtime.bus.publish("weekly_digest.ready", {"digest_id": digest.id})
+            else:
+                digest = runtime.summary_service.generate_daily_digest()
+                await runtime.bus.publish("daily_digest.ready", {"digest_id": digest.id})
+
+        if digest is None:
+            return ToolResult(success=True, message="暂无摘要", data={"digest": None})
+
+        return ToolResult(
+            success=True,
+            message="已获取摘要",
+            data={"digest": digest.model_dump(mode="json")},
+        )
+
+
+class ListNotificationsTool(BaseTool):
+    @property
+    def name(self) -> str:
+        return "list_notifications"
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name=self.name,
+            description="列出自动化通知（默认应用内通知）。",
+            parameters=[
+                ToolParameter(name="limit", type="integer", description="返回数量，默认 20", required=False),
+                ToolParameter(name="status", type="string", description="pending|sent|acked|failed", required=False),
+            ],
+            tags=["自动化", "通知"],
+        )
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        limit = int(kwargs.get("limit") or 20)
+        status = kwargs.get("status")
+
+        runtime = await get_runtime()
+        notifications = runtime.notification_service.list_notifications(limit=limit, status=status)
+        return ToolResult(
+            success=True,
+            message=f"返回 {len(notifications)} 条通知",
+            data={"notifications": [item.model_dump(mode="json") for item in notifications]},
+        )
+
+
+class AckNotificationTool(BaseTool):
+    @property
+    def name(self) -> str:
+        return "ack_notification"
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name=self.name,
+            description="确认已读一条通知。",
+            parameters=[
+                ToolParameter(name="outbox_id", type="string", description="通知 ID", required=True),
+            ],
+            tags=["自动化", "通知"],
+        )
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        outbox_id = str(kwargs.get("outbox_id") or "").strip()
+        if not outbox_id:
+            return ToolResult(success=False, error="MISSING_ID", message="缺少 outbox_id")
+
+        runtime = await get_runtime()
+        item = runtime.notification_service.ack_notification(outbox_id)
+        if item is None:
+            return ToolResult(success=False, error="NOT_FOUND", message=f"通知不存在: {outbox_id}")
+
+        return ToolResult(
+            success=True,
+            message="通知已确认",
+            data={"notification": item.model_dump(mode="json")},
+        )
+
+
+class ConfigureAutomationPolicyTool(BaseTool):
+    def __init__(self, base_dir: Optional[str] = None):
+        self._repo = AutomationPolicyRepository(base_dir=base_dir)
+
+    @property
+    def name(self) -> str:
+        return "configure_automation_policy"
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name=self.name,
+            description="配置自动化策略，例如自动写入开关和静默时段。",
+            parameters=[
+                ToolParameter(name="auto_write_enabled", type="boolean", description="是否启用自动写入", required=False),
+                ToolParameter(name="quiet_hours_start", type="string", description="静默开始时间 HH:MM", required=False),
+                ToolParameter(name="quiet_hours_end", type="string", description="静默结束时间 HH:MM", required=False),
+                ToolParameter(name="min_confidence_for_silent_apply", type="number", description="静默自动应用置信度阈值", required=False),
+            ],
+            tags=["自动化", "策略"],
+        )
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        policy = self._repo.get_default()
+
+        if "auto_write_enabled" in kwargs and kwargs["auto_write_enabled"] is not None:
+            policy.auto_write_enabled = bool(kwargs["auto_write_enabled"])
+        if kwargs.get("quiet_hours_start") is not None:
+            policy.quiet_hours_start = str(kwargs["quiet_hours_start"])
+        if kwargs.get("quiet_hours_end") is not None:
+            policy.quiet_hours_end = str(kwargs["quiet_hours_end"])
+        if kwargs.get("min_confidence_for_silent_apply") is not None:
+            policy.min_confidence_for_silent_apply = float(kwargs["min_confidence_for_silent_apply"])
+
+        policy.updated_at = datetime.now()
+        self._repo.update(policy)
+
+        # 兼容首次创建后 update 失败的场景
+        if self._repo.get(policy.id) is None:
+            self._repo.create(AutomationPolicy(**policy.model_dump()))
+
+        return ToolResult(
+            success=True,
+            message="自动化策略已更新",
+            data={"policy": policy.model_dump(mode="json")},
+        )
+
+
+class GetAutomationActivityTool(BaseTool):
+    @property
+    def name(self) -> str:
+        return "get_automation_activity"
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name=self.name,
+            description="查看最近的自动化任务活动简报（操作 + 结果）。",
+            parameters=[
+                ToolParameter(
+                    name="limit",
+                    type="integer",
+                    description="返回最近多少条记录，默认 20",
+                    required=False,
+                ),
+            ],
+            tags=["自动化", "日志", "活动"],
+        )
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        limit = int(kwargs.get("limit") or 20)
+        base_dir = _automation_base_dir()
+        path = base_dir / "automation_activity.jsonl"
+        activities: list[dict[str, Any]] = []
+
+        if path.exists():
+            try:
+                # 简单实现：读取全部行后取最后 N 条，考虑到文件规模较小。
+                lines = path.read_text(encoding="utf-8").splitlines()
+                for line in lines[-max(1, limit) :]:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        activities.append(json.loads(line))
+                    except Exception:
+                        # 忽略单条损坏记录
+                        continue
+            except Exception:
+                # 任何读取错误时返回空列表而不是抛出异常，避免影响对话体验。
+                activities = []
+
+        return ToolResult(
+            success=True,
+            message=f"共返回 {len(activities)} 条自动化活动简报",
+            data={"activities": activities},
+        )
+
+
+class NotifyOwnerTool(BaseTool):
+    """向主人发送飞书通知。需配置 feishu.automation_activity_enabled=true 和 automation_activity_chat_id。"""
+
+    def __init__(self, config: Optional[Any] = None):
+        self._config = config or get_config()
+
+    @property
+    def name(self) -> str:
+        return "notify_owner"
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name=self.name,
+            description="""向主人发送飞书消息通知。
+
+使用场景：
+- 遇到政治敏感、合规风险等问题礼貌拒绝后，主动通知主人
+- 需要主人知晓的重要事件或异常情况
+
+消息会发送到配置的 feishu.automation_activity_chat_id 所指的飞书会话。需配置 feishu.automation_activity_enabled=true 且 automation_activity_chat_id 非空。""",
+            parameters=[
+                ToolParameter(
+                    name="message",
+                    type="string",
+                    description="要通知主人的消息内容",
+                    required=True,
+                ),
+            ],
+            usage_notes=["若未配置飞书通知目标 chat_id，本工具会返回友好提示"],
+            tags=["飞书", "通知", "主人"],
+        )
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        message = str(kwargs.get("message") or "").strip()
+        if not message:
+            return ToolResult(
+                success=False,
+                error="MISSING_MESSAGE",
+                message="请提供要通知的内容 message",
+            )
+
+        feishu_cfg = getattr(self._config, "feishu", None) or {}
+        enabled = getattr(feishu_cfg, "automation_activity_enabled", False)
+        chat_id = getattr(feishu_cfg, "automation_activity_chat_id", "") or ""
+
+        if not enabled or not chat_id:
+            return ToolResult(
+                success=False,
+                error="FEISHU_NOTIFY_NOT_CONFIGURED",
+                message="未配置飞书通知：请在 config.yaml 中设置 feishu.automation_activity_enabled=true 和 feishu.automation_activity_chat_id（接收通知的飞书 chat_id）",
+            )
+
+        try:
+            from agent_core.frontend.feishu.client import FeishuClient
+        except ImportError as e:
+            return ToolResult(
+                success=False,
+                error="FEISHU_IMPORT_ERROR",
+                message=f"无法导入飞书客户端: {e}",
+            )
+
+        try:
+            client = FeishuClient()
+            await client.send_text_message(chat_id=chat_id, text=message)
+            return ToolResult(success=True, message="已发送飞书通知", data={"sent": True})
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                error="FEISHU_SEND_FAILED",
+                message=f"发送飞书通知失败: {e}",
+            )
+
+
+class CreateScheduledJobTool(BaseTool):
+    def __init__(self, base_dir: Optional[str] = None):
+        self._repo = JobDefinitionRepository(base_dir=base_dir)
+
+    @property
+    def name(self) -> str:
+        return "create_scheduled_job"
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name=self.name,
+            description=(
+                "创建一个新的定时自动化任务。\n\n"
+                "典型用法：当用户用自然语言描述“每隔多久做什么事情”或“每天几点/几点做什么事情”时，"
+                "使用本工具将其注册为后台定时任务，由 automation_daemon 在后台以 ephemeral 会话周期性执行。\n\n"
+                "支持三种主要语义：\n"
+                "1）interval：基于 interval_minutes/interval_seconds 的固定间隔执行；\n"
+                "2）daily_time/times：基于每天一个或多个固定时间点（HH:MM，本地时区）执行；\n"
+                "3）start_time + interval：从某个起始时间开始，按给定间隔滚动触发。"
+            ),
+            parameters=[
+                ToolParameter(
+                    name="instruction",
+                    type="string",
+                    description="定时任务触发时给 Agent 的自然语言指令，例如“请调用 sync_sources(source='email') 并输出操作+结果”。",
+                    required=True,
+                ),
+                ToolParameter(
+                    name="interval_minutes",
+                    type="integer",
+                    description="任务执行间隔（分钟）。可与 interval_seconds 二选一，若都提供则以 interval_seconds 为准。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="interval_seconds",
+                    type="integer",
+                    description="任务执行间隔（秒）。优先于 interval_minutes。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="daily_time",
+                    type="string",
+                    description="可选：每天固定触发时间（HH:MM，采用配置中的 time.timezone）。设置后语义为每天这个时间点执行一次。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="times",
+                    type="string",
+                    description="可选：每天多个触发时间，逗号分隔的 HH:MM 列表，例如 \"08:00,14:00,20:00\"。设置后优先于 daily_time。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="start_time",
+                    type="string",
+                    description="可选：起始时间（HH:MM），与 interval_minutes/interval_seconds 搭配，表示“从此时起按间隔滚动触发”。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="job_type",
+                    type="string",
+                    description="任务类型标识，默认 agent.custom。可用于区分不同类的自定义任务。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="user_id",
+                    type="string",
+                    description="逻辑用户 ID，用于区分不同用户的后台任务，默认 default。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="enabled",
+                    type="boolean",
+                    description="是否启用该任务，默认 true。",
+                    required=False,
+                ),
+            ],
+            tags=["自动化", "定时任务", "调度"],
+        )
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        instruction = str(kwargs.get("instruction") or "").strip()
+        if not instruction:
+            return ToolResult(
+                success=False,
+                error="MISSING_INSTRUCTION",
+                message="缺少定时任务指令（instruction）。",
+            )
+
+        interval_seconds_raw = kwargs.get("interval_seconds")
+        interval_minutes_raw = kwargs.get("interval_minutes")
+        daily_time_raw = kwargs.get("daily_time")
+        times_raw = kwargs.get("times")
+        start_time_raw = kwargs.get("start_time")
+
+        interval_seconds: Optional[int] = None
+        # daily_time / times / start_time 语义配置
+        daily_time: Optional[str] = None
+        if daily_time_raw:
+            daily_time = str(daily_time_raw).strip() or None
+
+        times: list[str] = []
+        if times_raw:
+            if isinstance(times_raw, list):
+                times = [str(t).strip() for t in times_raw if str(t).strip()]
+            else:
+                times = [s.strip() for s in str(times_raw).split(",") if s.strip()]
+
+        start_time: Optional[str] = None
+        if start_time_raw:
+            start_time = str(start_time_raw).strip() or None
+
+        # 解析 interval_seconds
+        if interval_seconds_raw is not None:
+            try:
+                interval_seconds = int(interval_seconds_raw)
+            except (TypeError, ValueError):
+                return ToolResult(
+                    success=False,
+                    error="INVALID_INTERVAL_SECONDS",
+                    message="interval_seconds 必须是正整数（秒）。",
+                )
+        elif interval_minutes_raw is not None:
+            try:
+                minutes = int(interval_minutes_raw)
+            except (TypeError, ValueError):
+                return ToolResult(
+                    success=False,
+                    error="INVALID_INTERVAL_MINUTES",
+                    message="interval_minutes 必须是正整数（分钟）。",
+                )
+            interval_seconds = minutes * 60
+
+        # times / daily_time 模式未显式提供间隔时，默认按 24 小时周期。
+        if (times or daily_time) and (interval_seconds is None or interval_seconds <= 0):
+            interval_seconds = 24 * 3600
+
+        # start_time + interval 语义需要有效的 interval
+        if start_time is not None and (interval_seconds is None or interval_seconds <= 0):
+            return ToolResult(
+                success=False,
+                error="MISSING_INTERVAL_FOR_START_TIME",
+                message="使用 start_time 时必须提供 interval_minutes 或 interval_seconds，且为正数。",
+            )
+
+        # 完全没有任何时间语义且没有间隔
+        if interval_seconds is None or interval_seconds <= 0:
+            return ToolResult(
+                success=False,
+                error="MISSING_INTERVAL",
+                message="必须至少提供 interval_minutes 或 interval_seconds，或设置 daily_time/times/start_time。",
+            )
+
+        job_type = str(kwargs.get("job_type") or "agent.custom")
+        user_id = str(kwargs.get("user_id") or "default")
+        enabled = bool(kwargs.get("enabled", True))
+
+        try:
+            cfg = get_config()
+            timezone = cfg.time.timezone
+        except Exception:
+            # 回退时也统一使用上海时区，避免混用 UTC。
+            timezone = "Asia/Shanghai"
+
+        job = JobDefinition(
+            job_type=job_type,
+            enabled=enabled,
+            interval_seconds=interval_seconds,
+            timezone=timezone,
+            payload_template={
+                "instruction": instruction,
+                "user_id": user_id,
+                **({"daily_time": daily_time} if daily_time is not None else {}),
+                **({"times": times} if times else {}),
+                **({"start_time": start_time} if start_time is not None else {}),
+            },
+        )
+
+        self._repo.create(job)
+
+        return ToolResult(
+            success=True,
+            message="定时任务已创建。",
+            data={"job": job.model_dump(mode="json")},
+        )

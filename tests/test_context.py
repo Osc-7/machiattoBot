@@ -6,7 +6,7 @@ import pytest
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 
-from agent.core.context import (
+from agent_core.context import (
     ConversationContext,
     TimeContext,
     get_time_context,

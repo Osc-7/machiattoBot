@@ -7,9 +7,9 @@ from typing import Any, Dict, List, Optional, Union
 
 import pytest
 
-from canvas_integration.config import CanvasConfig
-from canvas_integration.client import CanvasClient
-from canvas_integration.models import CanvasPlannerItem
+from frontend.canvas_integration.config import CanvasConfig
+from frontend.canvas_integration.client import CanvasClient
+from frontend.canvas_integration.models import CanvasPlannerItem
 
 
 class _TestCanvasClient(CanvasClient):
