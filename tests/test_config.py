@@ -98,7 +98,8 @@ class TestConfigModels:
         config = AgentConfig()
         assert config.max_iterations == 10
         assert config.enable_debug is False
-        assert config.tool_mode == "full"
+        # 默认使用 kernel 模式；full 作为向后兼容别名，在 Agent 内部被视为 kernel
+        assert config.tool_mode == "kernel"
         assert config.working_set_size == 6
         assert "search_tools" in config.pinned_tools
         assert "call_tool" in config.pinned_tools

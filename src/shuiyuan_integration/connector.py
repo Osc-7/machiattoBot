@@ -82,20 +82,20 @@ def _collect_from_topic_watch(
             logger.warning("get_topic_recent_posts topic=%s 失败，将跳过本轮: %r", topic_id, e)
             continue
 
-    posts_by_topic[topic_id] = posts
-    for p in posts:
-        pid = p.get("id")
-        pn = p.get("post_number", 1)
-        if pid is None or pid in seen:
-            continue
-        seen.add(int(pid))
-        if is_first:
-            continue
-        raw = (p.get("raw") or p.get("cooked") or "").strip()
-        ok, _ = is_invocation_valid_from_raw(raw, config=config)
-        if ok:
-            out.append((int(topic_id), int(pn), int(pid), p))
-    stream_map[topic_id] = seen
+        posts_by_topic[topic_id] = posts
+        for p in posts:
+            pid = p.get("id")
+            pn = p.get("post_number", 1)
+            if pid is None or pid in seen:
+                continue
+            seen.add(int(pid))
+            if is_first:
+                continue
+            raw = (p.get("raw") or p.get("cooked") or "").strip()
+            ok, _ = is_invocation_valid_from_raw(raw, config=config)
+            if ok:
+                out.append((int(topic_id), int(pn), int(pid), p))
+        stream_map[topic_id] = seen
 
     out.sort(key=lambda x: x[2], reverse=True)
     return out, stream_map, posts_by_topic
