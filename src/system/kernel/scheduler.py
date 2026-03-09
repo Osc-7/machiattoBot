@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from agent_core.interfaces import AgentHooks, AgentRunResult
@@ -123,6 +124,8 @@ class KernelScheduler:
         self._ttl_task: Optional[asyncio.Task] = None
         self._stopped = asyncio.Event()
         self._active_tasks: set[asyncio.Task] = set()
+        # session_id -> in-flight request count
+        self._inflight_sessions: Dict[str, int] = defaultdict(int)
 
     async def start(self) -> None:
         """启动调度循环和 TTL 扫描后台任务。"""
@@ -213,8 +216,22 @@ class KernelScheduler:
         expired = self._core_pool.scan_expired()
         if not expired:
             return
-        logger.info("KernelScheduler: TTL scan found %d expired session(s): %s", len(expired), expired)
-        for session_id in expired:
+        runnable = [sid for sid in expired if self._inflight_sessions.get(sid, 0) <= 0]
+        skipped = [sid for sid in expired if sid not in runnable]
+        if skipped:
+            logger.debug(
+                "KernelScheduler: skip TTL evict for in-flight session(s): %s",
+                skipped,
+            )
+        if not runnable:
+            return
+        logger.info(
+            "KernelScheduler: TTL scan found %d expired session(s), evicting %d: %s",
+            len(expired),
+            len(runnable),
+            runnable,
+        )
+        for session_id in runnable:
             try:
                 await self._core_pool.evict(session_id)
                 logger.info("KernelScheduler: evicted expired session %s", session_id)
@@ -229,20 +246,38 @@ class KernelScheduler:
         2. 调用 AgentKernel.run() 驱动 AgentCore
         3. 通过 OutputRouter 将结果回传给前端
         """
+        session_id = request.session_id
+        self._inflight_sessions[session_id] += 1
         try:
             # 准备钩子
             hooks = None
             if self._hooks_factory:
                 hooks = self._hooks_factory(request)
+            elif isinstance(request.metadata, dict):
+                # 允许调用方通过 request.metadata["_hooks"] 直接透传运行时回调，
+                # 方便在不定制 hooks_factory 的情况下复用 trace/stream 通路。
+                raw_hooks = request.metadata.get("_hooks")
+                if isinstance(raw_hooks, AgentHooks):
+                    hooks = raw_hooks
 
             # 获取 AgentCore（懒加载）
-            source = request.metadata.get("source", request.frontend_id)
-            user_id = request.metadata.get("user_id", "root")
+            # 记忆路径：profile 有非空 frontend_id/dialog_window_id 时优先使用，确保 Cron 等写入对应前端记忆
+            profile = request.profile
+            mem_source = (
+                profile.frontend_id
+                if (profile and (profile.frontend_id or "").strip())
+                else request.metadata.get("source", request.frontend_id)
+            )
+            mem_user_id = (
+                profile.dialog_window_id
+                if (profile and (profile.dialog_window_id or "").strip())
+                else request.metadata.get("user_id", "root")
+            )
             agent = await self._core_pool.acquire(
                 request.session_id,
-                source=source,
-                user_id=user_id,
-                profile=request.profile,
+                source=mem_source,
+                user_id=mem_user_id,
+                profile=profile,
             )
 
             # 准备本轮输入（注入到 agent 的上下文）
@@ -280,14 +315,22 @@ class KernelScheduler:
                 if result:
                     summary_task, summary_recent_start = result
 
-            # 驱动 AgentCore
-            run_result = await self._kernel.run(agent, turn_id=turn_id, hooks=hooks)
+            # 驱动 AgentCore（on_signal: 每次 Return/Tool_call 时刷新 TTL）
+            def _on_signal() -> None:
+                self._core_pool.touch(session_id)
+
+            run_result = await self._kernel.run(
+                agent,
+                turn_id=turn_id,
+                hooks=hooks,
+                on_signal=_on_signal,
+            )
 
             # 后处理
             await agent._finalize_turn(run_result, summary_task, summary_recent_start)
 
             # 刷新 TTL（每次请求完成后更新活跃时间）
-            self._core_pool.touch(request.session_id)
+            self._core_pool.touch(session_id)
 
             # 路由结果
             await self._router.deliver(request.request_id, run_result)
@@ -299,6 +342,12 @@ class KernelScheduler:
                 exc,
             )
             await self._router.deliver_error(request.request_id, exc)
+        finally:
+            pending = self._inflight_sessions.get(session_id, 0) - 1
+            if pending > 0:
+                self._inflight_sessions[session_id] = pending
+            else:
+                self._inflight_sessions.pop(session_id, None)
 
     @property
     def queue_size(self) -> int:
@@ -311,3 +360,8 @@ class KernelScheduler:
     @property
     def router(self) -> OutputRouter:
         return self._router
+
+    @property
+    def core_pool(self) -> "CorePool":
+        """暴露 CorePool 供网关读取内核态 session 状态。"""
+        return self._core_pool

@@ -79,7 +79,7 @@ class CorePool:
         from agent_core.config import get_config
 
         self._config = config or get_config()
-        self._tools_factory = tools_factory
+        self._tools_factory = tools_factory  # 已弃用，优先使用 system.tools.build_tool_registry
         self._max_sessions = max_sessions
         self._kernel = kernel       # AgentKernel 实例，用于 kill()
         self._summarizer = summarizer  # SessionSummarizer 实例，用于摘要持久化
@@ -105,13 +105,21 @@ class CorePool:
         内部使用 per-session Lock 保证只创建一次。
         返回 ScheduleAgent 实例（不含 CoreEntry，调用方不需要感知 PCB 细节）。
         """
-        if session_id in self._pool:
+        if session_id in self._pool and profile is None:
             return self._pool[session_id].agent
 
         lock = await self._get_lock(session_id)
         async with lock:
             if session_id in self._pool:
-                return self._pool[session_id].agent
+                entry = self._pool[session_id]
+                if profile is not None:
+                    await self._hot_update_profile(
+                        entry=entry,
+                        source=source,
+                        user_id=user_id,
+                        profile=profile,
+                    )
+                return entry.agent
 
             if not create_if_missing:
                 raise KeyError(f"CorePool: session not found: {session_id}")
@@ -251,7 +259,17 @@ class CorePool:
                 session_expired_seconds=getattr(self._config.agent, "session_expired_seconds", 1_800),
             )
 
-        tools = self._tools_factory() if self._tools_factory else []
+        # 优先使用 system.tools.build_tool_registry，与 Kernel/MCP 工具装配一致
+        from system.tools import build_tool_registry
+
+        reg = build_tool_registry(
+            profile=profile,
+            config=self._config,
+            memory_owner_id=user_id,
+        )
+        tools = list(reg.list_tools()[1].values())
+        if not tools and self._tools_factory:
+            tools = self._tools_factory()
         agent = ScheduleAgent(
             config=self._config,
             tools=tools,
@@ -274,6 +292,37 @@ class CorePool:
                 await result
 
         return agent, profile
+
+    async def _hot_update_profile(
+        self,
+        *,
+        entry: CoreEntry,
+        source: str,
+        user_id: str,
+        profile: "CoreProfile",
+    ) -> None:
+        """在复用 session 时热更新 profile，并按新权限重装工具集。"""
+        current = entry.profile
+        if current == profile:
+            return
+        from system.tools import build_tool_registry
+
+        reg = build_tool_registry(
+            profile=profile,
+            config=self._config,
+            memory_owner_id=user_id,
+        )
+        entry.agent._tool_registry = reg
+        entry.agent._source = source
+        entry.agent._user_id = user_id
+        entry.agent._core_profile = profile
+        entry.profile = profile
+        entry.touch()
+        logger.info(
+            "CorePool: hot-updated profile for session %s (mode=%s)",
+            getattr(entry.agent, "_session_id", "unknown"),
+            getattr(profile, "mode", "unknown"),
+        )
 
     async def _get_lock(self, session_id: str) -> asyncio.Lock:
         """获取或创建指定 session 的锁（线程安全）。"""

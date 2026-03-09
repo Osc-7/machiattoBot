@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from agent_core.interfaces import AgentHooks, AgentRunResult
 from agent_core.kernel_interface import (
@@ -73,6 +73,7 @@ class AgentKernel:
         agent: "ScheduleAgent",
         turn_id: int = 0,
         hooks: Optional[AgentHooks] = None,
+        on_signal: Optional[Callable[[], None]] = None,
     ) -> AgentRunResult:
         """
         驱动 AgentCore 的 run_loop()。
@@ -81,18 +82,29 @@ class AgentKernel:
         - ToolCallAction        → 执行工具，结果 asend 回 Core
         - ReturnAction          → 终止，返回 AgentRunResult
         - ContextOverflowAction → 占位处理（KNL-004 实现完整逻辑）
+
+        on_signal: 每次收到 ReturnAction 或 ToolCallAction 时调用，用于刷新 TTL 等。
         """
         gen = agent.run_loop(turn_id=turn_id, hooks=hooks)
         action: KernelAction = await gen.__anext__()
 
+        def _maybe_touch() -> None:
+            if on_signal:
+                try:
+                    on_signal()
+                except Exception as exc:
+                    logger.debug("AgentKernel.run: on_signal callback failed: %s", exc)
+
         while True:
             if isinstance(action, ReturnAction):
+                _maybe_touch()
                 return AgentRunResult(
                     output_text=action.message,
                     attachments=action.attachments,
                 )
 
             elif isinstance(action, ToolCallAction):
+                _maybe_touch()
                 # 内核态权限校验（双重防御：InternalLoader 已在用户态过滤，此处强制兜底）
                 profile = getattr(agent, "_core_profile", None)
                 if profile is not None and not profile.is_tool_allowed(action.tool_name):
@@ -198,8 +210,11 @@ class AgentKernel:
         if len(messages) <= keep_recent_turns * 2:
             return "", len(messages)
 
-        # 保留最近 keep_recent_turns * 2 条（每轮大约 user+assistant 两条）
-        split_idx = max(0, len(messages) - keep_recent_turns * 2)
+        # 以 user 消息为轮次边界，保留最近 N 个完整轮次（可包含 assistant/tool 链）
+        user_indices = [i for i, m in enumerate(messages) if m.get("role") == "user"]
+        if len(user_indices) <= keep_recent_turns:
+            return "", len(messages)
+        split_idx = user_indices[-keep_recent_turns]
         old_messages = messages[:split_idx]
         new_messages = messages[split_idx:]
 

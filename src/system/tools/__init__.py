@@ -124,13 +124,13 @@ def _build_command_tools(config: Config) -> List[BaseTool]:
     return tools
 
 
-def _build_memory_tools(config: Config) -> List[BaseTool]:
+def _build_memory_tools(config: Config, *, memory_owner_id: Optional[str] = None) -> List[BaseTool]:
     tools: List[BaseTool] = []
     mem_cfg = getattr(config, "memory", None)
     if not mem_cfg or not getattr(mem_cfg, "enabled", False):
         return tools
 
-    user_id = os.getenv("SCHEDULE_USER_ID", "root").strip() or "root"
+    user_id = (memory_owner_id or os.getenv("SCHEDULE_USER_ID", "root")).strip() or "root"
 
     long_term_dir = str(Path(mem_cfg.long_term_dir) / user_id)
     content_dir = str(Path(mem_cfg.content_dir) / user_id)
@@ -204,6 +204,7 @@ def build_tool_registry(
     profile: Optional[CoreProfile] = None,
     *,
     config: Optional[Config] = None,
+    memory_owner_id: Optional[str] = None,
 ) -> VersionedToolRegistry:
     """
     构建带版本号的工具注册表。
@@ -223,7 +224,7 @@ def build_tool_registry(
     tools.extend(_build_schedule_tools(cfg))
     tools.extend(_build_file_tools(cfg))
     tools.extend(_build_command_tools(cfg))
-    tools.extend(_build_memory_tools(cfg))
+    tools.extend(_build_memory_tools(cfg, memory_owner_id=memory_owner_id))
     tools.extend(_build_multimodal_tools(cfg))
     tools.extend(_build_canvas_tools(cfg))
     tools.extend(_build_shuiyuan_tools(cfg))
@@ -239,4 +240,3 @@ def build_tool_registry(
             registry.register(tool)
 
     return registry
-

@@ -1,5 +1,80 @@
 # Schedule Agent 开发进度
 
+## 2026-03-09 - 任务: Kernel 架构 review 问题修复（TTL 误杀防护 + profile 热更新 + 压缩边界）
+
+### 完成内容:
+- `src/system/kernel/scheduler.py`
+  - 新增 `self._inflight_sessions` 计数（session_id -> in-flight 请求数）
+  - `_run_and_route()` 在执行前后维护 in-flight 计数
+  - `_evict_expired()` 跳过仍在执行中的 session，避免 TTL 误杀运行中的 core
+- `src/system/kernel/core_pool.py`
+  - `acquire()` 支持同一 session 的 `CoreProfile` 热更新
+  - 新增 `_hot_update_profile()`：按新 profile 重建工具注册表并更新 agent 上下文（`_tool_registry/_source/_user_id/_core_profile`）
+  - `_load()` 改为 `build_tool_registry(profile=profile, memory_owner_id=user_id)`，创建 core 时即按权限装配工具，并按 owner 隔离记忆工具路径
+- `src/system/tools/__init__.py`
+  - `build_tool_registry()` 新增 `memory_owner_id` 参数
+  - `_build_memory_tools()` 使用 `memory_owner_id` 优先决定记忆 owner，避免依赖全局环境变量导致的跨租户串读风险
+- `src/system/kernel/kernel.py`
+  - `_compress_context()` 改为按 `user` 消息轮次边界截断，保留最近 N 个完整轮次（可包含 assistant/tool 链），不再按固定消息条数粗暴截断
+- 新增回归测试 `tests/test_kernel_runtime.py`
+  - `test_scheduler_ttl_does_not_evict_inflight_session`
+  - `test_core_pool_acquire_hot_updates_profile`
+  - `test_compress_context_keeps_complete_recent_turn`
+
+### 测试:
+- `pytest -q tests/test_kernel_runtime.py tests/test_system_tools_registry.py tests/test_tool_kernel.py`
+  - 结果: 10 passed
+- `pytest -q tests/test_automation_core_gateway.py tests/test_queue_driven_agent.py`
+  - 结果: 38 passed
+
+### 备注:
+- 本次修复对齐了架构约束：
+  - TTL 不回收运行中的 core
+  - CoreProfile 支持热变更且即时生效
+  - 上下文压缩优先保持完整轮次与工具链语义连续性
+
+## 2026-03-09 - 任务: ARCHITECTURE 待完善项补齐
+
+### 完成内容:
+
+**1. touch 时机**
+- `system/kernel/kernel.py`：`run()` 新增 `on_signal` 回调参数，在收到 `ReturnAction` 和 `ToolCallAction` 时调用
+- `system/kernel/scheduler.py`：`_run_and_route()` 传入 `_on_signal` 调用 `core_pool.touch(session_id)`，每次 Core 发信号均刷新 TTL
+
+**2. visible_memory_scopes**
+- `agent_core/agent/prompt_builder.py`：新增 `_visible_scopes()`，按 `agent._core_profile.visible_memory_scopes` 过滤记忆注入；long_term（recent_topics、MEMORY.md）、short_term/long_term/content（recall）、working（running_summary）；无 profile 时全量注入（向后兼容）
+
+**3. 记忆路径与 Profile 对齐**
+- `system/kernel/scheduler.py`：`_run_and_route()` 在 acquire 时，当 `request.profile` 有非空 `frontend_id`/`dialog_window_id` 时优先使用，确保 Cron 摘要写入对应前端记忆
+
+**4. CorePool 工具装配**
+- `system/kernel/core_pool.py`：`_load()` 优先调用 `system.tools.build_tool_registry(config, profile=None)` 获取工具；空列表时回退 `tools_factory`
+
+### 测试:
+- `pytest tests/test_tool_kernel.py tests/test_automation_core_gateway.py tests/test_automation_ipc.py tests/test_agent.py tests/test_queue_driven_agent.py tests/test_system_tools_registry.py` 全部通过
+
+### 备注:
+- 架构实现度由约 85% 提升至 95%
+- 详见 `docs/ARCHITECTURE_CODE_REVIEW.md`
+
+---
+
+## 2026-03-09 - 任务: 心跳机制实现
+
+### 完成内容:
+- `system/automation/scheduler.py`：新增 `_JOB_INSTRUCTIONS["heartbeat.monitor"]`，轻量检查 get_sync_status、有异常时 notify_owner
+- `automation_daemon.py`：`_consume_loop` 中解析 `task.source`，当 `job_type.startswith("heartbeat")` 时使用 `CoreProfile.default_heartbeat()` 替代 default_cron
+- `config.example.yaml`：新增 heartbeat_monitor 任务示例（job_type: heartbeat.monitor，interval_minutes: 15，enabled: false）
+
+### 测试:
+- `pytest tests/test_automation_core_gateway.py tests/test_automation_ipc.py` 通过
+
+### 备注:
+- 心跳复用 Cron 调度链路，与 sync/summary 等任务一致
+- CoreProfile.default_heartbeat 限制工具为 notify_owner、get_events、get_tasks、get_sync_status，visible_memory_scopes=[]
+
+---
+
 ## 2026-03-09 - 任务: KNL-001 ~ KNL-005 OS-Kernel 架构重构（Phase 1-5）
 
 ### 完成内容:
@@ -1304,3 +1379,93 @@ tests/                   # 测试目录
 ### 备注:
 - CorePool 当前仍通过旧的 tools_factory 机制为 ScheduleAgent 装配工具；Kernel 模式在后续接入时可以直接复用 `system.tools.build_tool_registry` 统一工具视图。
 - MCP Server 现已与 system 层工具注册表对齐，后续若扩展 KernelScheduler 接入，可复用相同注册表实例调度 ToolCallAction。
+
+## 2026-03-09 - 任务: Kernel 主路径切换（CLI local + automation daemon + gateway）
+
+### 完成内容:
+- `automation_daemon.py`
+  - 队列消费者从 `SessionManager.run_task` 切换为 `KernelScheduler.submit(KernelRequest)`。
+  - cron 任务执行时注入 `CoreProfile.default_cron(...)`，并通过 `metadata["_hooks"]` 透传 trace 回调。
+  - daemon 启动时新增 kernel 运行时栈：`AgentKernel + CorePool + KernelScheduler + SessionSummarizer`。
+  - IPC `AutomationCoreGateway` 挂载 `scheduler_runtime`，使交互主路径经由 kernel 调度。
+  - 关闭流程新增 `scheduler_runtime.stop()` 与 `core_pool.evict_all()`，统一资源回收。
+
+- `main.py`
+  - `--local` 模式新增 kernel 运行时栈，并将 `AutomationCoreGateway` 主路径切换到 scheduler。
+  - 退出时显式停止 scheduler 并 evict 全部 core。
+
+- `src/system/kernel/scheduler.py`
+  - 在无 `hooks_factory` 时，支持读取 `request.metadata["_hooks"]` 作为运行时钩子。
+  - 暴露 `core_pool` 属性，供 gateway 读取内核态会话状态。
+
+- `src/system/automation/core_gateway.py`
+  - scheduler 模式下：`list_sessions/ensure_session/clear_context/get_token_usage/get_turn_count/expire_session` 优先对接 `KernelScheduler.core_pool`。
+  - `_run_turn_via_scheduler` 支持从 metadata 传入 `_core_profile` 写入 `KernelRequest.profile`。
+
+### 测试:
+- `python -m compileall /work/main.py /work/automation_daemon.py /work/src/system/kernel/scheduler.py /work/src/system/automation/core_gateway.py`
+- `pytest -q tests/test_tool_kernel.py tests/test_automation_core_gateway.py tests/test_automation_ipc.py tests/test_queue_driven_agent.py`
+  - 结果: 44 passed
+- `pytest -q tests/test_cli.py`
+  - 结果: 32 passed, 1 skipped
+
+### 备注:
+- 现已将用户交互和后台 cron 的运行主路径切到 kernel scheduler。
+- `SessionManager` 仍保留（兼容测试与旧调用），但 daemon 主执行路径不再依赖它。
+
+## 2026-03-09 - 任务: Agent Core 瘦身（拆分 agent.py）
+
+### 完成内容:
+- 将 `agent.py` 中独立职责拆分为 3 个模块，保持 `ScheduleAgent` 外部行为不变：
+  - 新增 `src/agent_core/agent/memory_paths.py`
+    - `resolve_memory_owner_paths()`
+    - `new_session_id()`
+  - 新增 `src/agent_core/agent/prompt_builder.py`
+    - `build_agent_system_prompt(agent)`
+  - 新增 `src/agent_core/agent/media_helpers.py`
+    - `queue_media_for_next_call()`
+    - `collect_outgoing_attachment()`
+    - `append_pending_multimodal_messages()`
+- `src/agent_core/agent/agent.py` 改为薄封装调用：
+  - `_build_system_prompt()` 委托 `build_agent_system_prompt()`
+  - 多模态/附件方法委托 `media_helpers`
+  - 会话 ID 与记忆路径解析委托 `memory_paths`
+- 兼容性修复：保留 `agent_core.agent.agent.resolve_media_to_content_item` patch 点，并把 resolver 显式透传到 helper，避免现有测试断裂。
+
+### 测试:
+- `python -m compileall /work/src/agent_core/agent/agent.py /work/src/agent_core/agent/memory_paths.py /work/src/agent_core/agent/prompt_builder.py /work/src/agent_core/agent/media_helpers.py`
+- `pytest -q tests/test_agent.py tests/test_core_session_adapter.py tests/test_tool_kernel.py tests/test_automation_core_gateway.py`
+  - 结果: 50 passed, 1 skipped
+
+### 备注:
+- `agent.py` 行数由 `1195` 降到 `996`（减少约 200 行），后续可继续把 run_loop/会话生命周期拆到 runtime/session 子模块。
+
+## 2026-03-09 - 任务: 自动化定时任务支持一次性闹钟（one-shot）
+
+### 完成内容:
+- `src/system/automation/types.py`
+  - `JobDefinition` 新增字段：`one_shot: bool`、`run_at: Optional[datetime]`。
+
+- `src/system/automation/scheduler.py`
+  - `_compute_sleep_seconds()` 新增优先级 0：`one_shot + run_at` 按绝对时刻触发。
+  - `run_job_once()` 在 one-shot 任务执行后自动 `enabled=false` 并写回仓库。
+  - `_run_loop()` 在 one-shot 任务执行一次后退出循环。
+  - `_job_changed()` 纳入 `one_shot/run_at` 变化检测。
+
+- `src/agent_core/tools/automation_tools.py`
+  - `create_scheduled_job` 增加参数：`run_at`、`once_at`（别名）。
+  - 支持“一次性闹钟”模式（无需 interval），创建 `one_shot=true` 的任务。
+  - 增加冲突校验：`run_at/once_at` 不能与 interval/daily_time/times/start_time 混用。
+  - 增加 `INVALID_RUN_AT`、`MIXED_SCHEDULE_MODE` 错误分支。
+
+- `src/agent_core/config.py` + `src/system/automation/config_sync.py`
+  - `AutomationJobConfig` 新增 `run_at`、`one_shot`，并支持 `once_at` 别名。
+  - config 同步到 `JobDefinition` 时可携带 one-shot/run_at。
+
+### 测试:
+- `python -m compileall /work/src/system/automation/types.py /work/src/system/automation/scheduler.py /work/src/system/automation/config_sync.py /work/src/agent_core/tools/automation_tools.py /work/src/agent_core/config.py`
+- `pytest -q tests/test_automation_tools.py tests/test_queue_driven_agent.py tests/test_automation_config_sync.py`
+  - 结果：34 passed
+
+### 备注:
+- 现在既支持循环任务，也支持“在某个绝对时间触发一次并自动停用”的闹钟任务。
