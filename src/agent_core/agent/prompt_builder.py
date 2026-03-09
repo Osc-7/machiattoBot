@@ -6,10 +6,7 @@ from typing import Any, List
 
 from agent_core.context import get_time_context
 from agent_core.memory import RecallResult
-from agent_core.prompts import (
-    build_shuiyuan_system_prompt,
-    build_system_prompt as build_prompt,
-)
+from agent_core.prompts import build_system_prompt as build_prompt
 
 
 def _visible_scopes(agent: Any) -> set:
@@ -27,15 +24,14 @@ def build_agent_system_prompt(agent: Any) -> str:
     time_str = time_ctx.to_prompt_string()
     scopes = _visible_scopes(agent)
 
-    if agent._source == "shuiyuan":
-        return build_shuiyuan_system_prompt(time_context=time_str, config=agent._config)
-
+    sub_content_path = "shuiyuan/system" if agent._source == "shuiyuan" else None
     prompt = build_prompt(
         time_context=time_str,
         config=agent._config,
         has_web_extractor=agent._tool_registry.has("extract_web_content"),
         has_file_tools=agent._tool_registry.has("read_file"),
         tool_mode=agent._effective_tool_mode,
+        sub_content_path=sub_content_path,
     )
 
     if agent._memory_enabled:
