@@ -12,7 +12,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from agent.config import Config, get_config
@@ -23,6 +26,56 @@ USER_ACTIONS_FILTER_MENTIONS = 7
 NOTIFICATION_TYPE_MENTIONED = (1, "1", "mentioned")
 
 logger = logging.getLogger("shuiyuan_connector")
+
+
+_STREAM_MAP_PATH = Path("./data/shuiyuan/connector_stream_map.json")
+
+
+def _load_stream_map() -> Dict[int, Set[int]]:
+    """从磁盘加载 topic 监控的 stream_map，避免每次重启都从历史帖子开始初始化。"""
+    if not _STREAM_MAP_PATH.is_file():
+        return {}
+    try:
+        text = _STREAM_MAP_PATH.read_text(encoding="utf-8") or "{}"
+        raw = json.loads(text)
+    except Exception:
+        return {}
+
+    out: Dict[int, Set[int]] = {}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            try:
+                topic_id = int(k)
+            except Exception:
+                continue
+            if isinstance(v, list):
+                ids: Set[int] = set()
+                for item in v:
+                    try:
+                        ids.add(int(item))
+                    except Exception:
+                        continue
+                if ids:
+                    out[topic_id] = ids
+    return out
+
+
+def _save_stream_map(stream_map: Dict[int, Set[int]]) -> None:
+    """将 topic 监控的 stream_map 持久化到磁盘，以便下次启动复用。"""
+    try:
+        _STREAM_MAP_PATH.parent.mkdir(parents=True, exist_ok=True)
+        data: Dict[str, List[int]] = {}
+        for topic_id, ids in stream_map.items():
+            if not ids:
+                continue
+            data[str(int(topic_id))] = sorted(int(i) for i in ids)
+        _STREAM_MAP_PATH.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        # 持久化失败不影响主流程，必要时可通过 debug 日志排查
+        logger.debug("保存 stream_map 失败", exc_info=True)
 
 
 def _safe_headers_for_log(headers: Any) -> dict:
@@ -128,13 +181,12 @@ def _collect_mention_post_ids(client: Any, config: Config) -> List[Tuple[int, in
     except Exception as e:
         logger.debug("get_user_actions 失败: %s", e)
 
-    # 2. user_actions filter=7&acting_username=owner（自 @：显式请求）
+    # 2. user_actions filter=5（自己发的帖子：用于支持“自己 @ 自己”的调用）
     try:
         data = client.get_user_actions(
             owner,
-            filter_type=USER_ACTIONS_FILTER_MENTIONS,
+            filter_type=5,
             offset=0,
-            acting_username=owner,
         )
         actions = data.get("user_actions") or []
         if isinstance(actions, list):
@@ -285,6 +337,8 @@ async def _poll_once(
 
     logger.info("发现 %d 条新提及", len(new_items))
 
+    from .session import is_invocation_valid_from_raw, run_shuiyuan_reply
+
     for topic_id, post_number, post_id in new_items:
         if not topic_id or not post_id:
             continue
@@ -302,12 +356,10 @@ async def _poll_once(
 
         raw = (post.get("raw") or post.get("cooked") or "").strip()
         username = (post.get("username") or "").strip()
-        # user_actions filter=7 即 mentions，owner 被 @ 了
-        mentioned_usernames: List[str] = [owner]
 
-        from .session import is_invocation_valid, run_shuiyuan_reply
-
-        ok, reason = is_invocation_valid(raw, mentioned_usernames, config=config)
+        # 使用正文解析规则判断是否满足调用条件（@主人 + trigger），
+        # 兼容「别人 @ 你」和「自己 @ 自己」两种情况。
+        ok, reason = is_invocation_valid_from_raw(raw, config=config)
         if not ok:
             logger.debug("跳过不满足规则 post_id=%s: %s", post_id, reason)
             continue
@@ -370,7 +422,9 @@ async def run_connector_loop(
     stop = stop_event or asyncio.Event()
 
     if allowed:
-        stream_map: Dict[int, Set[int]] = {}
+        # 加载历史 stream_map，避免每次重启都从历史帖子重新初始化
+        stream_map: Dict[int, Set[int]] = _load_stream_map()
+        backoff_until: float = 0.0
         logger.info(
             "水源 connector 启动（topic 监控），owner=%s，topics=%s，轮询间隔 %s 秒",
             owner,
@@ -378,18 +432,38 @@ async def run_connector_loop(
             poll_interval_seconds,
         )
         while not stop.is_set():
+            # 若之前收到 Retry-After 等限流提示，则在冷却期内跳过主动轮询
+            now = time.time()
+            if now < backoff_until:
+                wait_secs = max(0.0, backoff_until - now)
+                try:
+                    await asyncio.wait_for(stop.wait(), timeout=wait_secs)
+                except asyncio.TimeoutError:
+                    pass
+                continue
             try:
                 stream_map = await _poll_topic_watch(client, cfg, stream_map)
+                _save_stream_map(stream_map)
             except Exception as e:
                 # 特判限流异常，打印更详细信息
                 from .client import ShuiyuanRateLimitError
 
                 if isinstance(e, ShuiyuanRateLimitError):
+                    headers = getattr(e, "headers", None) or {}
+                    retry_after = headers.get("Retry-After") or headers.get("retry-after")
+                    delay: float = 0.0
+                    try:
+                        delay = float(retry_after)
+                    except Exception:
+                        # 若无 Retry-After，则退避为 3 倍轮询间隔
+                        delay = poll_interval_seconds * 3.0
+                    backoff_until = max(backoff_until, time.time() + max(delay, poll_interval_seconds))
                     logger.warning(
-                        "轮询限流(429)：%s (path=%s, headers=%s)",
+                        "轮询限流(429)：%s (path=%s, headers=%s)，将在 %.0f 秒后重试",
                         getattr(e, "body_preview", ""),
                         getattr(e, "path", ""),
                         _safe_headers_for_log(getattr(e, "headers", None)),
+                        delay,
                     )
                 else:
                     logger.exception("轮询异常: %s", e)
@@ -401,6 +475,7 @@ async def run_connector_loop(
 
     # 通知模式：user_actions + notifications
     stream_list: List[int] = []
+    backoff_until: float = 0.0
     logger.info(
         "水源 connector 启动（user_actions filter=7），owner=%s，轮询间隔 %s 秒",
         owner,
@@ -413,16 +488,31 @@ async def run_connector_loop(
             from .client import ShuiyuanRateLimitError
 
             if isinstance(e, ShuiyuanRateLimitError):
+                headers = getattr(e, "headers", None) or {}
+                retry_after = headers.get("Retry-After") or headers.get("retry-after")
+                delay: float = 0.0
+                try:
+                    delay = float(retry_after)
+                except Exception:
+                    delay = poll_interval_seconds * 3.0
+                backoff_until = max(backoff_until, time.time() + max(delay, poll_interval_seconds))
                 logger.warning(
-                    "轮询限流(429)：%s (path=%s, headers=%s)",
+                    "轮询限流(429)：%s (path=%s, headers=%s)，将在 %.0f 秒后重试",
                     getattr(e, "body_preview", ""),
                     getattr(e, "path", ""),
                     _safe_headers_for_log(getattr(e, "headers", None)),
+                    delay,
                 )
             else:
                 logger.exception("轮询异常: %s", e)
         try:
-            await asyncio.wait_for(stop.wait(), timeout=poll_interval_seconds)
+            now = time.time()
+            # 如果处于限流冷却期，则优先等待冷却结束；否则按正常轮询间隔等待
+            if now < backoff_until:
+                wait_secs = max(0.0, backoff_until - now)
+            else:
+                wait_secs = poll_interval_seconds
+            await asyncio.wait_for(stop.wait(), timeout=wait_secs)
         except asyncio.TimeoutError:
             pass
 
@@ -450,7 +540,7 @@ def main() -> None:
     except Exception:
         pass
 
-    asyncio.run(run_connector_loop(poll_interval_seconds=10, stop_event=stop))
+    asyncio.run(run_connector_loop(poll_interval_seconds=40, stop_event=stop))
 
 
 if __name__ == "__main__":

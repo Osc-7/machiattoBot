@@ -173,10 +173,17 @@ async def run_shuiyuan_reply(
         chat_lines.append(f"[{role}]: {content}")
 
     ctx_user = ""
+    if username:
+        ctx_user += "## 当前对话用户\n\n"
+        ctx_user += f"- 水源用户名：@{username}\n\n"
     if thread_lines:
         ctx_user += "## 该楼最近帖子\n\n" + "\n".join(thread_lines) + "\n\n"
     if chat_lines:
-        ctx_user += "## 你与该用户的聊天历史（节选）\n\n" + "\n".join(chat_lines) + "\n\n"
+        if username:
+            ctx_user += f"## 你与该用户（@{username}）的聊天历史（节选）\n\n"
+        else:
+            ctx_user += "## 你与该用户的聊天历史（节选）\n\n"
+        ctx_user += "\n".join(chat_lines) + "\n\n"
     # 若已知触发楼层，补充该楼 post_id 供贴表情工具使用（post_number≠post_id，Retort API 需真实 post_id）
     trigger_post_id: Optional[int] = None
     if reply_to_post_id is not None:
@@ -189,12 +196,18 @@ async def run_shuiyuan_reply(
                 if trigger_post_id is not None:
                     trigger_post_id = int(trigger_post_id)
                 break
-    ctx_user += f"---\n用户 @了你，在当前话题 {topic_id}" + (
-        f" 的第 {reply_to_post_number} 楼"
-        + (f"（post_id={trigger_post_id}）" if trigger_post_id is not None else "")
-        if reply_to_post_number is not None
-        else ""
-    ) + f"，说了：\n\n{user_message}\n\n请根据上文理解语境，直接输出你的回复正文（automation 层会自动发帖，不要调用发帖工具）。"
+    user_identity = f"（该楼作者用户名为 @{username}）" if username else ""
+    ctx_user += (
+        f"---\n用户 @了你，在当前话题 {topic_id}"
+        + (
+            f" 的第 {reply_to_post_number} 楼"
+            + (f"（post_id={trigger_post_id}）" if trigger_post_id is not None else "")
+            if reply_to_post_number is not None
+            else ""
+        )
+        + user_identity
+        + f"，说了：\n\n{user_message}\n\n请根据上文理解语境，直接输出你的回复正文（automation 层会自动发帖，不要调用发帖工具）。"
+    )
 
     # 水源 session 日志（与主 Agent 分开，存到 logs/sessions/shuiyuan/）
     session_logger = None
