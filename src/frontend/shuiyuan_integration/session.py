@@ -109,6 +109,7 @@ async def _run_via_daemon(
         return None
 
     await ipc.switch_session(f"shuiyuan:{username}", create_if_missing=True)
+    # daemon 路径直接接收已经拼装好的 ctx_user 文本，Core 只负责记忆与工具调度。
     result = await ipc.run_turn(AgentRunInput(text=ctx_user))
     reply_text = (result.output_text or "").strip()
     if reply_text:
@@ -179,6 +180,30 @@ async def run_shuiyuan_reply(
     db = get_shuiyuan_db_for_user(cfg, username)
     record_user_message(username, topic_id, user_message, db=db)
 
+    # 尝试获取话题主楼（OP）及标题，用于「当前话题主楼」段落。
+    topic_op: Optional[dict] = None
+    try:
+        topic = client.get_topic(topic_id)
+        if topic:
+            title = (topic.get("title") or "").strip()
+            op_candidates = topic.get("post_stream", {}).get("posts") or []
+            for p in op_candidates:
+                try:
+                    pn = int(p.get("post_number", 0) or 0)
+                except Exception:
+                    pn = 0
+                if pn == 1:
+                    topic_op = {
+                        "id": p.get("id"),
+                        "post_number": pn,
+                        "username": p.get("username", ""),
+                        "raw": (p.get("raw") or p.get("cooked", "")) or "",
+                        "topic_title": title,
+                    }
+                    break
+    except Exception:
+        topic_op = None
+
     # 组装初始上下文：该楼最近 N 条 + 用户聊天历史
     # 若 connector 已传入 thread_posts（topic 监控模式），直接复用，避免重复 get_topic_recent_posts 导致 429
     if thread_posts is not None:
@@ -188,59 +213,25 @@ async def run_shuiyuan_reply(
             topic_id,
             limit=cfg.shuiyuan.memory.thread_posts_count,
         )
-    thread_lines: List[str] = []
-    for p in posts:
-        pn = p.get("post_number", 0)
-        pid = p.get("id")
-        uname = p.get("username", "")
-        raw = (p.get("raw") or p.get("cooked", ""))[:500]
-        # 包含 post_id，供 shuiyuan_post_retort 使用（post_number≠post_id）
-        pid_str = f" post_id={pid}" if pid is not None else ""
-        thread_lines.append(f"[{pn}L]{pid_str} @{uname}: {raw}")
 
-    chat_rows = db.get_chat(username)
-    chat_lines: List[str] = []
-    for row in chat_rows[-20:]:
-        role = row.get("role", "user")
-        content = row.get("content", "")[:300]
-        chat_lines.append(f"[{role}]: {content}")
+    # 在前端层按业务语气拼装完整上下文 prompt，Core 视为普通 user 输入。
+    from .prompt import build_shuiyuan_prompt_from_context
 
-    ctx_user = ""
-    if username:
-        ctx_user += "## 当前对话用户\n\n"
-        ctx_user += f"- 水源用户名：@{username}\n\n"
-    if thread_lines:
-        ctx_user += "## 该楼最近帖子\n\n" + "\n".join(thread_lines) + "\n\n"
-    if chat_lines:
-        if username:
-            ctx_user += f"## 你与该用户（@{username}）的聊天历史（节选）\n\n"
-        else:
-            ctx_user += "## 你与该用户的聊天历史（节选）\n\n"
-        ctx_user += "\n".join(chat_lines) + "\n\n"
-    # 若已知触发楼层，补充该楼 post_id 供贴表情工具使用（post_number≠post_id，Retort API 需真实 post_id）
-    trigger_post_id: Optional[int] = None
-    if reply_to_post_id is not None:
-        trigger_post_id = int(reply_to_post_id)
-    elif reply_to_post_number is not None:
-        for p in posts:
-            pn = p.get("post_number")
-            if pn is not None and int(pn) == int(reply_to_post_number):
-                trigger_post_id = p.get("id")
-                if trigger_post_id is not None:
-                    trigger_post_id = int(trigger_post_id)
-                break
-    user_identity = f"（该楼作者用户名为 @{username}）" if username else ""
-    ctx_user += (
-        f"---\n用户 @了你，在当前话题 {topic_id}"
-        + (
-            f" 的第 {reply_to_post_number} 楼"
-            + (f"（post_id={trigger_post_id}）" if trigger_post_id is not None else "")
-            if reply_to_post_number is not None
-            else ""
-        )
-        + user_identity
-        + f"，说了：\n\n{user_message}\n\n请根据上文理解语境，直接输出你的回复正文（automation 层会自动发帖，不要调用发帖工具）。"
+    shuiyuan_ctx: dict = {
+        "username": username,
+        "topic_id": int(topic_id),
+        "reply_to_post_number": reply_to_post_number,
+        "reply_to_post_id": reply_to_post_id,
+        "topic_op": topic_op,
+        "thread_posts": posts,
+        # 旧版会话记忆（基于 ShuiyuanDB）已弃用，聊天上下文交由主 Agent 的
+        # ChatHistoryDB + 长期记忆系统统一管理，这里不再注入 chat_rows。
+    }
+    ctx_user = build_shuiyuan_prompt_from_context(
+        context=shuiyuan_ctx,
+        user_message=user_message,
     )
+
 
     # 优先通过 daemon IPC（per-user 受限 Core），不可用时回退到本地 Agent
     via_daemon = await _run_via_daemon(
@@ -290,6 +281,7 @@ async def run_shuiyuan_reply(
             session_logger=session_logger,
         ) as agent:
             agent_ref = agent
+            # 本地 fallback：与 daemon 路径一样，直接使用前端拼装好的 ctx_user。
             output = await agent.process_input(ctx_user)
             reply_text = (output or "").strip()
             if reply_text:

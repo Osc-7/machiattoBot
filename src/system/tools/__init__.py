@@ -272,20 +272,26 @@ def build_tool_registry(
     tools.extend(_build_schedule_tools(cfg))
     tools.extend(_build_file_tools(cfg))
     tools.extend(_build_command_tools(cfg))
-    tools.extend(
-        _build_memory_tools(
-            cfg,
-            memory_owner_id=memory_owner_id,
-            memory_source=memory_source or (profile.frontend_id if profile else None),
+
+    # 记忆与对话历史工具：
+    # - cron 模式下不注入，避免为每个 cron:{job} 创建独立 data/memory/cron:{job}/ 目录
+    # - 其余模式保持启用
+    profile_mode = getattr(profile, "mode", None)
+    if profile_mode != "cron":
+        tools.extend(
+            _build_memory_tools(
+                cfg,
+                memory_owner_id=memory_owner_id,
+                memory_source=memory_source or (profile.frontend_id if profile else None),
+            )
         )
-    )
-    tools.extend(
-        _build_chat_history_tools(
-            cfg,
-            memory_owner_id=memory_owner_id,
-            memory_source=memory_source or (profile.frontend_id if profile else None),
+        tools.extend(
+            _build_chat_history_tools(
+                cfg,
+                memory_owner_id=memory_owner_id,
+                memory_source=memory_source or (profile.frontend_id if profile else None),
+            )
         )
-    )
     tools.extend(_build_multimodal_tools(cfg))
     tools.extend(_build_canvas_tools(cfg))
     tools.extend(_build_shuiyuan_tools(cfg))

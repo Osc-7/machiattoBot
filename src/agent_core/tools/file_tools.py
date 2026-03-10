@@ -114,6 +114,7 @@ class ReadFileTool(BaseTool):
             return None, f"无效路径: {e}"
 
     async def execute(self, **kwargs) -> ToolResult:
+        exec_ctx = kwargs.pop("__execution_context__", None) or {}
         path_str = kwargs.get("path")
         if not path_str:
             return ToolResult(
@@ -132,6 +133,40 @@ class ReadFileTool(BaseTool):
         resolved, err = self._resolve_path(path_str)
         if err:
             return ToolResult(success=False, error="INVALID_PATH", message=err)
+
+        # 水源会话的修改路径白名单：仅允许修改本用户的长期记忆 MEMORY.md
+        source = (exec_ctx.get("source") or "").strip()
+        user_id = (exec_ctx.get("user_id") or "").strip()
+        if source == "shuiyuan" and user_id:
+            from agent_core.config import MemoryConfig  # 局部导入避免循环
+            from agent_core.agent.memory_paths import resolve_memory_owner_paths
+
+            mem_cfg: MemoryConfig = getattr(self._config, "memory", None) or MemoryConfig()
+            paths = resolve_memory_owner_paths(mem_cfg, user_id, config=self._config, source="shuiyuan")
+            allowed_memory_md = Path(paths["memory_md_path"]).resolve()
+            if resolved != allowed_memory_md:
+                return ToolResult(
+                    success=False,
+                    error="FORBIDDEN_PATH",
+                    message="水源会话仅允许修改本用户的长期记忆文件 MEMORY.md。",
+                )
+
+        # frontend 级别的路径白名单控制：水源会话只允许读取自己的长期记忆 MEMORY.md
+        source = (exec_ctx.get("source") or "").strip()
+        user_id = (exec_ctx.get("user_id") or "").strip()
+        if source == "shuiyuan" and user_id:
+            from agent_core.config import MemoryConfig  # 局部导入避免循环
+            from agent_core.agent.memory_paths import resolve_memory_owner_paths
+
+            mem_cfg: MemoryConfig = getattr(self._config, "memory", None) or MemoryConfig()
+            paths = resolve_memory_owner_paths(mem_cfg, user_id, config=self._config, source="shuiyuan")
+            allowed_memory_md = Path(paths["memory_md_path"]).resolve()
+            if resolved != allowed_memory_md:
+                return ToolResult(
+                    success=False,
+                    error="FORBIDDEN_PATH",
+                    message="水源会话仅允许读取本用户的长期记忆文件 MEMORY.md。",
+                )
 
         encoding = kwargs.get("encoding", "utf-8")
         start_line = kwargs.get("start_line")
@@ -343,6 +378,23 @@ class WriteFileTool(BaseTool):
         resolved, err = self._resolve_path(path_str)
         if err:
             return ToolResult(success=False, error="INVALID_PATH", message=err)
+
+        # 水源会话的写入路径白名单：仅允许写入本用户的长期记忆 MEMORY.md
+        source = (exec_ctx.get("source") or "").strip()
+        user_id = (exec_ctx.get("user_id") or "").strip()
+        if source == "shuiyuan" and user_id:
+            from agent_core.config import MemoryConfig  # 局部导入避免循环
+            from agent_core.agent.memory_paths import resolve_memory_owner_paths
+
+            mem_cfg: MemoryConfig = getattr(self._config, "memory", None) or MemoryConfig()
+            paths = resolve_memory_owner_paths(mem_cfg, user_id, config=self._config, source="shuiyuan")
+            allowed_memory_md = Path(paths["memory_md_path"]).resolve()
+            if resolved != allowed_memory_md:
+                return ToolResult(
+                    success=False,
+                    error="FORBIDDEN_PATH",
+                    message="水源会话仅允许写入本用户的长期记忆文件 MEMORY.md。",
+                )
 
         # 若有权限提供者，则调用确认
         if self._permission_provider:

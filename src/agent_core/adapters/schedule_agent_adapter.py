@@ -108,18 +108,21 @@ class ScheduleAgentAdapter:
         content_items: List[Dict[str, Any]],
         hooks: AgentHooks,
     ) -> AgentRunResult:
-        """新架构路径：通过 AgentKernel 驱动 run_loop()。"""
+        """新架构路径：通过 AgentKernel 驱动 run_loop()。
+        """
         from agent_core.memory import RecallResult
 
         await self._agent._sync_external_session_updates()
         self._agent._current_turn_id += 1
         turn_id = self._agent._current_turn_id
 
+        input_text = agent_input.text
+
         # 记忆检索
-        if self._agent._memory_enabled and self._agent._recall_policy.should_recall(agent_input.text):
+        if self._agent._memory_enabled and self._agent._recall_policy.should_recall(input_text):
             recall_result = await asyncio.to_thread(
                 self._agent._recall_policy.recall,
-                query=agent_input.text,
+                query=input_text,
                 long_term_memory=self._agent._long_term_memory,
                 content_memory=self._agent._content_memory,
             )
@@ -128,16 +131,16 @@ class ScheduleAgentAdapter:
             self._agent._last_recall_result = RecallResult()
 
         self._agent._context.add_user_message(
-            agent_input.text, media_items=content_items or None
+            input_text, media_items=content_items or None
         )
         self._agent._outgoing_attachments.clear()
         if self._agent._session_logger:
-            self._agent._session_logger.on_user_message(turn_id, agent_input.text)
+            self._agent._session_logger.on_user_message(turn_id, input_text)
         if self._agent._memory_enabled:
             msg_id = self._agent._chat_history_db.write_message(
                 session_id=self._agent._session_id,
                 role="user",
-                content=agent_input.text,
+                content=input_text,
                 source=self._agent._source,
             )
             self._agent._last_history_id = max(self._agent._last_history_id, int(msg_id))

@@ -38,8 +38,13 @@ def build_agent_system_prompt(agent: Any) -> str:
         parts: List[str] = []
         # long_term: recent_topics + MEMORY.md
         if "long_term" in scopes:
+            owner_id = None
+            if getattr(agent, "_source", "") == "shuiyuan":
+                # 水源多用户前端：按用户名拆分最近话题，避免不同源友的长期记忆串线
+                owner_id = getattr(agent, "_user_id", None)
             recent_topics = agent._long_term_memory.get_recent_topics(
-                agent._config.memory.recall_top_n
+                agent._config.memory.recall_top_n,
+                owner_id=owner_id,
             )
             if recent_topics:
                 parts.append("## 最近话题")

@@ -64,3 +64,4 @@ user_file/
 pictures/
 scripts/
 docs/
+!src/agent_core/prompts/loader.py

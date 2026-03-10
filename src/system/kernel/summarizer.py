@@ -117,14 +117,14 @@ class SessionSummarizer:
         )
 
         prompt = (
-            f"请用 2-4 句话概括以下对话的核心内容、达成的决定和待跟进事项。"
+            f"请完整概括以下对话的核心内容、达成的决定和待跟进事项。"
             f"对话共 {stats.turn_count} 轮，token 消耗 {stats.token_usage.get('total_tokens', 0)}。\n\n"
             f"{dialogue_text}"
         )
 
         try:
             response = await self._llm_client.chat(
-                system_message="你是一个高效的会话摘要助手，输出简洁的中文摘要。",
+                system_message="你是一个高效的会话摘要助手，输出详细的中文摘要。",
                 messages=[{"role": "user", "content": prompt}],
             )
             return response.content.strip() if response.content else self._fallback_summary(stats)

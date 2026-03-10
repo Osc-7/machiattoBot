@@ -719,11 +719,12 @@ class ScheduleAgent:
         else:
             kwargs = tool_call.arguments
 
-        # 注入执行上下文（供 run_command 等工具做 select mode 鉴权）
+        # 注入执行上下文（供 run_command/file_tools 等做来源/模式鉴权）
         kwargs = dict(kwargs)
         kwargs["__execution_context__"] = {
             "tool_mode": self._effective_tool_mode,
             "source": self._source,
+            "user_id": self._user_id,
         }
 
         # 执行工具

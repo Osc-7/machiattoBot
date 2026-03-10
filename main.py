@@ -297,10 +297,15 @@ async def main_async(args: Optional[List[str]] = None):
                 await ipc_client.close()
             return
 
-        # 直连模式（--local）：在当前进程内启动 ScheduleAgent，不连接 daemon
+        # 直连模式（--local）：在当前进程内启动 ScheduleAgent，不连接 daemon。
+        # 按 source 拆分 session 日志目录：logs/sessions/{source}/session-*.jsonl
         if config.logging.enable_session_log:
+            from pathlib import Path
+
+            base_dir = Path(config.logging.session_log_dir or "./logs/sessions")
+            log_dir = str(base_dir / source)
             session_logger = SessionLogger(
-                log_dir=config.logging.session_log_dir,
+                log_dir=log_dir,
                 enable_detailed_log=config.logging.enable_detailed_log,
                 max_system_prompt_log_len=config.logging.max_system_prompt_log_len,
             )
