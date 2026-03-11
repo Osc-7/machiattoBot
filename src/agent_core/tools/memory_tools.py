@@ -13,11 +13,7 @@
 
 from __future__ import annotations
 
-
-# from agent_core.memory import (
-#     ContentMemory,
-#     LongTermMemory,
-# )
+from agent_core.memory import ContentMemory, LongTermMemory
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 
