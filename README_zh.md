@@ -1,6 +1,6 @@
 # machiattoBot
 
-中文 | [English](README_EN.md)
+中文 | [English](README.md)
 
 
 一个基于 LLM 的人工智能助手，采用 **Tool-driven + Kernel 调度** 架构，强调可控、可扩展与长期运行稳定性。
@@ -152,5 +152,7 @@ python mcp_server.py
 如果要让 Agent 调用本地 MCP 工具，可在 `config.yaml` 配置 `mcp.servers`（stdio）。
 
 ---
+
+许可证：MIT
 
 开发规范见 [AGENTS.md](AGENTS.md)。

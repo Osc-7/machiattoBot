@@ -1,6 +1,6 @@
 # machiattoBot
 
-English | [中文](README_zh.md) 
+English | [中文](README_zh.md)
 
 
 An LLM-based assistant built with a **Tool-driven + Kernel scheduling** architecture, focused on control, extensibility, and long-running stability.
@@ -150,5 +150,7 @@ python mcp_server.py
 To enable local MCP tools, configure `mcp.servers` in `config.yaml` (stdio).
 
 ---
+
+License: MIT
 
 Development guidelines: [AGENTS.md](AGENTS.md).
