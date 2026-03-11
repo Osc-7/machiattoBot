@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agent_core.adapters import ScheduleAgentAdapter
+from agent_core.adapters import CoreSessionAdapter
 from agent_core.interfaces import AgentHooks, AgentRunInput
 
 
@@ -39,7 +39,7 @@ async def test_run_turn_forwards_callbacks_and_events():
     agent.get_token_usage = MagicMock(return_value={"total_tokens": 10})
     agent._session_id = "sess-1"
 
-    adapter = ScheduleAgentAdapter(agent)
+    adapter = CoreSessionAdapter(agent)
 
     stream_cb = AsyncMock()
     reasoning_cb = AsyncMock()
@@ -80,7 +80,7 @@ async def test_session_lifecycle_passthrough():
     agent.get_token_usage = MagicMock(return_value={"total_tokens": 5})
     agent._session_id = "sess-2"
 
-    adapter = ScheduleAgentAdapter(agent)
+    adapter = CoreSessionAdapter(agent)
 
     summary = await adapter.finalize_session()
     adapter.reset_session()
@@ -106,7 +106,7 @@ async def test_activate_session_passthrough():
     agent.get_token_usage = MagicMock(return_value={"total_tokens": 0})
     agent.activate_session = AsyncMock(return_value=None)
 
-    adapter = ScheduleAgentAdapter(agent)
+    adapter = CoreSessionAdapter(agent)
     await adapter.activate_session("cli:shared")
 
     agent.activate_session.assert_awaited_once_with(

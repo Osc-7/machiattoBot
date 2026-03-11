@@ -17,7 +17,7 @@ from typing import Any, List, Optional
 from agent_core.config import Config, get_config
 from frontend.shuiyuan_integration.reply import AUTO_REPLY_MARK
 
-from agent_core import ScheduleAgent
+from agent_core import AgentCore
 from agent_core.interfaces import AgentRunInput
 from agent_core.tools import (
     ShuiyuanGetTopicTool,
@@ -280,7 +280,7 @@ async def run_shuiyuan_reply(
     if extra_tools:
         tools.extend(extra_tools)
 
-    async with ScheduleAgent(
+    async with AgentCore(
         config=cfg,
         tools=tools,
         max_iterations=cfg.agent.max_iterations,

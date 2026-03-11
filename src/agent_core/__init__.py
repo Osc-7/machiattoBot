@@ -1,11 +1,11 @@
 """
 Agent Core — 核心执行层。
 
-包含 ScheduleAgent、LLM 客户端、工具系统、上下文管理、记忆系统、内核协议（action/loader）。
+包含 AgentCore、LLM 客户端、工具系统、上下文管理、记忆系统、内核协议（action/loader）。
 """
 
-from .agent.agent import ScheduleAgent
-from .adapters.schedule_agent_adapter import ScheduleAgentAdapter
+from .agent.agent import AgentCore
+from .adapters.core_session_adapter import CoreSessionAdapter
 from .context import ConversationContext, TimeContext, get_time_context
 from .interfaces import (
     AgentHooks,
@@ -34,8 +34,8 @@ from .kernel_interface import (
 )
 
 __all__ = [
-    "ScheduleAgent",
-    "ScheduleAgentAdapter",
+    "AgentCore",
+    "CoreSessionAdapter",
     "CoreSession",
     "CoreEvent",
     "AgentHooks",

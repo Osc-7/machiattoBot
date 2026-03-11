@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from agent_core.config import AgentConfig, Config, LLMConfig
-from agent_core.agent import ScheduleAgent
+from agent_core.agent import AgentCore
 from agent_core.llm import LLMResponse, ToolCall
 from agent_core.orchestrator import ToolWorkingSetManager
 from agent_core.tools import (
@@ -129,7 +129,7 @@ class TestAgentKernelMode:
             ),
         )
         hidden_tool = DummyTool(name="hidden_tool", description="隐藏能力测试")
-        agent = ScheduleAgent(config=config, tools=[hidden_tool], max_iterations=6)
+        agent = AgentCore(config=config, tools=[hidden_tool], max_iterations=6)
 
         responses = [
             LLMResponse(

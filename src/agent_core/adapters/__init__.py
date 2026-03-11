@@ -1,5 +1,5 @@
 """Core 适配器导出。"""
 
-from .schedule_agent_adapter import ScheduleAgentAdapter
+from .core_session_adapter import CoreSessionAdapter
 
-__all__ = ["ScheduleAgentAdapter"]
+__all__ = ["CoreSessionAdapter"]

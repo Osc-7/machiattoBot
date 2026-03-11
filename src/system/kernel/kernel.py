@@ -33,7 +33,7 @@ from agent_core.kernel_interface import (
 )
 
 if TYPE_CHECKING:
-    from agent_core.agent.agent import ScheduleAgent
+    from agent_core.agent.agent import AgentCore
 
     # VersionedToolRegistry 由 system.tools 统一导出，避免直接依赖 agent_core.tools 装配细节
     from system.tools import VersionedToolRegistry
@@ -71,7 +71,7 @@ class AgentKernel:
 
     async def run(
         self,
-        agent: "ScheduleAgent",
+        agent: "AgentCore",
         turn_id: int = 0,
         hooks: Optional[AgentHooks] = None,
         on_signal: Optional[Callable[[], None]] = None,
@@ -173,7 +173,7 @@ class AgentKernel:
                     output_text="", metadata={"error": "unknown_action"}
                 )
 
-    async def kill(self, agent: "ScheduleAgent") -> CoreStatsAction:
+    async def kill(self, agent: "AgentCore") -> CoreStatsAction:
         """
         向 Core 发出 Kill 指令，等待 CoreStatsAction 资源上报后返回。
 
@@ -210,7 +210,7 @@ class AgentKernel:
 
     async def _compress_context(
         self,
-        agent: "ScheduleAgent",
+        agent: "AgentCore",
         keep_recent_turns: int = 6,
     ) -> tuple[str, int]:
         """
@@ -255,7 +255,7 @@ class AgentKernel:
 
     @staticmethod
     async def _summarize_messages(
-        agent: "ScheduleAgent",
+        agent: "AgentCore",
         messages: list,
     ) -> str:
         """用 summary_llm_client 为旧消息生成摘要，失败时返回空字符串。"""

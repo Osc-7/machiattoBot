@@ -54,7 +54,7 @@ class AttachMediaTool(BaseTool):
 当你在推理中发现「需要查看某张截图/某个视频片段」时，使用本工具：
 - 提供位于工作区（通常是 user_file/ 目录）中的媒体路径
 - 工具不会直接调用多模态模型，只会在 metadata 中声明挂载请求
-- ScheduleAgent 的运行时会在**下一轮 LLM 调用前**自动把这些媒体嵌入到 messages 里
+- AgentCore 的运行时会在**下一轮 LLM 调用前**自动把这些媒体嵌入到 messages 里
 
 推荐用法：
 - 用户或其他工具先将文件保存到 user_file/ 目录

@@ -3,7 +3,7 @@ CoreLifecycleLogger — 以 Core 生命周期为单位的轻量日志。
 
 设计目标：
 - 以 Kernel/CorePool 为中心记录日志，而非前端/CLI 维度
-- 每个 Core（ScheduleAgent 实例）一个独立的 JSONL 文件
+- 每个 Core（AgentCore 实例）一个独立的 JSONL 文件
 - 命名方式与记忆库 owner 一致：session-{source}:{user_id}-YYYYmmdd_HHMMSS.jsonl
 
 记录范围（精简版）：

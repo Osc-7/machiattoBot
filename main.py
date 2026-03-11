@@ -6,7 +6,7 @@ Schedule Agent CLI 入口
 
 运行模式（由命令行参数决定）：
 - 默认：通过 UNIX socket 连接长驻 automation daemon；若 daemon 未运行则报错退出。
-- --local：在当前进程内直接启动 ScheduleAgent（直连模式），不依赖 daemon。
+- --local：在当前进程内直接启动 AgentCore（直连模式），不依赖 daemon。
 """
 
 import argparse
@@ -25,7 +25,7 @@ from system.automation import (
 from system.kernel import AgentKernel, CorePool, KernelScheduler, SessionSummarizer
 from agent_core.llm.client import LLMClient
 from system.tools import build_tool_registry
-from agent_core import ScheduleAgent, ScheduleAgentAdapter
+from agent_core import AgentCore, CoreSessionAdapter
 from agent_core.interfaces import AgentHooks, AgentRunInput
 from frontend.cli import run_interactive_loop
 from agent_core.tools import (
@@ -207,7 +207,7 @@ async def run_single_command(agent: Any, command: str) -> str:
     执行单条命令。
 
     Args:
-        agent: ScheduleAgent 实例
+        agent: AgentCore 实例
         command: 命令字符串
 
     Returns:
@@ -302,7 +302,7 @@ async def main_async(args: Optional[List[str]] = None):
                 await ipc_client.close()
             return
 
-        async with ScheduleAgent(
+        async with AgentCore(
             config=config,
             tools=tools,
             max_iterations=config.agent.max_iterations,
@@ -325,11 +325,11 @@ async def main_async(args: Optional[List[str]] = None):
             )
             scheduler_runtime = KernelScheduler(kernel=kernel, core_pool=core_pool)
             await scheduler_runtime.start()
-            core_session = ScheduleAgentAdapter(agent)
+            core_session = CoreSessionAdapter(agent)
 
-            async def _build_core_session(session_key: str) -> ScheduleAgentAdapter:
+            async def _build_core_session(session_key: str) -> CoreSessionAdapter:
                 # 新会话使用独立 Agent，确保多会话上下文隔离。
-                created_agent = ScheduleAgent(
+                created_agent = AgentCore(
                     config=config,
                     tools=tools,
                     max_iterations=config.agent.max_iterations,
@@ -339,7 +339,7 @@ async def main_async(args: Optional[List[str]] = None):
                     source=source,
                 )
                 await created_agent.__aenter__()
-                adapter = ScheduleAgentAdapter(created_agent)
+                adapter = CoreSessionAdapter(created_agent)
                 # 不在 factory 里调用 activate_session，由 gateway._create_session 根据
                 # is_expired 状态决定 replay_messages_limit，避免全量历史被错误加载。
                 return adapter

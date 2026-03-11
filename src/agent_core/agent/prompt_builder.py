@@ -1,4 +1,4 @@
-"""System prompt assembly for ScheduleAgent."""
+"""System prompt assembly for AgentCore."""
 
 from __future__ import annotations
 

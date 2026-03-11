@@ -65,7 +65,7 @@ if TYPE_CHECKING:
     from agent_core.utils.session_logger import SessionLogger
 
 
-class ScheduleAgent:
+class AgentCore:
     """
     日程管理 Agent。
 
@@ -1082,7 +1082,7 @@ class ScheduleAgent:
             raise RuntimeError("LongTermMemory is not initialized")
         return self._long_term_memory
 
-    async def __aenter__(self) -> "ScheduleAgent":
+    async def __aenter__(self) -> "AgentCore":
         """异步上下文管理器入口"""
         if self._config.mcp.enabled and not self._mcp_connected:
             self._config.mcp.servers = self._build_runtime_mcp_servers(

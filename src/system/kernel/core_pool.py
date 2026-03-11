@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 if TYPE_CHECKING:
     from agent_core.config import Config
-    from agent_core.agent.agent import ScheduleAgent
+    from agent_core.agent.agent import AgentCore
     from agent_core.tools import BaseTool
     from agent_core.kernel_interface import CoreProfile
     from .core_logger import CoreLifecycleLogger
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 class CoreEntry:
     """进程控制块（PCB）— 一个 AgentCore 实例的完整元数据。"""
 
-    agent: "ScheduleAgent"
+    agent: "AgentCore"
     profile: "CoreProfile"
     last_active_ts: float = field(default_factory=time.monotonic)
     session_start_ts: float = field(default_factory=time.monotonic)
@@ -106,13 +106,13 @@ class CorePool:
         user_id: str = "root",
         create_if_missing: bool = True,
         profile: Optional["CoreProfile"] = None,
-    ) -> "ScheduleAgent":
+    ) -> "AgentCore":
         """
         获取或创建指定 session 的 AgentCore。
 
         对同一 session_id 的并发 acquire 是安全的：
         内部使用 per-session Lock 保证只创建一次。
-        返回 ScheduleAgent 实例（不含 CoreEntry，调用方不需要感知 PCB 细节）。
+        返回 AgentCore 实例（不含 CoreEntry，调用方不需要感知 PCB 细节）。
         """
         if session_id in self._pool and profile is None:
             return self._pool[session_id].agent
@@ -330,7 +330,7 @@ class CorePool:
         2. elapsed = kernel_last_shutdown_at - last_active_at
            elapsed >= session_ttl → 超时，标记 expired=True 并跳过
            elapsed <  session_ttl → 恢复为活跃 Core：
-               - 通过 acquire() → _load() 重建 ScheduleAgent 并调用 restore_from_checkpoint
+               - 通过 acquire() → _load() 重建 AgentCore 并调用 restore_from_checkpoint
                - CoreEntry.last_active_ts = monotonic() - elapsed（TTL 从剩余时间继续计时）
 
         恢复后的 Core 完全交由现有 TTL 监控路径（scan_expired → evict）管理。
@@ -442,7 +442,7 @@ class CorePool:
         source: str = "cli",
         user_id: str = "root",
         profile: Optional["CoreProfile"] = None,
-    ) -> tuple["ScheduleAgent", "CoreProfile", Optional["CoreLifecycleLogger"]]:
+    ) -> tuple["AgentCore", "CoreProfile", Optional["CoreLifecycleLogger"]]:
         """
         Loader 职责：从 DB 加载记忆、创建并初始化 AgentCore。
 
@@ -454,7 +454,7 @@ class CorePool:
         则通过 restore_from_checkpoint 直接恢复 WorkingMemory 状态，
         跳过 activate_session 的 ChatHistoryDB 全量重放。
         """
-        from agent_core.agent.agent import ScheduleAgent
+        from agent_core.agent.agent import AgentCore
         from agent_core.agent.checkpoint import CoreCheckpointManager
         from agent_core.agent.memory_paths import resolve_memory_owner_paths
         from agent_core.kernel_interface import CoreProfile as _CoreProfile
@@ -494,7 +494,7 @@ class CorePool:
         # 但允许 CoreProfile（如 cron/heartbeat）按 Core 粒度关闭，避免创建一次性 owner 目录。
         memory_enabled = getattr(profile, "memory_enabled", True)
 
-        agent = ScheduleAgent(
+        agent = AgentCore(
             config=self._config,
             tools=tools,
             max_iterations=self._config.agent.max_iterations,

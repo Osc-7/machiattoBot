@@ -21,8 +21,8 @@ from agent_core.config import (
     MCPServerConfig,
 )
 from system.automation import AutomationCoreGateway
-from agent_core import ScheduleAgent
-from agent_core.adapters import ScheduleAgentAdapter
+from agent_core import AgentCore
+from agent_core.adapters import CoreSessionAdapter
 from agent_core.tools import BaseTool
 from frontend.cli.interactive import (
     print_help,
@@ -160,7 +160,7 @@ class TestRunSingleCommand:
     @pytest.fixture
     def mock_agent(self):
         """创建 Mock Agent"""
-        agent = MagicMock(spec=ScheduleAgent)
+        agent = MagicMock(spec=AgentCore)
         agent.process_input = AsyncMock(return_value="这是测试响应")
         return agent
 
@@ -188,7 +188,7 @@ class TestRunInteractiveLoop:
     @pytest.fixture
     def mock_agent(self):
         """创建 Mock Agent"""
-        agent = MagicMock(spec=ScheduleAgent)
+        agent = MagicMock(spec=AgentCore)
         agent.process_input = AsyncMock(return_value="这是测试响应")
         agent.clear_context = MagicMock()
         agent.get_token_usage = MagicMock(
@@ -448,7 +448,7 @@ class TestMainAsync:
     async def test_main_async_interactive_mode(self, mock_config):
         """测试交互模式"""
         with patch("main.get_config", return_value=mock_config):
-            with patch("main.ScheduleAgent") as MockAgent:
+            with patch("main.AgentCore") as MockAgent:
                 mock_agent_instance = MagicMock()
                 mock_agent_instance.__aenter__ = AsyncMock(
                     return_value=mock_agent_instance
@@ -466,7 +466,7 @@ class TestMainAsync:
                     mock_loop.assert_called_once()
                     wrapped = mock_loop.call_args.args[0]
                     assert isinstance(wrapped, AutomationCoreGateway)
-                    assert isinstance(wrapped.raw_core_session, ScheduleAgentAdapter)
+                    assert isinstance(wrapped.raw_core_session, CoreSessionAdapter)
                     assert wrapped.raw_core_session.raw_agent is mock_agent_instance
                 mock_agent_instance.finalize_session.assert_not_called()
 
@@ -474,7 +474,7 @@ class TestMainAsync:
     async def test_main_async_skip_finalize_on_sigint_exit(self, mock_config):
         """测试交互循环因 Ctrl+C 退出时不执行 finalize_session"""
         with patch("main.get_config", return_value=mock_config):
-            with patch("main.ScheduleAgent") as MockAgent:
+            with patch("main.AgentCore") as MockAgent:
                 mock_agent_instance = MagicMock()
                 mock_agent_instance.__aenter__ = AsyncMock(
                     return_value=mock_agent_instance
@@ -496,7 +496,7 @@ class TestMainAsync:
     async def test_main_async_single_command(self, mock_config):
         """测试单条命令模式"""
         with patch("main.get_config", return_value=mock_config):
-            with patch("main.ScheduleAgent") as MockAgent:
+            with patch("main.AgentCore") as MockAgent:
                 mock_agent_instance = MagicMock()
                 mock_agent_instance.__aenter__ = AsyncMock(
                     return_value=mock_agent_instance
@@ -534,7 +534,7 @@ class TestMainAsync:
             ),
         )
         with patch("main.get_config", return_value=mock_config):
-            # MCPClientManager 现在在 ScheduleAgent 内部处理
+            # MCPClientManager 现在在 AgentCore 内部处理
             with patch("agent_core.agent.agent.MCPClientManager") as MockMCPManager:
                 mock_mcp = MagicMock()
                 mock_mcp.connect = AsyncMock()
@@ -634,7 +634,7 @@ class TestCLIIntegration:
         from system.automation.core_gateway import AutomationCoreGateway
 
         with patch("main.get_config", return_value=mock_config):
-            with patch("main.ScheduleAgent") as MockAgent:
+            with patch("main.AgentCore") as MockAgent:
                 mock_agent = MagicMock()
                 mock_agent.__aenter__ = AsyncMock(return_value=mock_agent)
                 mock_agent.__aexit__ = AsyncMock()

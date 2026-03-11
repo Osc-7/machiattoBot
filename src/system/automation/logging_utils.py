@@ -76,7 +76,7 @@ class AutomationTaskLogger:
         )
 
     def log_trace_event(self, event: Dict[str, Any]) -> None:
-        """Record LLM/tool trace events from ScheduleAgent.on_trace_event."""
+        """Record LLM/tool trace events from AgentCore.on_trace_event."""
         etype = event.get("type")
         if etype == "tool_call":
             name = str(event.get("name") or "")

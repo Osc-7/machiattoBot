@@ -1,6 +1,6 @@
 """Session manager for queue-driven Agent execution.
 
-Manages ScheduleAgent instance lifecycles based on context_policy:
+Manages AgentCore instance lifecycles based on context_policy:
   - ephemeral:  New agent per task, destroyed after execution. No chat history persisted.
                 Suitable for automated/scheduled tasks.
   - persistent: Agent reused per session_id across tasks. LongTermMemory loaded on creation.
@@ -14,7 +14,7 @@ import logging
 from typing import Any, Callable, Dict, List, Optional
 
 from agent_core.config import Config, get_config
-from agent_core.adapters import ScheduleAgentAdapter
+from agent_core.adapters import CoreSessionAdapter
 from agent_core.interfaces import AgentHooks, AgentRunInput, CoreSession, RunTurnCommand
 from agent_core.tools import BaseTool
 
@@ -25,14 +25,14 @@ logger = logging.getLogger(__name__)
 
 # Lazy import to avoid circular dependency issues at module load time.
 def _import_schedule_agent():
-    from agent_core.agent import ScheduleAgent
+    from agent_core.agent import AgentCore
 
-    return ScheduleAgent
+    return AgentCore
 
 
 class SessionManager:
     """
-    按 session_id 隔离 ScheduleAgent 实例。
+    按 session_id 隔离 AgentCore 实例。
 
     Usage::
 
@@ -96,9 +96,9 @@ class SessionManager:
     # ------------------------------------------------------------------
 
     def _create_agent(self):
-        ScheduleAgent = _import_schedule_agent()
+        AgentCore = _import_schedule_agent()
         tools = self._tools_factory() if self._tools_factory else []
-        agent = ScheduleAgent(
+        agent = AgentCore(
             config=self._config,
             tools=tools,
             max_iterations=self._config.agent.max_iterations,
@@ -107,7 +107,7 @@ class SessionManager:
         return agent
 
     def _create_session(self) -> CoreSession:
-        return ScheduleAgentAdapter(self._create_agent())
+        return CoreSessionAdapter(self._create_agent())
 
     async def _run_ephemeral(
         self,

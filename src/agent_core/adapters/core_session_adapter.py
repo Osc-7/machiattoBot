@@ -1,4 +1,4 @@
-"""ScheduleAgent 到 CoreSession 的适配器。"""
+"""AgentCore 到 CoreSession 的适配器。"""
 
 from __future__ import annotations
 
@@ -20,9 +20,9 @@ from system.kernel import AgentKernel
 logger = logging.getLogger(__name__)
 
 
-class ScheduleAgentAdapter:
+class CoreSessionAdapter:
     """
-    将现有 ScheduleAgent 映射为稳定 CoreSession 接口。
+    将现有 AgentCore 映射为稳定 CoreSession 接口。
 
     run_turn() 通过 AgentKernel 驱动 agent.run_loop()：
     - AgentCore 直接持有 LLMClient，在 run_loop() 内自旋完成多轮 LLM 推理（无 Kernel 中介）
@@ -72,7 +72,7 @@ class ScheduleAgentAdapter:
                     agent_input, content_items, wrapped_hooks
                 )
             else:
-                # 兼容路径：回退到 process_input()（用于 mock/非 ScheduleAgent 场景）
+                # 兼容路径：回退到 process_input()（用于 mock/非 AgentCore 场景）
                 run_result = await self._run_via_process_input(
                     agent_input, content_items, wrapped_hooks
                 )
@@ -102,7 +102,7 @@ class ScheduleAgentAdapter:
             raise
 
     def _is_kernel_compatible(self) -> bool:
-        """判断底层 agent 是否支持新的 Kernel 接口（真实 ScheduleAgent，而非 mock）。"""
+        """判断底层 agent 是否支持新的 Kernel 接口（真实 AgentCore，而非 mock）。"""
         # 检查 _current_turn_id 是否为真实整数（MagicMock 属性不会是 int）
         turn_id = getattr(self._agent, "_current_turn_id", None)
         return (
@@ -185,7 +185,7 @@ class ScheduleAgentAdapter:
         content_items: List[Dict[str, Any]],
         hooks: AgentHooks,
     ) -> AgentRunResult:
-        """兼容路径：通过 process_input() 运行（支持 mock/非 ScheduleAgent）。"""
+        """兼容路径：通过 process_input() 运行（支持 mock/非 AgentCore）。"""
 
         async def on_stream_delta(delta: str) -> None:
             if hooks.on_assistant_delta:

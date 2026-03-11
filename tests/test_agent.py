@@ -1,7 +1,7 @@
 """
 Agent 测试用例
 
-测试 ScheduleAgent 的核心功能。
+测试 AgentCore 的核心功能。
 """
 
 from typing import Any, Dict, Optional
@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from agent_core.config import AgentConfig, Config, LLMConfig
-from agent_core.agent import ScheduleAgent
+from agent_core.agent import AgentCore
 from agent_core.context import ConversationContext
 from agent_core.llm import LLMResponse, ToolCall
 from agent_core.tools import BaseTool, ToolDefinition, ToolParameter, ToolResult
@@ -94,7 +94,7 @@ def mock_tools():
 @pytest.fixture
 def agent(mock_config, mock_tools):
     """创建 Agent 实例"""
-    return ScheduleAgent(
+    return AgentCore(
         config=mock_config,
         tools=mock_tools,
         max_iterations=5,
@@ -104,12 +104,12 @@ def agent(mock_config, mock_tools):
 # ============== 初始化测试 ==============
 
 
-class TestScheduleAgentInit:
+class TestAgentCoreInit:
     """测试 Agent 初始化"""
 
     def test_init_with_config(self, mock_config, mock_tools):
         """测试使用配置初始化"""
-        agent = ScheduleAgent(
+        agent = AgentCore(
             config=mock_config,
             tools=mock_tools,
             max_iterations=10,
@@ -124,7 +124,7 @@ class TestScheduleAgentInit:
 
     def test_init_without_tools(self, mock_config):
         """测试不传入工具时初始化"""
-        agent = ScheduleAgent(config=mock_config)
+        agent = AgentCore(config=mock_config)
 
         # 3 chat history tools（select 模式）
         assert len(agent.tool_registry) == 3
@@ -396,7 +396,7 @@ class TestProcessInput:
                 metadata={"embed_in_next_call": True},
             ),
         )
-        agent = ScheduleAgent(config=mock_config, tools=[media_tool], max_iterations=5)
+        agent = AgentCore(config=mock_config, tools=[media_tool], max_iterations=5)
 
         response1 = LLMResponse(
             content=None,
@@ -444,7 +444,7 @@ class TestProcessInput:
                 metadata={},
             ),
         )
-        agent = ScheduleAgent(config=mock_config, tools=[plain_tool], max_iterations=5)
+        agent = AgentCore(config=mock_config, tools=[plain_tool], max_iterations=5)
 
         response1 = LLMResponse(
             content=None,
@@ -527,7 +527,7 @@ class TestProcessInput:
         )
 
         tool = MockTool(name="tool_a")
-        agent = ScheduleAgent(
+        agent = AgentCore(
             config=mock_config,
             tools=[tool],
             max_iterations=3,
@@ -571,9 +571,9 @@ class TestAsyncContextManager:
     @pytest.mark.asyncio
     async def test_async_context_manager(self, mock_config):
         """测试异步上下文管理器"""
-        async with ScheduleAgent(config=mock_config) as agent:
+        async with AgentCore(config=mock_config) as agent:
             assert agent is not None
-            assert isinstance(agent, ScheduleAgent)
+            assert isinstance(agent, AgentCore)
         # 退出时应该调用 close
 
     @pytest.mark.asyncio
@@ -602,7 +602,7 @@ class TestAgentIntegration:
             ),
         )
 
-        agent = ScheduleAgent(
+        agent = AgentCore(
             config=mock_config,
             tools=[tool],
         )
@@ -641,7 +641,7 @@ class TestAgentIntegration:
     @pytest.mark.asyncio
     async def test_multi_turn_conversation(self, mock_config):
         """测试多轮对话"""
-        agent = ScheduleAgent(config=mock_config)
+        agent = AgentCore(config=mock_config)
 
         responses = [
             LLMResponse(content="你好！我是日程助手。", tool_calls=[]),
@@ -668,7 +668,7 @@ class TestAgentIntegration:
         self, mock_config
     ):
         """跨窗口同步到新增消息后，应让阈值判断基于当前上下文重估。"""
-        agent = ScheduleAgent(config=mock_config, source="cli", user_id="root")
+        agent = AgentCore(config=mock_config, source="cli", user_id="root")
         await agent.activate_session("cli:shared")
         # 模拟另一窗口写入了同一 session 的新增消息
         agent._chat_history_db.write_message(
@@ -699,7 +699,7 @@ class TestAgentIntegration:
         self, mock_config
     ):
         """当有历史且 replay_messages_limit=0 时，不应触发索引异常。"""
-        agent = ScheduleAgent(config=mock_config, source="cli", user_id="root")
+        agent = AgentCore(config=mock_config, source="cli", user_id="root")
         sid = "cli:replay-zero"
         agent._chat_history_db.write_message(
             session_id=sid, role="user", content="u1", source="cli"

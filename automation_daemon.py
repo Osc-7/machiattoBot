@@ -31,7 +31,7 @@ from system.automation.agent_task import TaskStatus
 from system.automation.logging_utils import AutomationTaskLogger
 from system.automation.repositories import JobDefinitionRepository, JobRunRepository
 from agent_core.config import get_config
-from agent_core import ScheduleAgent, ScheduleAgentAdapter
+from agent_core import AgentCore, CoreSessionAdapter
 from agent_core.interfaces import AgentHooks
 from system.kernel import (
     AgentKernel,
@@ -274,7 +274,7 @@ async def _main() -> None:
     )
 
     # IPC core session and gateway (interactive frontends)
-    async with ScheduleAgent(
+    async with AgentCore(
         config=cfg,
         tools=tools,
         max_iterations=cfg.agent.max_iterations,
@@ -284,10 +284,10 @@ async def _main() -> None:
         session_logger=None,
         defer_mcp_connect=True,
     ) as core_agent:
-        core_adapter = ScheduleAgentAdapter(core_agent)
+        core_adapter = CoreSessionAdapter(core_agent)
 
-        async def _session_factory(session_key: str) -> ScheduleAgentAdapter:
-            created_agent = ScheduleAgent(
+        async def _session_factory(session_key: str) -> CoreSessionAdapter:
+            created_agent = AgentCore(
                 config=cfg,
                 tools=tools,
                 max_iterations=cfg.agent.max_iterations,
@@ -298,7 +298,7 @@ async def _main() -> None:
                 defer_mcp_connect=True,
             )
             await created_agent.__aenter__()
-            adapter = ScheduleAgentAdapter(created_agent)
+            adapter = CoreSessionAdapter(created_agent)
             # 不在 factory 里调用 activate_session，由 gateway._create_session 根据
             # is_expired 状态决定 replay_messages_limit，避免全量历史被错误加载。
             return adapter

@@ -6,7 +6,7 @@ InternalLoader — 在每次 LLM 调用前，动态组装完整的请求 Payload
 
 职责边界：
 - 只做数据组装，不做任何网络 IO
-- 从 AgentCore 的公开属性读取状态，避免与 ScheduleAgent 强耦合
+- 从 AgentCore 的公开属性读取状态，避免与 AgentCore 强耦合
 - 由 AgentCore.run_loop() 在每次直接调用 LLM 前使用
 """
 
@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List
 
 if TYPE_CHECKING:
-    from agent_core.agent.agent import ScheduleAgent
+    from agent_core.agent.agent import AgentCore
 
 
 def _strip_orphan_tool_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -57,7 +57,7 @@ class InternalLoader:
     打包成一次完整的 LLM 请求。
     """
 
-    def assemble(self, agent: "ScheduleAgent") -> LLMPayload:
+    def assemble(self, agent: "AgentCore") -> LLMPayload:
         """
         从 AgentCore 状态动态组装 LLMPayload。
 
