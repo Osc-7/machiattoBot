@@ -44,7 +44,9 @@ class CoreEntry:
 
     def is_expired(self) -> bool:
         """根据 profile.session_expired_seconds 判断是否超时。"""
-        return (time.monotonic() - self.last_active_ts) > self.profile.session_expired_seconds
+        return (
+            time.monotonic() - self.last_active_ts
+        ) > self.profile.session_expired_seconds
 
     def touch(self) -> None:
         """刷新最近活跃时间。"""
@@ -82,9 +84,11 @@ class CorePool:
         from agent_core.config import get_config
 
         self._config = config or get_config()
-        self._tools_factory = tools_factory  # 已弃用，优先使用 system.tools.build_tool_registry
+        self._tools_factory = (
+            tools_factory  # 已弃用，优先使用 system.tools.build_tool_registry
+        )
         self._max_sessions = max_sessions
-        self._kernel = kernel       # AgentKernel 实例，用于 kill()
+        self._kernel = kernel  # AgentKernel 实例，用于 kill()
         self._summarizer = summarizer  # SessionSummarizer 实例，用于摘要持久化
         self._session_logger = session_logger  # 旧版 SessionLogger（将逐步废弃）
         # session_id → CoreEntry
@@ -136,7 +140,11 @@ class CorePool:
                 profile=entry_profile,
                 logger=core_logger,
             )
-            logger.debug("CorePool: loaded session %s (pool_size=%d)", session_id, len(self._pool))
+            logger.debug(
+                "CorePool: loaded session %s (pool_size=%d)",
+                session_id,
+                len(self._pool),
+            )
             return agent
 
     def touch(self, session_id: str) -> None:
@@ -180,7 +188,9 @@ class CorePool:
             try:
                 core_stats = await self._kernel.kill(agent)
             except Exception as exc:
-                logger.warning("CorePool: kernel.kill failed (session=%s): %s", session_id, exc)
+                logger.warning(
+                    "CorePool: kernel.kill failed (session=%s): %s", session_id, exc
+                )
         else:
             # 向后兼容：无 kernel 时走旧的 finalize_session
             try:
@@ -190,7 +200,11 @@ class CorePool:
                     if asyncio.isfuture(result) or asyncio.iscoroutine(result):
                         await result
             except Exception as exc:
-                logger.warning("CorePool: finalize_session failed (session=%s): %s", session_id, exc)
+                logger.warning(
+                    "CorePool: finalize_session failed (session=%s): %s",
+                    session_id,
+                    exc,
+                )
 
         # ── Step 2: summarize — 写入长期记忆 ───────────────────────────────
         # background 模式（包含历史上的 cron/heartbeat）不持久化摘要到长期记忆，
@@ -200,7 +214,9 @@ class CorePool:
             try:
                 long_term_memory = None
                 profile_mode = getattr(getattr(entry, "profile", None), "mode", None)
-                if profile_mode != "background" and not (session_id or "").startswith("cron:"):
+                if profile_mode != "background" and not (session_id or "").startswith(
+                    "cron:"
+                ):
                     long_term_memory = getattr(agent, "_long_term_memory", None)
                 messages = None
                 ctx = getattr(agent, "_context", None)
@@ -216,7 +232,9 @@ class CorePool:
                     owner_id=owner_id,
                 )
             except Exception as exc:
-                logger.warning("CorePool: summarizer failed (session=%s): %s", session_id, exc)
+                logger.warning(
+                    "CorePool: summarizer failed (session=%s): %s", session_id, exc
+                )
 
         # ── Step 3: close — 释放资源 ───────────────────────────────────────
         try:
@@ -238,7 +256,9 @@ class CorePool:
                     exc,
                 )
             else:
-                logger.warning("CorePool: close failed (session=%s): %s", session_id, exc)
+                logger.warning(
+                    "CorePool: close failed (session=%s): %s", session_id, exc
+                )
         except Exception as exc:
             logger.warning("CorePool: close failed (session=%s): %s", session_id, exc)
 
@@ -299,8 +319,12 @@ class CorePool:
                 profile = _CoreProfile.default_full(
                     frontend_id=source,
                     dialog_window_id=user_id,
-                    max_context_tokens=getattr(self._config.agent, "max_context_tokens", 80_000),
-                    session_expired_seconds=getattr(self._config.agent, "session_expired_seconds", 1_800),
+                    max_context_tokens=getattr(
+                        self._config.agent, "max_context_tokens", 80_000
+                    ),
+                    session_expired_seconds=getattr(
+                        self._config.agent, "session_expired_seconds", 1_800
+                    ),
                 )
 
         # 优先使用 system.tools.build_tool_registry，与 Kernel/MCP 工具装配一致
@@ -335,7 +359,11 @@ class CorePool:
         core_logger: Optional[CoreLifecycleLogger]
         try:
             log_cfg = getattr(self._config, "logging", None)
-            log_dir = getattr(log_cfg, "session_log_dir", "./logs/sessions") if log_cfg else "./logs/sessions"
+            log_dir = (
+                getattr(log_cfg, "session_log_dir", "./logs/sessions")
+                if log_cfg
+                else "./logs/sessions"
+            )
             core_logger = CoreLifecycleLogger(
                 base_dir=log_dir,
                 source=source,

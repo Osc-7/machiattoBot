@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Tuple
 # 按单次请求的输入 Token 数分档
 _TIERED_PRICES: Dict[str, List[Tuple[int, float, float]]] = {
     "qwen3.5-plus": [
-        (128_000, 0.8, 4.8),   # 0 < input ≤ 128K
+        (128_000, 0.8, 4.8),  # 0 < input ≤ 128K
         (256_000, 2.0, 12.0),  # 128K < input ≤ 256K
         (1_000_000, 4.0, 24.0),  # 256K < input ≤ 1M
     ],
@@ -36,7 +36,9 @@ _FLAT_PRICES: Dict[str, Tuple[float, float]] = {
 }
 
 
-def _get_tier_prices(prompt_tokens: int, tiers: List[Tuple[int, float, float]]) -> Tuple[float, float]:
+def _get_tier_prices(
+    prompt_tokens: int, tiers: List[Tuple[int, float, float]]
+) -> Tuple[float, float]:
     """根据单次请求的输入 token 数获取对应阶梯单价"""
     for limit, inp, out in tiers:
         if prompt_tokens <= limit:
@@ -45,7 +47,9 @@ def _get_tier_prices(prompt_tokens: int, tiers: List[Tuple[int, float, float]]) 
     return (tiers[-1][1], tiers[-1][2])
 
 
-def _compute_cost_per_call(prompt_tokens: int, completion_tokens: int, model: str) -> Optional[float]:
+def _compute_cost_per_call(
+    prompt_tokens: int, completion_tokens: int, model: str
+) -> Optional[float]:
     """
     单次调用的阶梯计费。
 
@@ -61,7 +65,9 @@ def _compute_cost_per_call(prompt_tokens: int, completion_tokens: int, model: st
     tiers = _TIERED_PRICES.get(key)
     if tiers:
         inp_p, out_p = _get_tier_prices(prompt_tokens, tiers)
-        cost = (prompt_tokens / 1_000_000 * inp_p) + (completion_tokens / 1_000_000 * out_p)
+        cost = (prompt_tokens / 1_000_000 * inp_p) + (
+            completion_tokens / 1_000_000 * out_p
+        )
         return round(cost, 6)
 
     # 无阶梯模型

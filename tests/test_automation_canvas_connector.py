@@ -21,7 +21,9 @@ class _FakeCanvasClient:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
-    async def get_upcoming_assignments(self, days: int, include_submitted: bool = False):
+    async def get_upcoming_assignments(
+        self, days: int, include_submitted: bool = False
+    ):
         due = datetime.now(timezone.utc) + timedelta(days=2)
         return [
             CanvasAssignment(
@@ -54,7 +56,9 @@ class _FakeCanvasClient:
 @pytest.mark.asyncio
 async def test_canvas_connector_fetch_generates_task_and_events():
     connector = CanvasConnector(
-        canvas_config=CanvasConfig(api_key="x" * 24, base_url="https://canvas.example/api/v1"),
+        canvas_config=CanvasConfig(
+            api_key="x" * 24, base_url="https://canvas.example/api/v1"
+        ),
         client_factory=_FakeCanvasClient,
     )
 

@@ -7,6 +7,7 @@ CLI 输出样式
 import shutil
 import sys
 from typing import Optional
+import datetime
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -103,9 +104,6 @@ def _format_token_count(n: int) -> str:
         return f"{n / 1000:.1f}k"
     return f"{n:,}"
 
-import datetime
-
-
 
 def status_bar(
     total_tokens: int,
@@ -126,10 +124,12 @@ def status_bar(
     cost_part = f" · ¥{cost_yuan:.4f}" if cost_yuan is not None else ""
     info = f" tokens: {total_str}{delta_part}{cost_part} · calls: {call_count} │ "
 
-
     # 当前时刻，短格式（24小时制，Asia/Shanghai）
     import zoneinfo
-    time_str = datetime.datetime.now(zoneinfo.ZoneInfo("Asia/Shanghai")).strftime("%H:%M:%S")
+
+    time_str = datetime.datetime.now(zoneinfo.ZoneInfo("Asia/Shanghai")).strftime(
+        "%H:%M:%S"
+    )
 
     w = _term_width()
     min_right_space = 3

@@ -125,7 +125,11 @@ def get_shuiyuan_client_from_config(
     # 1. 优先使用配置中的 user_api_keys 列表
     keys: List[str] = []
     if getattr(cfg, "user_api_keys", None):
-        keys = [k.strip() for k in cfg.user_api_keys if k and isinstance(k, str) and k.strip()]
+        keys = [
+            k.strip()
+            for k in cfg.user_api_keys
+            if k and isinstance(k, str) and k.strip()
+        ]
 
     # 2. 回退到单个 user_api_key / 环境变量
     if not keys:

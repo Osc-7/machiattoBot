@@ -1,12 +1,4 @@
 from __future__ import annotations
-
-"""
-Automation IPC Bridge for Feishu.
-
-封装 AutomationIPCClient，提供面向飞书前端的简单消息发送接口。
-支持斜杠指令（/clear、/usage、/session、/help）与 CLI 对齐。
-"""
-
 import logging
 from typing import Any, Dict, Optional
 
@@ -15,6 +7,14 @@ from agent_core.interfaces import AgentHooks, AgentRunInput, AgentRunResult
 
 from .client import FeishuClient
 from .slash_commands import try_handle_slash_command
+
+"""
+Automation IPC Bridge for Feishu.
+
+封装 AutomationIPCClient，提供面向飞书前端的简单消息发送接口。
+支持斜杠指令（/clear、/usage、/session、/help）与 CLI 对齐。
+"""
+
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,9 @@ class FeishuIPCBridge:
             try:
                 await feishu_client.send_text_message(chat_id=chat_id, text=text_out)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("failed to send feishu intermediate assistant message: %s", exc)
+                logger.warning(
+                    "failed to send feishu intermediate assistant message: %s", exc
+                )
             finally:
                 assistant_buffer = ""
 
@@ -158,4 +160,3 @@ class FeishuIPCBridge:
         )
         result = await client.run_turn(agent_input, hooks=hooks)
         return result
-

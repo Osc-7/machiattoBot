@@ -128,7 +128,9 @@ class ConversationContext:
             system_messages = [m for m in self.messages if m.get("role") == "system"]
             other_messages = [m for m in self.messages if m.get("role") != "system"]
             keep_count = self.max_messages - len(system_messages)
-            other_messages = self._trim_preserving_tool_blocks(other_messages, keep_count)
+            other_messages = self._trim_preserving_tool_blocks(
+                other_messages, keep_count
+            )
             self.messages = system_messages + other_messages
 
     @staticmethod
@@ -165,6 +167,7 @@ class ConversationContext:
             else:
                 blocks.append([m])
                 i += 1
+
         def _is_incomplete_block(block: List[Dict[str, Any]]) -> bool:
             """assistant+tool_calls 后必须有 tool 消息，否则为不完整块"""
             first = block[0] if block else {}

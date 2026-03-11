@@ -28,4 +28,3 @@ class TestFeishuMarkdownFilter:
 
         # 最多允许 2 个连续空行
         assert "\n\n\n" not in out
-

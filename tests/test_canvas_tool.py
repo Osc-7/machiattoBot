@@ -156,7 +156,9 @@ async def test_sync_canvas_success_creates_task_and_deadline(monkeypatch, tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_sync_canvas_submitted_marks_task_and_event_completed(monkeypatch, tmp_path):
+async def test_sync_canvas_submitted_marks_task_and_event_completed(
+    monkeypatch, tmp_path
+):
     class _SubmittedCanvasSync(_FakeCanvasSync):
         async def sync_to_schedule(self, days_ahead=60, include_submitted=False):
             if self.event_creator:
@@ -193,7 +195,9 @@ async def test_sync_canvas_submitted_marks_task_and_event_completed(monkeypatch,
 
     monkeypatch.setattr("agent_core.tools.canvas_tools.CanvasConfig", _FakeCanvasConfig)
     monkeypatch.setattr("agent_core.tools.canvas_tools.CanvasClient", _FakeCanvasClient)
-    monkeypatch.setattr("agent_core.tools.canvas_tools.CanvasSync", _SubmittedCanvasSync)
+    monkeypatch.setattr(
+        "agent_core.tools.canvas_tools.CanvasSync", _SubmittedCanvasSync
+    )
 
     result = await tool.execute(include_submitted=True)
     assert result.success is True
@@ -209,7 +213,9 @@ async def test_fetch_canvas_overview_success(monkeypatch, tmp_path):
     """FetchCanvasOverviewTool returns structured overview data."""
 
     class _FakeOverviewCanvasClient(_FakeCanvasClient):
-        async def get_upcoming_assignments(self, days: int = 60, include_submitted: bool = False):
+        async def get_upcoming_assignments(
+            self, days: int = 60, include_submitted: bool = False
+        ):
             from frontend.canvas_integration.models import CanvasAssignment
 
             return [
@@ -262,7 +268,9 @@ async def test_fetch_canvas_overview_success(monkeypatch, tmp_path):
     tool = FetchCanvasOverviewTool(config=config)
 
     monkeypatch.setattr("agent_core.tools.canvas_tools.CanvasConfig", _FakeCanvasConfig)
-    monkeypatch.setattr("agent_core.tools.canvas_tools.CanvasClient", _FakeOverviewCanvasClient)
+    monkeypatch.setattr(
+        "agent_core.tools.canvas_tools.CanvasClient", _FakeOverviewCanvasClient
+    )
 
     result = await tool.execute(days_ahead=7, include_submitted=True)
     assert result.success is True

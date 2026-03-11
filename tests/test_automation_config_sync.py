@@ -44,7 +44,9 @@ def test_sync_supports_one_shot_run_at(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_sync_creates_and_disables_config_jobs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_sync_creates_and_disables_config_jobs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """config.jobs 新增/删除时，应创建或禁用对应的 job-config-* 任务，而不影响其他任务。"""
 
     # 使用独立的数据目录，避免污染真实数据
@@ -55,7 +57,11 @@ async def test_sync_creates_and_disables_config_jobs(tmp_path: Path, monkeypatch
     repo = JobDefinitionRepository(base_dir=str(data_dir))
 
     # 先准备一个非 config 来源的任务，后续不应被 sync 影响
-    manual_job = JobDefinition(job_type="agent.custom", enabled=True, payload_template={"name": "manual", "user_id": "default"})
+    manual_job = JobDefinition(
+        job_type="agent.custom",
+        enabled=True,
+        payload_template={"name": "manual", "user_id": "default"},
+    )
     repo.create(manual_job)
 
     # 第一次：config 里声明两个任务

@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 class EventStatus(str, Enum):
     """事件状态"""
+
     SCHEDULED = "scheduled"  # 已安排
     IN_PROGRESS = "in_progress"  # 进行中
     COMPLETED = "completed"  # 已完成
@@ -22,6 +23,7 @@ class EventStatus(str, Enum):
 
 class EventPriority(str, Enum):
     """事件优先级"""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -59,8 +61,7 @@ class Event(BaseModel):
     priority: EventPriority = Field(default=EventPriority.MEDIUM, description="优先级")
     tags: list[str] = Field(default_factory=list, description="标签列表")
     reminders: list[int] = Field(
-        default_factory=list,
-        description="提醒时间列表（分钟为单位）"
+        default_factory=list, description="提醒时间列表（分钟为单位）"
     )
     source: Literal["user", "canvas", "planner", "course_import", "system"] = Field(
         default="user",
@@ -93,18 +94,10 @@ class Event(BaseModel):
         default_factory=dict,
         description="附加元数据",
     )
-    created_at: datetime = Field(
-        default_factory=datetime.now,
-        description="创建时间"
-    )
-    updated_at: datetime = Field(
-        default_factory=datetime.now,
-        description="更新时间"
-    )
+    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
+    updated_at: datetime = Field(default_factory=datetime.now, description="更新时间")
 
-    model_config = ConfigDict(
-        json_encoders={datetime: lambda v: v.isoformat()}
-    )
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
     def update_timestamp(self) -> None:
         """更新修改时间"""
@@ -138,14 +131,16 @@ class Event(BaseModel):
             是否存在时间冲突
         """
         # 如果任一事件已取消，则不算冲突
-        if self.status == EventStatus.CANCELLED or other.status == EventStatus.CANCELLED:
+        if (
+            self.status == EventStatus.CANCELLED
+            or other.status == EventStatus.CANCELLED
+        ):
             return False
 
         # 使用时间戳比较，避免 offset-naive 与 offset-aware 混合比较报错
-        return (
-            self._to_timestamp(self.start_time) < self._to_timestamp(other.end_time)
-            and self._to_timestamp(self.end_time) > self._to_timestamp(other.start_time)
-        )
+        return self._to_timestamp(self.start_time) < self._to_timestamp(
+            other.end_time
+        ) and self._to_timestamp(self.end_time) > self._to_timestamp(other.start_time)
 
     def __str__(self) -> str:
         """字符串表示"""

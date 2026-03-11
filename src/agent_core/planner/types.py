@@ -34,4 +34,3 @@ class PlannerResult:
     unplanned_items: list[PlannerUnplannedItem]
     window_start: Optional[datetime] = None
     window_end: Optional[datetime] = None
-

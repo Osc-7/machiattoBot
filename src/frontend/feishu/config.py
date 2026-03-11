@@ -1,14 +1,12 @@
 from __future__ import annotations
+from typing import Optional
+from agent_core.config import Config, FeishuConfig, get_config
 
 """
 飞书配置读取封装。
 
 从全局 Config 中提取 FeishuConfig，供前端接入模块复用。
 """
-
-from typing import Optional
-
-from agent_core.config import Config, FeishuConfig, get_config
 
 
 def get_feishu_config(config: Optional[Config] = None) -> FeishuConfig:
@@ -19,4 +17,3 @@ def get_feishu_config(config: Optional[Config] = None) -> FeishuConfig:
     """
     cfg = config or get_config()
     return cfg.feishu
-

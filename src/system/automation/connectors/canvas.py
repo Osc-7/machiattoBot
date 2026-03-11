@@ -43,16 +43,15 @@ class CanvasConnector(BaseConnector):
 
         enabled = bool(config and config.canvas.enabled)
         api_key = (
-            (config.canvas.api_key if config and config.canvas.api_key else None)
-            or os.getenv("CANVAS_API_KEY")
-        )
+            config.canvas.api_key if config and config.canvas.api_key else None
+        ) or os.getenv("CANVAS_API_KEY")
         base_url = (
             (config.canvas.base_url if config else None)
             or os.getenv("CANVAS_BASE_URL")
             or "https://oc.sjtu.edu.cn/api/v1"
         )
-        days_ahead = (config.canvas.default_days_ahead if config else 60)
-        include_submitted = (config.canvas.include_submitted if config else False)
+        days_ahead = config.canvas.default_days_ahead if config else 60
+        include_submitted = config.canvas.include_submitted if config else False
 
         canvas_config = None
         if enabled and api_key:
@@ -64,11 +63,17 @@ class CanvasConnector(BaseConnector):
             include_submitted=include_submitted,
         )
 
-    async def fetch(self, since_cursor: Optional[str], account_id: str = "default") -> ConnectorFetchResult:
-        del since_cursor  # Canvas API currently uses time windows, not cursor-based incremental sync.
+    async def fetch(
+        self, since_cursor: Optional[str], account_id: str = "default"
+    ) -> ConnectorFetchResult:
+        del (
+            since_cursor
+        )  # Canvas API currently uses time windows, not cursor-based incremental sync.
 
         if not self.is_available:
-            return ConnectorFetchResult(items=[], next_cursor=datetime.now().isoformat())
+            return ConnectorFetchResult(
+                items=[], next_cursor=datetime.now().isoformat()
+            )
 
         assert self._canvas_config is not None
 
@@ -90,7 +95,9 @@ class CanvasConnector(BaseConnector):
 
         return ConnectorFetchResult(items=items, next_cursor=datetime.now().isoformat())
 
-    def _assignment_items(self, assignment: CanvasAssignment) -> list[ConnectorFetchItem]:
+    def _assignment_items(
+        self, assignment: CanvasAssignment
+    ) -> list[ConnectorFetchItem]:
         now = datetime.now(timezone.utc)
         due = assignment.due_at or (now + timedelta(hours=2))
         start = due - timedelta(hours=2)
@@ -108,7 +115,9 @@ class CanvasConnector(BaseConnector):
             raw_payload=assignment.to_dict(),
             normalized_payload={
                 "kind": "task",
-                "title": f"[Canvas作业] {assignment.course_name}: {assignment.name}" if assignment.course_name else f"[Canvas作业] {assignment.name}",
+                "title": f"[Canvas作业] {assignment.course_name}: {assignment.name}"
+                if assignment.course_name
+                else f"[Canvas作业] {assignment.name}",
                 "description": assignment.description or assignment.html_url or "",
                 "estimated_minutes": 120,
                 "due_date": due.date().isoformat(),
@@ -159,7 +168,9 @@ class CanvasConnector(BaseConnector):
                 "end_time": end.isoformat(),
                 "description": event.description or event.html_url or "",
                 "priority": "medium",
-                "tags": ["canvas", "event", event.course_name] if event.course_name else ["canvas", "event"],
+                "tags": ["canvas", "event", event.course_name]
+                if event.course_name
+                else ["canvas", "event"],
                 "origin_ref": f"canvas:event:{event.id}",
                 "confidence": 1.0,
             },

@@ -38,7 +38,9 @@ def _format_token_usage(u: Dict[str, Any]) -> str:
         and isinstance(ctx_cur, int)
         and isinstance(ctx_rem, int)
     ):
-        lines.append(f"上下文窗口: 当前 {ctx_cur:,} / 最大 {ctx_max:,}，剩余 {ctx_rem:,} token")
+        lines.append(
+            f"上下文窗口: 当前 {ctx_cur:,} / 最大 {ctx_max:,}，剩余 {ctx_rem:,} token"
+        )
     return "\n".join(lines)
 
 
@@ -95,7 +97,12 @@ async def try_handle_slash_command(
     if cmd_lower in ("usage", "stats", "tokens"):
         u = await client.get_token_usage()
         if not isinstance(u, dict):
-            u = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "call_count": 0}
+            u = {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "call_count": 0,
+            }
         return True, "本会话 Token 用量：\n" + _format_token_usage(u)
 
     # /session 系列
@@ -131,12 +138,19 @@ async def try_handle_slash_command(
         target = parts[2].strip()
         sessions = await client.list_sessions()
         if target not in sessions:
-            return True, f"会话不存在: {target}\n可用 /session list 查看，或 /session new <id> 创建。"
+            return (
+                True,
+                f"会话不存在: {target}\n可用 /session list 查看，或 /session new <id> 创建。",
+            )
         await client.switch_session(target, create_if_missing=False)
         return True, f"已切换到会话: {target}"
 
     if sub == "new":
-        session_id = parts[2].strip() if len(parts) > 2 and parts[2].strip() else f"feishu:{int(time.time())}"
+        session_id = (
+            parts[2].strip()
+            if len(parts) > 2 and parts[2].strip()
+            else f"feishu:{int(time.time())}"
+        )
         created = await client.switch_session(session_id, create_if_missing=True)
         if created:
             return True, f"已创建并切换到新会话: {session_id}"
@@ -151,4 +165,7 @@ async def try_handle_slash_command(
             return True, f"已删除会话记录: {target}"
         return True, f"无法删除会话: {target}（可能是当前活跃会话或不存在）"
 
-    return True, "用法: /session | /session list | /session switch <id> | /session new [id] | /session delete <id>"
+    return (
+        True,
+        "用法: /session | /session list | /session switch <id> | /session new [id] | /session delete <id>",
+    )

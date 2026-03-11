@@ -164,7 +164,9 @@ class LLMClient:
     - 流式响应（可选）
     """
 
-    def __init__(self, config: Optional[Config] = None, model_override: Optional[str] = None):
+    def __init__(
+        self, config: Optional[Config] = None, model_override: Optional[str] = None
+    ):
         """
         初始化 LLM 客户端。
 
@@ -234,7 +236,9 @@ class LLMClient:
 
         choice = response.choices[0]
         usage = TokenUsage.from_response(response)
-        content = _strip_thinking_content(_normalize_text_content(choice.message.content))
+        content = _strip_thinking_content(
+            _normalize_text_content(choice.message.content)
+        )
 
         return LLMResponse(
             content=content,
@@ -288,7 +292,9 @@ class LLMClient:
         response = await self._client.chat.completions.create(**request_params)
         choice = response.choices[0]
         usage = TokenUsage.from_response(response)
-        content = _strip_thinking_content(_normalize_text_content(choice.message.content))
+        content = _strip_thinking_content(
+            _normalize_text_content(choice.message.content)
+        )
 
         return LLMResponse(
             content=content,
@@ -370,7 +376,9 @@ class LLMClient:
                 )
 
         usage = TokenUsage.from_response(response)
-        content = _strip_thinking_content(_normalize_text_content(choice.message.content))
+        content = _strip_thinking_content(
+            _normalize_text_content(choice.message.content)
+        )
 
         return LLMResponse(
             content=content,
@@ -410,7 +418,10 @@ class LLMClient:
                 continue
 
             delta = chunk.choices[0].delta
-            if hasattr(chunk.choices[0], "finish_reason") and chunk.choices[0].finish_reason:
+            if (
+                hasattr(chunk.choices[0], "finish_reason")
+                and chunk.choices[0].finish_reason
+            ):
                 finish_reason = chunk.choices[0].finish_reason
 
             if delta.content:
@@ -446,7 +457,9 @@ class LLMClient:
                             if getattr(tc.function, "name", None):
                                 tool_calls_map[idx]["name"] = tc.function.name
                             if getattr(tc.function, "arguments", None):
-                                tool_calls_map[idx]["arguments"] += tc.function.arguments or ""
+                                tool_calls_map[idx]["arguments"] += (
+                                    tc.function.arguments or ""
+                                )
 
             if hasattr(chunk, "usage") and chunk.usage:
                 last_usage = chunk.usage

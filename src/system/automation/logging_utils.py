@@ -88,7 +88,11 @@ class AutomationTaskLogger:
                     arguments = event.get("arguments")
                     if isinstance(arguments, dict):
                         inner_name = arguments.get("name")
-                        if isinstance(inner_name, str) and inner_name.strip() and tool_call_id:
+                        if (
+                            isinstance(inner_name, str)
+                            and inner_name.strip()
+                            and tool_call_id
+                        ):
                             self._tool_alias_by_call_id[tool_call_id] = inner_name
                 self.operation_details.append(
                     {
@@ -168,7 +172,9 @@ class AutomationTaskLogger:
             "operation_count": len(operation_results),
         }
 
-    def log_task_end(self, status: TaskStatus, result: Optional[str], error: Optional[str]) -> Dict[str, Any]:
+    def log_task_end(
+        self, status: TaskStatus, result: Optional[str], error: Optional[str]
+    ) -> Dict[str, Any]:
         self.finished_at = datetime.now()
         self._append_json_line(
             {
@@ -217,4 +223,3 @@ class AutomationTaskLogger:
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
         return record
-

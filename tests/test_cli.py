@@ -8,8 +8,6 @@ import asyncio
 from types import SimpleNamespace
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from io import StringIO
-import sys
 
 from agent_core.config import (
     Config,
@@ -27,7 +25,6 @@ from agent_core import ScheduleAgent
 from agent_core.adapters import ScheduleAgentAdapter
 from agent_core.tools import BaseTool
 from frontend.cli.interactive import (
-    print_welcome,
     print_help,
     run_interactive_loop,
 )
@@ -105,7 +102,9 @@ class TestGetDefaultTools:
         tool_names = [t.name for t in tools]
         assert "attach_media" in tool_names
 
-    def test_get_default_tools_includes_attach_image_to_reply_when_multimodal_enabled(self):
+    def test_get_default_tools_includes_attach_image_to_reply_when_multimodal_enabled(
+        self,
+    ):
         """当 multimodal.enabled 时，应包含 attach_image_to_reply"""
         config = Config(
             llm=LLMConfig(api_key="x", model="x"),
@@ -119,7 +118,9 @@ class TestGetDefaultTools:
         """当 canvas.enabled 时，应包含 sync_canvas"""
         config = Config(
             llm=LLMConfig(api_key="x", model="x"),
-            canvas=CanvasIntegrationConfig(enabled=True, api_key="dummy_canvas_key_12345"),
+            canvas=CanvasIntegrationConfig(
+                enabled=True, api_key="dummy_canvas_key_12345"
+            ),
         )
         tools = cli_module.get_default_tools(config=config)
         tool_names = [t.name for t in tools]
@@ -180,7 +181,8 @@ class TestRunInteractiveLoop:
     def disable_prompt_toolkit(self):
         """测试时禁用 prompt_toolkit，使用标准 input()"""
         import frontend.cli.interactive as interactive_module
-        with patch.object(interactive_module, '_HAS_PROMPT_TOOLKIT', False):
+
+        with patch.object(interactive_module, "_HAS_PROMPT_TOOLKIT", False):
             yield
 
     @pytest.fixture
@@ -189,13 +191,20 @@ class TestRunInteractiveLoop:
         agent = MagicMock(spec=ScheduleAgent)
         agent.process_input = AsyncMock(return_value="这是测试响应")
         agent.clear_context = MagicMock()
-        agent.get_token_usage = MagicMock(return_value={"call_count": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
+        agent.get_token_usage = MagicMock(
+            return_value={
+                "call_count": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            }
+        )
         return agent
 
     @pytest.mark.asyncio
     async def test_exit_command_quit(self, mock_agent):
         """测试退出命令 quit"""
-        with patch('builtins.input', side_effect=['quit']):
+        with patch("builtins.input", side_effect=["quit"]):
             reason = await run_interactive_loop(mock_agent)
 
         assert reason == "quit"
@@ -204,7 +213,7 @@ class TestRunInteractiveLoop:
     @pytest.mark.asyncio
     async def test_exit_command_exit(self, mock_agent):
         """测试退出命令 exit"""
-        with patch('builtins.input', side_effect=['exit']):
+        with patch("builtins.input", side_effect=["exit"]):
             reason = await run_interactive_loop(mock_agent)
 
         assert reason == "quit"
@@ -213,7 +222,7 @@ class TestRunInteractiveLoop:
     @pytest.mark.asyncio
     async def test_exit_command_q(self, mock_agent):
         """测试退出命令 q"""
-        with patch('builtins.input', side_effect=['q']):
+        with patch("builtins.input", side_effect=["q"]):
             reason = await run_interactive_loop(mock_agent)
 
         assert reason == "quit"
@@ -222,7 +231,7 @@ class TestRunInteractiveLoop:
     @pytest.mark.asyncio
     async def test_clear_command(self, mock_agent):
         """测试清空对话命令"""
-        with patch('builtins.input', side_effect=['clear', 'quit']):
+        with patch("builtins.input", side_effect=["clear", "quit"]):
             await run_interactive_loop(mock_agent)
 
         mock_agent.clear_context.assert_called_once()
@@ -230,7 +239,7 @@ class TestRunInteractiveLoop:
     @pytest.mark.asyncio
     async def test_help_command(self, mock_agent, capsys):
         """测试帮助命令"""
-        with patch('builtins.input', side_effect=['help', 'quit']):
+        with patch("builtins.input", side_effect=["help", "quit"]):
             await run_interactive_loop(mock_agent)
 
         captured = capsys.readouterr()
@@ -239,17 +248,17 @@ class TestRunInteractiveLoop:
     @pytest.mark.asyncio
     async def test_normal_input(self, mock_agent):
         """测试正常输入处理"""
-        with patch('builtins.input', side_effect=['明天的日程', 'quit']):
+        with patch("builtins.input", side_effect=["明天的日程", "quit"]):
             await run_interactive_loop(mock_agent)
 
         mock_agent.process_input.assert_called_once()
-        assert mock_agent.process_input.call_args.args[0] == '明天的日程'
+        assert mock_agent.process_input.call_args.args[0] == "明天的日程"
         assert "on_stream_delta" in mock_agent.process_input.call_args.kwargs
 
     @pytest.mark.asyncio
     async def test_empty_input_skipped(self, mock_agent):
         """测试空输入被跳过"""
-        with patch('builtins.input', side_effect=['', '   ', 'quit']):
+        with patch("builtins.input", side_effect=["", "   ", "quit"]):
             await run_interactive_loop(mock_agent)
 
         mock_agent.process_input.assert_not_called()
@@ -257,19 +266,21 @@ class TestRunInteractiveLoop:
     @pytest.mark.asyncio
     async def test_keyboard_interrupt(self, mock_agent):
         """测试键盘中断"""
-        with patch('builtins.input', side_effect=KeyboardInterrupt()):
+        with patch("builtins.input", side_effect=KeyboardInterrupt()):
             reason = await run_interactive_loop(mock_agent)
         assert reason == "sigint"
 
     @pytest.mark.asyncio
     @pytest.mark.asyncio
-    async def test_cancelled_error_during_processing_returns_to_input(self, mock_agent, capsys):
+    async def test_cancelled_error_during_processing_returns_to_input(
+        self, mock_agent, capsys
+    ):
         """测试处理阶段 CancelledError 仅中断当前轮并返回输入态"""
         mock_agent.process_input = AsyncMock(
             side_effect=[asyncio.CancelledError(), "这是第二次响应"]
         )
 
-        with patch('builtins.input', side_effect=['测试输入', '再次输入', 'quit']):
+        with patch("builtins.input", side_effect=["测试输入", "再次输入", "quit"]):
             reason = await run_interactive_loop(mock_agent)
 
         assert reason == "quit"
@@ -280,7 +291,7 @@ class TestRunInteractiveLoop:
     @pytest.mark.asyncio
     async def test_eof_error(self, mock_agent):
         """测试 EOF 错误"""
-        with patch('builtins.input', side_effect=EOFError()):
+        with patch("builtins.input", side_effect=EOFError()):
             reason = await run_interactive_loop(mock_agent)
         assert reason == "eof"
 
@@ -289,7 +300,7 @@ class TestRunInteractiveLoop:
         """测试处理输入时的错误"""
         mock_agent.process_input = AsyncMock(side_effect=Exception("测试错误"))
 
-        with patch('builtins.input', side_effect=['测试输入', 'quit']):
+        with patch("builtins.input", side_effect=["测试输入", "quit"]):
             await run_interactive_loop(mock_agent)
 
         # 应该捕获异常并继续运行
@@ -301,7 +312,12 @@ class TestRunInteractiveLoop:
         agent.process_input = AsyncMock(return_value="不会调用")
         agent.clear_context = MagicMock()
         agent.get_token_usage = MagicMock(
-            return_value={"call_count": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            return_value={
+                "call_count": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            }
         )
         agent.config = SimpleNamespace(memory=SimpleNamespace(idle_timeout_minutes=30))
         agent.mark_activity = MagicMock()
@@ -325,7 +341,16 @@ class TestRunInteractiveLoop:
         agent.list_sessions = _list_sessions
         agent.switch_session = AsyncMock(side_effect=_switch_session)
 
-        with patch("builtins.input", side_effect=["session", "session new cli:work", "session list", "session switch cli:default", "quit"]):
+        with patch(
+            "builtins.input",
+            side_effect=[
+                "session",
+                "session new cli:work",
+                "session list",
+                "session switch cli:default",
+                "quit",
+            ],
+        ):
             reason = await run_interactive_loop(agent)
 
         assert reason == "quit"
@@ -340,7 +365,12 @@ class TestRunInteractiveLoop:
         agent.process_input = AsyncMock(return_value="不会调用")
         agent.clear_context = MagicMock()
         agent.get_token_usage = MagicMock(
-            return_value={"call_count": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            return_value={
+                "call_count": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            }
         )
         agent.config = SimpleNamespace(memory=SimpleNamespace(idle_timeout_minutes=30))
         agent.mark_activity = MagicMock()
@@ -349,7 +379,9 @@ class TestRunInteractiveLoop:
         agent.list_sessions = MagicMock(return_value=["cli:default"])
         agent.switch_session = AsyncMock()
 
-        with patch("builtins.input", side_effect=["session switch cli:missing", "quit"]):
+        with patch(
+            "builtins.input", side_effect=["session switch cli:missing", "quit"]
+        ):
             reason = await run_interactive_loop(agent)
 
         assert reason == "quit"
@@ -364,7 +396,12 @@ class TestRunInteractiveLoop:
         agent.process_input = AsyncMock(return_value="不会调用")
         agent.clear_context = MagicMock()
         agent.get_token_usage = MagicMock(
-            return_value={"call_count": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            return_value={
+                "call_count": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            }
         )
         agent.config = SimpleNamespace(memory=SimpleNamespace(idle_timeout_minutes=30))
         agent.mark_activity = MagicMock()
@@ -402,7 +439,7 @@ class TestMainAsync:
     @pytest.mark.asyncio
     async def test_main_async_config_not_found(self):
         """测试配置文件不存在"""
-        with patch('main.get_config', side_effect=FileNotFoundError("配置文件不存在")):
+        with patch("main.get_config", side_effect=FileNotFoundError("配置文件不存在")):
             with pytest.raises(SystemExit) as exc_info:
                 await cli_module.main_async([])
             assert exc_info.value.code == 1
@@ -410,15 +447,21 @@ class TestMainAsync:
     @pytest.mark.asyncio
     async def test_main_async_interactive_mode(self, mock_config):
         """测试交互模式"""
-        with patch('main.get_config', return_value=mock_config):
-            with patch('main.ScheduleAgent') as MockAgent:
+        with patch("main.get_config", return_value=mock_config):
+            with patch("main.ScheduleAgent") as MockAgent:
                 mock_agent_instance = MagicMock()
-                mock_agent_instance.__aenter__ = AsyncMock(return_value=mock_agent_instance)
+                mock_agent_instance.__aenter__ = AsyncMock(
+                    return_value=mock_agent_instance
+                )
                 mock_agent_instance.__aexit__ = AsyncMock()
                 mock_agent_instance.finalize_session = AsyncMock()
                 MockAgent.return_value = mock_agent_instance
 
-                with patch('main.run_interactive_loop', new_callable=AsyncMock, return_value="quit") as mock_loop:
+                with patch(
+                    "main.run_interactive_loop",
+                    new_callable=AsyncMock,
+                    return_value="quit",
+                ) as mock_loop:
                     await cli_module.main_async(["main.py", "--local"])
                     mock_loop.assert_called_once()
                     wrapped = mock_loop.call_args.args[0]
@@ -430,15 +473,21 @@ class TestMainAsync:
     @pytest.mark.asyncio
     async def test_main_async_skip_finalize_on_sigint_exit(self, mock_config):
         """测试交互循环因 Ctrl+C 退出时不执行 finalize_session"""
-        with patch('main.get_config', return_value=mock_config):
-            with patch('main.ScheduleAgent') as MockAgent:
+        with patch("main.get_config", return_value=mock_config):
+            with patch("main.ScheduleAgent") as MockAgent:
                 mock_agent_instance = MagicMock()
-                mock_agent_instance.__aenter__ = AsyncMock(return_value=mock_agent_instance)
+                mock_agent_instance.__aenter__ = AsyncMock(
+                    return_value=mock_agent_instance
+                )
                 mock_agent_instance.__aexit__ = AsyncMock()
                 mock_agent_instance.finalize_session = AsyncMock()
                 MockAgent.return_value = mock_agent_instance
 
-                with patch('main.run_interactive_loop', new_callable=AsyncMock, return_value="sigint"):
+                with patch(
+                    "main.run_interactive_loop",
+                    new_callable=AsyncMock,
+                    return_value="sigint",
+                ):
                     await cli_module.main_async(["main.py", "--local"])
 
                 mock_agent_instance.finalize_session.assert_not_called()
@@ -446,16 +495,24 @@ class TestMainAsync:
     @pytest.mark.asyncio
     async def test_main_async_single_command(self, mock_config):
         """测试单条命令模式"""
-        with patch('main.get_config', return_value=mock_config):
-            with patch('main.ScheduleAgent') as MockAgent:
+        with patch("main.get_config", return_value=mock_config):
+            with patch("main.ScheduleAgent") as MockAgent:
                 mock_agent_instance = MagicMock()
-                mock_agent_instance.__aenter__ = AsyncMock(return_value=mock_agent_instance)
+                mock_agent_instance.__aenter__ = AsyncMock(
+                    return_value=mock_agent_instance
+                )
                 mock_agent_instance.__aexit__ = AsyncMock()
                 MockAgent.return_value = mock_agent_instance
 
-                with patch('main.run_single_command', new_callable=AsyncMock, return_value="响应") as mock_cmd:
-                    with patch('builtins.print') as mock_print:
-                        await cli_module.main_async(["main.py", "--local", "明天的日程"])
+                with patch(
+                    "main.run_single_command",
+                    new_callable=AsyncMock,
+                    return_value="响应",
+                ) as mock_cmd:
+                    with patch("builtins.print") as mock_print:
+                        await cli_module.main_async(
+                            ["main.py", "--local", "明天的日程"]
+                        )
                         mock_cmd.assert_called_once()
                         mock_print.assert_called_with("响应")
 
@@ -476,16 +533,16 @@ class TestMainAsync:
                 ],
             ),
         )
-        with patch('main.get_config', return_value=mock_config):
+        with patch("main.get_config", return_value=mock_config):
             # MCPClientManager 现在在 ScheduleAgent 内部处理
-            with patch('agent_core.agent.agent.MCPClientManager') as MockMCPManager:
+            with patch("agent_core.agent.agent.MCPClientManager") as MockMCPManager:
                 mock_mcp = MagicMock()
                 mock_mcp.connect = AsyncMock()
                 mock_mcp.get_proxy_tools = MagicMock(return_value=[])
                 mock_mcp.close = AsyncMock()
                 MockMCPManager.return_value = mock_mcp
 
-                with patch('main.run_interactive_loop', new_callable=AsyncMock):
+                with patch("main.run_interactive_loop", new_callable=AsyncMock):
                     await cli_module.main_async(["main.py", "--local"])
 
                 # MCP 在 __aenter__ 中初始化
@@ -500,15 +557,15 @@ class TestMainAsync:
             logging=LoggingConfig(enable_session_log=False),
             mcp=MCPConfig(enabled=True, servers=[]),
         )
-        with patch('main.get_config', return_value=mock_config):
-            with patch('agent_core.agent.agent.MCPClientManager') as MockMCPManager:
+        with patch("main.get_config", return_value=mock_config):
+            with patch("agent_core.agent.agent.MCPClientManager") as MockMCPManager:
                 mock_mcp = MagicMock()
                 mock_mcp.connect = AsyncMock()
                 mock_mcp.get_proxy_tools = MagicMock(return_value=[])
                 mock_mcp.close = AsyncMock()
                 MockMCPManager.return_value = mock_mcp
 
-                with patch('main.run_interactive_loop', new_callable=AsyncMock):
+                with patch("main.run_interactive_loop", new_callable=AsyncMock):
                     await cli_module.main_async(["main.py", "--local"])
 
                 assert MockMCPManager.call_count == 1
@@ -517,7 +574,9 @@ class TestMainAsync:
                 # 自动注入了 schedule_tools
                 assert len(runtime_mcp.servers) == 1
                 assert runtime_mcp.servers[0].name == "schedule_tools"
-                assert any("mcp_server.py" in arg for arg in runtime_mcp.servers[0].args)
+                assert any(
+                    "mcp_server.py" in arg for arg in runtime_mcp.servers[0].args
+                )
 
 
 class TestMain:
@@ -525,15 +584,17 @@ class TestMain:
 
     def test_main_calls_main_async(self):
         """测试 main 会执行 main_async"""
-        with patch('main.main_async', new_callable=AsyncMock) as mock_main_async:
-            with patch('sys.argv', ['main.py']):
+        with patch("main.main_async", new_callable=AsyncMock) as mock_main_async:
+            with patch("sys.argv", ["main.py"]):
                 cli_module.main()
                 mock_main_async.assert_called_once()
 
     def test_main_handles_keyboard_interrupt_from_main_async(self):
         """测试 main 在 main_async 中断时不向外传播"""
-        with patch('main.main_async', new_callable=AsyncMock, side_effect=KeyboardInterrupt()):
-            with patch('sys.argv', ['main.py']):
+        with patch(
+            "main.main_async", new_callable=AsyncMock, side_effect=KeyboardInterrupt()
+        ):
+            with patch("sys.argv", ["main.py"]):
                 cli_module.main()
 
 
@@ -544,7 +605,8 @@ class TestCLIIntegration:
     def disable_prompt_toolkit(self):
         """测试时禁用 prompt_toolkit"""
         import frontend.cli.interactive as interactive_module
-        with patch.object(interactive_module, '_HAS_PROMPT_TOOLKIT', False):
+
+        with patch.object(interactive_module, "_HAS_PROMPT_TOOLKIT", False):
             yield
 
     @pytest.fixture
@@ -562,32 +624,41 @@ class TestCLIIntegration:
     async def test_full_interaction_flow(self, mock_config):
         """测试完整交互流程"""
         inputs = [
-            "hello",           # 正常输入
-            "clear",           # 清空对话
-            "help",            # 帮助
-            "quit",            # 退出
+            "hello",  # 正常输入
+            "clear",  # 清空对话
+            "help",  # 帮助
+            "quit",  # 退出
         ]
 
         from agent_core.interfaces import AgentRunResult
         from system.automation.core_gateway import AutomationCoreGateway
 
-        with patch('main.get_config', return_value=mock_config):
-            with patch('main.ScheduleAgent') as MockAgent:
+        with patch("main.get_config", return_value=mock_config):
+            with patch("main.ScheduleAgent") as MockAgent:
                 mock_agent = MagicMock()
                 mock_agent.__aenter__ = AsyncMock(return_value=mock_agent)
                 mock_agent.__aexit__ = AsyncMock()
                 mock_agent.process_input = AsyncMock(return_value="响应内容")
                 mock_agent.clear_context = MagicMock()
-                mock_agent.get_token_usage = MagicMock(return_value={"call_count": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
+                mock_agent.get_token_usage = MagicMock(
+                    return_value={
+                        "call_count": 0,
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0,
+                    }
+                )
                 MockAgent.return_value = mock_agent
 
                 # Gateway 是 CLI 实际调用的对象；mock 其 run_turn 验证整合流程
                 mock_gateway_run_turn = AsyncMock(
                     return_value=AgentRunResult(output_text="响应内容")
                 )
-                with patch.object(AutomationCoreGateway, 'run_turn', mock_gateway_run_turn):
-                    with patch('builtins.input', side_effect=inputs):
-                        with patch('builtins.print'):
+                with patch.object(
+                    AutomationCoreGateway, "run_turn", mock_gateway_run_turn
+                ):
+                    with patch("builtins.input", side_effect=inputs):
+                        with patch("builtins.print"):
                             await cli_module.main_async(["main.py", "--local"])
 
                 # CLI 通过 gateway.run_turn 调用 Agent

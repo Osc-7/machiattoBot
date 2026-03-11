@@ -15,7 +15,11 @@ from .reply import (
 from .session import is_invocation_valid, run_shuiyuan_reply
 
 # connector 可单独运行: python -m shuiyuan_integration.connector
-from .user_api_key import generate_user_api_key, UserApiKeyPayload, UserApiKeyRequestResult
+from .user_api_key import (
+    generate_user_api_key,
+    UserApiKeyPayload,
+    UserApiKeyRequestResult,
+)
 
 __all__ = [
     "is_invocation_valid",

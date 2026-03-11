@@ -2,11 +2,9 @@
 存储工具测试 - 测试 add_event, add_task, get_events, get_tasks 工具
 """
 
-import os
 import tempfile
 from datetime import datetime, date, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -21,12 +19,20 @@ from agent_core.tools.storage_tools import (
 )
 from agent_core.tools.base import ToolDefinition
 from agent_core.storage.json_repository import EventRepository, TaskRepository
-from agent_core.models import Event, Task, EventStatus, TaskStatus, EventPriority, TaskPriority
+from agent_core.models import (
+    Event,
+    Task,
+    EventStatus,
+    TaskStatus,
+    EventPriority,
+    TaskPriority,
+)
 
 
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def temp_dir():
@@ -97,6 +103,7 @@ def delete_tool(event_repository, task_repository):
 # ============================================================================
 # AddEventTool 测试
 # ============================================================================
+
 
 class TestAddEventTool:
     """AddEventTool 测试类"""
@@ -250,6 +257,7 @@ class TestAddEventTool:
 # AddTaskTool 测试
 # ============================================================================
 
+
 class TestAddTaskTool:
     """AddTaskTool 测试类"""
 
@@ -357,6 +365,7 @@ class TestAddTaskTool:
 # GetEventsTool 测试
 # ============================================================================
 
+
 class TestGetEventsTool:
     """GetEventsTool 测试类"""
 
@@ -387,7 +396,6 @@ class TestGetEventsTool:
     async def test_execute_today_with_events(self, get_events_tool, event_repository):
         """测试查询今天（有事件）"""
         today = date.today()
-        now = datetime.now()
 
         # 创建今天的事件
         event = Event(
@@ -411,12 +419,16 @@ class TestGetEventsTool:
 
         event_on_target = Event(
             title="目标日程",
-            start_time=datetime.combine(target_day, datetime.min.time().replace(hour=10)),
+            start_time=datetime.combine(
+                target_day, datetime.min.time().replace(hour=10)
+            ),
             end_time=datetime.combine(target_day, datetime.min.time().replace(hour=11)),
         )
         event_on_other = Event(
             title="非目标日程",
-            start_time=datetime.combine(other_day, datetime.min.time().replace(hour=10)),
+            start_time=datetime.combine(
+                other_day, datetime.min.time().replace(hour=10)
+            ),
             end_time=datetime.combine(other_day, datetime.min.time().replace(hour=11)),
         )
         event_repository.create(event_on_target)
@@ -506,8 +518,12 @@ class TestGetEventsTool:
         for i in range(3):
             event = Event(
                 title=f"事件{i}",
-                start_time=datetime.combine(today, datetime.min.time().replace(hour=9+i)),
-                end_time=datetime.combine(today, datetime.min.time().replace(hour=10+i)),
+                start_time=datetime.combine(
+                    today, datetime.min.time().replace(hour=9 + i)
+                ),
+                end_time=datetime.combine(
+                    today, datetime.min.time().replace(hour=10 + i)
+                ),
             )
             event_repository.create(event)
 
@@ -517,7 +533,9 @@ class TestGetEventsTool:
         assert len(result.data) == 3
 
     @pytest.mark.asyncio
-    async def test_execute_all_excludes_cancelled(self, get_events_tool, event_repository):
+    async def test_execute_all_excludes_cancelled(
+        self, get_events_tool, event_repository
+    ):
         """测试查询所有事件排除已取消"""
         today = date.today()
 
@@ -559,15 +577,23 @@ class TestGetEventsTool:
         event_repository.create(
             Event(
                 title="目标日期事件",
-                start_time=datetime.combine(target_day, datetime.min.time().replace(hour=10)),
-                end_time=datetime.combine(target_day, datetime.min.time().replace(hour=11)),
+                start_time=datetime.combine(
+                    target_day, datetime.min.time().replace(hour=10)
+                ),
+                end_time=datetime.combine(
+                    target_day, datetime.min.time().replace(hour=11)
+                ),
             )
         )
         event_repository.create(
             Event(
                 title="其他日期事件",
-                start_time=datetime.combine(another_day, datetime.min.time().replace(hour=10)),
-                end_time=datetime.combine(another_day, datetime.min.time().replace(hour=11)),
+                start_time=datetime.combine(
+                    another_day, datetime.min.time().replace(hour=10)
+                ),
+                end_time=datetime.combine(
+                    another_day, datetime.min.time().replace(hour=11)
+                ),
             )
         )
 
@@ -595,7 +621,9 @@ class TestGetEventsTool:
         assert result.error == "MISSING_DATE"
 
     @pytest.mark.asyncio
-    async def test_execute_events_sorted_by_time(self, get_events_tool, event_repository):
+    async def test_execute_events_sorted_by_time(
+        self, get_events_tool, event_repository
+    ):
         """测试事件按时间排序"""
         today = date.today()
 
@@ -625,6 +653,7 @@ class TestGetEventsTool:
 # ============================================================================
 # GetTasksTool 测试
 # ============================================================================
+
 
 class TestGetTasksTool:
     """GetTasksTool 测试类"""
@@ -728,7 +757,9 @@ class TestGetTasksTool:
         assert len(result.data) == 3
 
     @pytest.mark.asyncio
-    async def test_execute_all_excludes_cancelled(self, get_tasks_tool, task_repository):
+    async def test_execute_all_excludes_cancelled(
+        self, get_tasks_tool, task_repository
+    ):
         """测试查询所有任务排除已取消"""
         # 创建任务
         task1 = Task(title="正常任务", status=TaskStatus.TODO)
@@ -751,7 +782,9 @@ class TestGetTasksTool:
         assert result.metadata["query_type"] == "todo"
 
     @pytest.mark.asyncio
-    async def test_execute_tasks_sorted_by_priority(self, get_tasks_tool, task_repository):
+    async def test_execute_tasks_sorted_by_priority(
+        self, get_tasks_tool, task_repository
+    ):
         """测试任务按优先级排序"""
         # 创建不同优先级的任务
         task1 = Task(title="低优先级", priority=TaskPriority.LOW)
@@ -771,7 +804,9 @@ class TestGetTasksTool:
         assert result.data[2].title == "低优先级"
 
     @pytest.mark.asyncio
-    async def test_execute_tasks_sorted_by_due_date(self, get_tasks_tool, task_repository):
+    async def test_execute_tasks_sorted_by_due_date(
+        self, get_tasks_tool, task_repository
+    ):
         """测试任务按截止日期排序（同优先级）"""
         # 创建同优先级不同截止日期的任务
         task1 = Task(
@@ -798,8 +833,6 @@ class TestGetTasksTool:
     @pytest.mark.asyncio
     async def test_execute_detects_overdue_tasks(self, get_tasks_tool, task_repository):
         """测试查询待办任务时检测过期任务"""
-        from datetime import date, timedelta
-        
         # 创建一个过期任务和一个未过期任务
         overdue_task = Task(
             title="过期任务",
@@ -824,10 +857,12 @@ class TestGetTasksTool:
         assert overdue_task.id in result.metadata.get("overdue_task_ids", [])
 
     @pytest.mark.asyncio
-    async def test_execute_no_overdue_when_querying_overdue(self, get_tasks_tool, task_repository):
+    async def test_execute_no_overdue_when_querying_overdue(
+        self, get_tasks_tool, task_repository
+    ):
         """测试查询过期任务时不再重复标记"""
         from datetime import date, timedelta
-        
+
         overdue_task = Task(
             title="过期任务",
             due_date=date.today() - timedelta(days=1),
@@ -845,6 +880,7 @@ class TestGetTasksTool:
 # ============================================================================
 # UpdateTaskTool 测试
 # ============================================================================
+
 
 class TestUpdateTaskTool:
     """UpdateTaskTool 测试类"""
@@ -866,9 +902,7 @@ class TestUpdateTaskTool:
         task = Task(title="待完成任务", status=TaskStatus.TODO)
         task_repository.create(task)
 
-        result = await update_task_tool.execute(
-            task_id=task.id, status="completed"
-        )
+        result = await update_task_tool.execute(task_id=task.id, status="completed")
 
         assert result.success is True
         assert result.metadata["old_status"] == "todo"
@@ -884,9 +918,7 @@ class TestUpdateTaskTool:
         task = Task(title="待取消任务")
         task_repository.create(task)
 
-        result = await update_task_tool.execute(
-            task_id=task.id, status="cancelled"
-        )
+        result = await update_task_tool.execute(task_id=task.id, status="cancelled")
 
         assert result.success is True
         assert result.metadata["new_status"] == "cancelled"
@@ -900,9 +932,7 @@ class TestUpdateTaskTool:
         task = Task(title="待开始任务")
         task_repository.create(task)
 
-        result = await update_task_tool.execute(
-            task_id=task.id, status="in_progress"
-        )
+        result = await update_task_tool.execute(task_id=task.id, status="in_progress")
 
         assert result.success is True
         updated = task_repository.get(task.id)
@@ -914,9 +944,7 @@ class TestUpdateTaskTool:
         task = Task(title="进行中任务", status=TaskStatus.IN_PROGRESS)
         task_repository.create(task)
 
-        result = await update_task_tool.execute(
-            task_id=task.id, status="todo"
-        )
+        result = await update_task_tool.execute(task_id=task.id, status="todo")
 
         assert result.success is True
         updated = task_repository.get(task.id)
@@ -977,12 +1005,11 @@ class TestUpdateTaskTool:
     async def test_update_due_date(self, update_task_tool, task_repository):
         """测试更新任务的截止日期"""
         from datetime import date
+
         task = Task(title="任务", due_date=date(2026, 2, 20))
         task_repository.create(task)
 
-        result = await update_task_tool.execute(
-            task_id=task.id, due_date="2026-02-25"
-        )
+        result = await update_task_tool.execute(task_id=task.id, due_date="2026-02-25")
         assert result.success is True
         assert "截止日期" in result.message
 
@@ -993,6 +1020,7 @@ class TestUpdateTaskTool:
     async def test_update_status_and_due_date(self, update_task_tool, task_repository):
         """测试同时更新状态和截止日期"""
         from datetime import date
+
         task = Task(title="任务", due_date=date(2026, 2, 20))
         task_repository.create(task)
 
@@ -1006,14 +1034,14 @@ class TestUpdateTaskTool:
         assert updated_task.due_date == date(2026, 2, 25)
 
     @pytest.mark.asyncio
-    async def test_update_due_date_invalid_format(self, update_task_tool, task_repository):
+    async def test_update_due_date_invalid_format(
+        self, update_task_tool, task_repository
+    ):
         """测试无效的日期格式"""
         task = Task(title="任务")
         task_repository.create(task)
 
-        result = await update_task_tool.execute(
-            task_id=task.id, due_date="2026/02/25"
-        )
+        result = await update_task_tool.execute(task_id=task.id, due_date="2026/02/25")
         assert result.success is False
         assert result.error == "INVALID_DATE_FORMAT"
 
@@ -1046,6 +1074,7 @@ class TestUpdateTaskTool:
 # ============================================================================
 # UpdateEventTool 测试
 # ============================================================================
+
 
 class TestUpdateEventTool:
     """UpdateEventTool 测试类 - 修改日程（状态、标题、时间等）"""
@@ -1186,7 +1215,9 @@ class TestUpdateEventTool:
 
     @pytest.mark.asyncio
     async def test_event_not_found(self, update_event_tool):
-        result = await update_event_tool.execute(event_id="nonexistent", status="completed")
+        result = await update_event_tool.execute(
+            event_id="nonexistent", status="completed"
+        )
         assert result.success is False
         assert result.error == "EVENT_NOT_FOUND"
 
@@ -1239,6 +1270,7 @@ class TestUpdateEventTool:
 # DeleteScheduleDataTool 测试
 # ============================================================================
 
+
 class TestDeleteScheduleDataTool:
     """DeleteScheduleDataTool 测试类"""
 
@@ -1288,7 +1320,9 @@ class TestDeleteScheduleDataTool:
         assert task_repository.get(task.id) is not None
 
     @pytest.mark.asyncio
-    async def test_batch_delete_success_with_confirm(self, delete_tool, task_repository):
+    async def test_batch_delete_success_with_confirm(
+        self, delete_tool, task_repository
+    ):
         """测试批量删除（用户确认后）"""
         task1 = Task(title="任务1")
         task2 = Task(title="任务2")
@@ -1314,8 +1348,12 @@ class TestDeleteScheduleDataTool:
         for i in range(2):
             event = Event(
                 title=f"待删除事件{i}",
-                start_time=datetime.combine(today, datetime.min.time().replace(hour=9 + i)),
-                end_time=datetime.combine(today, datetime.min.time().replace(hour=10 + i)),
+                start_time=datetime.combine(
+                    today, datetime.min.time().replace(hour=9 + i)
+                ),
+                end_time=datetime.combine(
+                    today, datetime.min.time().replace(hour=10 + i)
+                ),
             )
             event_repository.create(event)
 
@@ -1334,11 +1372,14 @@ class TestDeleteScheduleDataTool:
 # 工具集成测试
 # ============================================================================
 
+
 class TestStorageToolsIntegration:
     """存储工具集成测试"""
 
     @pytest.mark.asyncio
-    async def test_add_and_get_event(self, add_event_tool, get_events_tool, event_repository):
+    async def test_add_and_get_event(
+        self, add_event_tool, get_events_tool, event_repository
+    ):
         """测试添加和获取事件"""
         tomorrow = date.today() + timedelta(days=1)
 
@@ -1359,7 +1400,9 @@ class TestStorageToolsIntegration:
         assert get_result.data[0].title == "集成测试事件"
 
     @pytest.mark.asyncio
-    async def test_add_and_get_task(self, add_task_tool, get_tasks_tool, task_repository):
+    async def test_add_and_get_task(
+        self, add_task_tool, get_tasks_tool, task_repository
+    ):
         """测试添加和获取任务"""
         # 添加任务
         add_result = await add_task_tool.execute(

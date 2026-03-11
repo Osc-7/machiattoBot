@@ -12,7 +12,14 @@ from typing import Optional, List
 
 from frontend.canvas_integration import CanvasClient, CanvasConfig, CanvasSync
 from agent_core.config import Config
-from agent_core.models import Event, EventPriority, EventStatus, Task, TaskPriority, TaskStatus
+from agent_core.models import (
+    Event,
+    EventPriority,
+    EventStatus,
+    Task,
+    TaskPriority,
+    TaskStatus,
+)
 from agent_core.storage.json_repository import EventRepository, TaskRepository
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
@@ -108,9 +115,8 @@ class SyncCanvasTool(BaseTool):
 
     def _build_canvas_config(self) -> Optional[CanvasConfig]:
         cfg = self._config.canvas if self._config else None
-        api_key = (
-            (cfg.api_key if cfg and cfg.api_key else None)
-            or os.getenv("CANVAS_API_KEY")
+        api_key = (cfg.api_key if cfg and cfg.api_key else None) or os.getenv(
+            "CANVAS_API_KEY"
         )
         if not api_key:
             return None
@@ -137,7 +143,9 @@ class SyncCanvasTool(BaseTool):
                 return task
         return None
 
-    def _find_event_by_origin(self, origin_ref: str, event_type: str) -> Optional[Event]:
+    def _find_event_by_origin(
+        self, origin_ref: str, event_type: str
+    ) -> Optional[Event]:
         for event in self._event_repository.get_all():
             if (
                 event.source == "canvas"
@@ -155,7 +163,9 @@ class SyncCanvasTool(BaseTool):
         if start_dt and end_dt and end_dt > start_dt:
             estimated_minutes = max(15, int((end_dt - start_dt).total_seconds() / 60))
 
-        event_priority, task_priority = _normalize_priority(event_data.get("priority", "medium"))
+        event_priority, task_priority = _normalize_priority(
+            event_data.get("priority", "medium")
+        )
         tags = event_data.get("tags") or []
         metadata = event_data.get("metadata") or {}
 
@@ -190,7 +200,9 @@ class SyncCanvasTool(BaseTool):
 
         return task
 
-    def _upsert_deadline_event(self, event_data: dict, origin_ref: str, linked_task_id: Optional[str]) -> Optional[str]:
+    def _upsert_deadline_event(
+        self, event_data: dict, origin_ref: str, linked_task_id: Optional[str]
+    ) -> Optional[str]:
         start_dt = _parse_iso_datetime(event_data.get("start_time"))
         end_dt = _parse_iso_datetime(event_data.get("end_time"))
         if not start_dt or not end_dt or end_dt <= start_dt:
@@ -286,7 +298,9 @@ class SyncCanvasTool(BaseTool):
                 task = self._upsert_task_from_assignment(event_data, origin_ref)
                 linked_task_id = task.id
             if self._write_deadline_events:
-                deadline_event_id = self._upsert_deadline_event(event_data, origin_ref, linked_task_id)
+                deadline_event_id = self._upsert_deadline_event(
+                    event_data, origin_ref, linked_task_id
+                )
                 if linked_task_id and deadline_event_id:
                     task = self._task_repository.get(linked_task_id)
                     if task:
@@ -321,9 +335,7 @@ class SyncCanvasTool(BaseTool):
                 message="Canvas 配置无效，请检查 base_url 和 api_key",
             )
 
-        default_days = (
-            self._config.canvas.default_days_ahead if self._config else 60
-        )
+        default_days = self._config.canvas.default_days_ahead if self._config else 60
         default_include_submitted = (
             self._config.canvas.include_submitted if self._config else False
         )
@@ -419,9 +431,8 @@ class FetchCanvasOverviewTool(BaseTool):
 
     def _build_canvas_config(self) -> Optional[CanvasConfig]:
         cfg = self._config.canvas if self._config else None
-        api_key = (
-            (cfg.api_key if cfg and cfg.api_key else None)
-            or os.getenv("CANVAS_API_KEY")
+        api_key = (cfg.api_key if cfg and cfg.api_key else None) or os.getenv(
+            "CANVAS_API_KEY"
         )
         if not api_key:
             return None
@@ -455,9 +466,7 @@ class FetchCanvasOverviewTool(BaseTool):
                 message="Canvas 配置无效，请检查 base_url 和 api_key",
             )
 
-        default_days = (
-            self._config.canvas.default_days_ahead if self._config else 30
-        )
+        default_days = self._config.canvas.default_days_ahead if self._config else 30
         default_include_submitted = (
             self._config.canvas.include_submitted if self._config else False
         )
@@ -506,7 +515,9 @@ class FetchCanvasOverviewTool(BaseTool):
 
                 # Planner 待办/机会项（默认抓取未完成条目）
                 try:
-                    planner_items = await client.get_planner_items(filter="incomplete_items")
+                    planner_items = await client.get_planner_items(
+                        filter="incomplete_items"
+                    )
                     overview["planner_items"] = [
                         item.to_dict() for item in planner_items
                     ]
@@ -618,9 +629,8 @@ class FetchCanvasCourseContentTool(BaseTool):
 
     def _build_canvas_config(self) -> Optional[CanvasConfig]:
         cfg = self._config.canvas if self._config else None
-        api_key = (
-            (cfg.api_key if cfg and cfg.api_key else None)
-            or os.getenv("CANVAS_API_KEY")
+        api_key = (cfg.api_key if cfg and cfg.api_key else None) or os.getenv(
+            "CANVAS_API_KEY"
         )
         if not api_key:
             return None
@@ -670,7 +680,11 @@ class FetchCanvasCourseContentTool(BaseTool):
         match_info["via"] = "search"
         match_info["query"] = course_search
         match_info["matched"] = [
-            {"id": c.get("id"), "name": c.get("name"), "course_code": c.get("course_code")}
+            {
+                "id": c.get("id"),
+                "name": c.get("name"),
+                "course_code": c.get("course_code"),
+            }
             for c in candidates
         ]
         return int(chosen["id"]), match_info

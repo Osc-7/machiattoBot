@@ -42,7 +42,9 @@ class TestAttachImageToReplyTool:
         result = await tool.execute()
         assert result.success is False
         assert result.error == "INVALID_INPUT"
-        result_both = await tool.execute(image_path="/tmp/x.png", image_url="https://example.com/x.png")
+        result_both = await tool.execute(
+            image_path="/tmp/x.png", image_url="https://example.com/x.png"
+        )
         assert result_both.success is False
 
     @pytest.mark.asyncio

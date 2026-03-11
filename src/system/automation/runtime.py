@@ -41,9 +41,15 @@ class AutomationRuntime:
 
     async def start(self, start_scheduler: bool = False) -> None:
         self.bus.subscribe("sync.requested", self._on_sync_requested)
-        self.bus.subscribe("summary.requested", self.summary_service.handle_summary_requested)
-        self.bus.subscribe("daily_digest.ready", self.notification_service.handle_digest_ready)
-        self.bus.subscribe("weekly_digest.ready", self.notification_service.handle_digest_ready)
+        self.bus.subscribe(
+            "summary.requested", self.summary_service.handle_summary_requested
+        )
+        self.bus.subscribe(
+            "daily_digest.ready", self.notification_service.handle_digest_ready
+        )
+        self.bus.subscribe(
+            "weekly_digest.ready", self.notification_service.handle_digest_ready
+        )
 
         if start_scheduler:
             # 不再自动注入默认定时任务，调度配置全部来自持久化仓库 / config / Agent 工具。
@@ -56,7 +62,9 @@ class AutomationRuntime:
         payload = event.get("payload", {})
         source_type = payload.get("source_type", "course")
         account_id = payload.get("account_id", "default")
-        await self.sync_service.run_source(source_type=source_type, account_id=account_id)
+        await self.sync_service.run_source(
+            source_type=source_type, account_id=account_id
+        )
 
 
 _runtime: Optional[AutomationRuntime] = None
@@ -105,7 +113,9 @@ async def get_runtime(base_dir: Optional[str] = None) -> AutomationRuntime:
 
         notification_service = NotificationOutboxService(outbox_repo=outbox_repo)
 
-        scheduler = AutomationScheduler(bus, job_def_repo=job_def_repo, job_run_repo=run_repo)
+        scheduler = AutomationScheduler(
+            bus, job_def_repo=job_def_repo, job_run_repo=run_repo
+        )
 
         _runtime = AutomationRuntime(
             bus=bus,

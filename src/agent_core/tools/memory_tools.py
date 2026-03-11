@@ -13,12 +13,11 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
-from agent_core.memory import (
-    ContentMemory,
-    LongTermMemory,
-)
+# from agent_core.memory import (
+#     ContentMemory,
+#     LongTermMemory,
+# )
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 
@@ -56,7 +55,7 @@ class MemorySearchLongTermTool(BaseTool):
                 },
             ],
             usage_notes=["返回匹配的长期记忆条目"],
-            tags=['记忆', '检索'],
+            tags=["记忆", "检索"],
         )
 
     async def execute(self, **kwargs) -> ToolResult:
@@ -75,10 +74,7 @@ class MemorySearchLongTermTool(BaseTool):
                 message="未找到相关长期记忆",
             )
         data = {
-            "results": [
-                {"category": e.category, "content": e.content}
-                for e in entries
-            ]
+            "results": [{"category": e.category, "content": e.content} for e in entries]
         }
         return ToolResult(
             success=True,
@@ -120,7 +116,7 @@ class MemorySearchContentTool(BaseTool):
                 },
             ],
             usage_notes=["支持关键词检索；若启用 QMD 则同时进行语义检索"],
-            tags=['记忆', '检索'],
+            tags=["记忆", "检索"],
         )
 
     async def execute(self, **kwargs) -> ToolResult:
@@ -188,7 +184,15 @@ class MemoryStoreTool(BaseTool):
                     description="分类: docs | meeting | diary | lessons | notes | code | other",
                     required=False,
                     default="notes",
-                    enum=["docs", "meeting", "diary", "lessons", "notes", "code", "other"],
+                    enum=[
+                        "docs",
+                        "meeting",
+                        "diary",
+                        "lessons",
+                        "notes",
+                        "code",
+                        "other",
+                    ],
                 ),
             ],
             examples=[
@@ -205,7 +209,7 @@ class MemoryStoreTool(BaseTool):
                 "content 建议使用 Markdown 格式",
                 "文件存储在内容记忆库对应分类目录下",
             ],
-            tags=['记忆', '写入'],
+            tags=["记忆", "写入"],
         )
 
     async def execute(self, **kwargs) -> ToolResult:
@@ -259,7 +263,15 @@ class MemoryIngestTool(BaseTool):
                     description="分类: docs | meeting | diary | lessons | notes | code | other",
                     required=False,
                     default="docs",
-                    enum=["docs", "meeting", "diary", "lessons", "notes", "code", "other"],
+                    enum=[
+                        "docs",
+                        "meeting",
+                        "diary",
+                        "lessons",
+                        "notes",
+                        "code",
+                        "other",
+                    ],
                 ),
                 ToolParameter(
                     name="title",
@@ -281,7 +293,7 @@ class MemoryIngestTool(BaseTool):
             usage_notes=[
                 "转换后的 Markdown 存储在内容记忆库对应分类目录下",
             ],
-            tags=['记忆', '导入'],
+            tags=["记忆", "导入"],
         )
 
     async def execute(self, **kwargs) -> ToolResult:

@@ -358,8 +358,22 @@ class CommandToolsConfig(BaseModel):
     )
     select_mode_command_whitelist: List[str] = Field(
         default_factory=lambda: [
-            "ls", "pwd", "cat", "head", "tail", "grep", "echo", "which",
-            "file", "stat", "wc", "date", "whoami", "id", "env", "printenv",
+            "ls",
+            "pwd",
+            "cat",
+            "head",
+            "tail",
+            "grep",
+            "echo",
+            "which",
+            "file",
+            "stat",
+            "wc",
+            "date",
+            "whoami",
+            "id",
+            "env",
+            "printenv",
         ],
         description="select mode 下允许的命令白名单（仅非破坏性命令）",
     )
@@ -540,7 +554,7 @@ class AgentConfig(BaseModel):
     enable_debug: bool = Field(default=False, description="是否启用调试模式")
     tool_mode: str = Field(
         default="kernel",
-        description='工具暴露模式: kernel(核心工具+工作集) | select(仅使用传入工具)',
+        description="工具暴露模式: kernel(核心工具+工作集) | select(仅使用传入工具)",
     )
     source_overrides: Dict[str, str] = Field(
         default_factory=lambda: {"shuiyuan": "select"},
@@ -598,7 +612,7 @@ class UIConfig(BaseModel):
 
     show_draft: str = Field(
         default="summary",
-        description='草稿显示模式: off | summary | full',
+        description="草稿显示模式: off | summary | full",
     )
     draft_max_chars: int = Field(
         default=500,
@@ -642,7 +656,7 @@ class AutomationJobConfig(BaseModel):
     )
     times: Optional[List[str]] = Field(
         default=None,
-        description="可选：每天多个固定触发时间（HH:MM）列表，例如 [\"08:00\", \"14:00\", \"20:00\"]。若设置则优先于 daily_time。",
+        description='可选：每天多个固定触发时间（HH:MM）列表，例如 ["08:00", "14:00", "20:00"]。若设置则优先于 daily_time。',
     )
     start_time: Optional[str] = Field(
         default=None,
@@ -667,17 +681,19 @@ class AutomationJobConfig(BaseModel):
     memory_owner: Optional[str] = Field(
         default=None,
         description=(
-            "可选：记忆库 owner 标识，例如 \"cli:default\"、\"feishu:some_user\"。"
+            '可选：记忆库 owner 标识，例如 "cli:default"、"feishu:some_user"。'
             "配置后，自动化任务将在该 owner 的上下文和记忆下运行；未配置时，不加载任何长期/内容/对话历史记忆。"
         ),
     )
-    core_mode: Optional[Literal["full", "sub", "background", "cron", "heartbeat"]] = Field(
-        default=None,
-        description=(
-            "可选：CoreProfile.mode 权限模式。"
-            "推荐使用 full/sub/background；为兼容旧配置，仍接受 cron/heartbeat，"
-            "但会在内部统一映射为 background。未配置时，自动化队列默认使用 background。"
-        ),
+    core_mode: Optional[Literal["full", "sub", "background", "cron", "heartbeat"]] = (
+        Field(
+            default=None,
+            description=(
+                "可选：CoreProfile.mode 权限模式。"
+                "推荐使用 full/sub/background；为兼容旧配置，仍接受 cron/heartbeat，"
+                "但会在内部统一映射为 background。未配置时，自动化队列默认使用 background。"
+            ),
+        )
     )
     enabled: bool = Field(
         default=True,
@@ -741,7 +757,7 @@ class FeishuConfig(BaseModel):
     )
     domain: str = Field(
         default="feishu",
-        description='部署区域标识: feishu(中国大陆版) | lark(国际版) 等，用于日志与后续扩展。',
+        description="部署区域标识: feishu(中国大陆版) | lark(国际版) 等，用于日志与后续扩展。",
     )
     timeout_seconds: float = Field(
         default=10.0,
@@ -870,6 +886,7 @@ def load_config(config_path: Optional[Path] = None) -> Config:
     # 优先从 .env 加载环境变量（TAVILY_API_KEY 等），即使用户未在 shell 里 source .env / init.sh 也能生效
     try:
         from dotenv import load_dotenv
+
         for base in [Path.cwd(), Path(__file__).resolve().parents[2]]:
             env_file = base / ".env"
             if env_file.is_file():
@@ -945,7 +962,9 @@ def load_config(config_path: Optional[Path] = None) -> Config:
         raw_config["feishu"]["encrypt_key"] = env_feishu_encrypt_key
     env_feishu_automation_chat_id = os.environ.get("FEISHU_AUTOMATION_CHAT_ID")
     if env_feishu_automation_chat_id:
-        raw_config["feishu"]["automation_activity_chat_id"] = env_feishu_automation_chat_id
+        raw_config["feishu"]["automation_activity_chat_id"] = (
+            env_feishu_automation_chat_id
+        )
 
     # 水源社区配置支持环境变量覆盖
     if "shuiyuan" not in raw_config:
@@ -955,7 +974,11 @@ def load_config(config_path: Optional[Path] = None) -> Config:
         raw_config["shuiyuan"]["user_api_key"] = env_shuiyuan_key
     # 兼容旧 db_path：迁移为 db_base_dir（取 db_path 的父目录）
     shuiyuan_raw = raw_config["shuiyuan"]
-    if isinstance(shuiyuan_raw, dict) and "db_path" in shuiyuan_raw and "db_base_dir" not in shuiyuan_raw:
+    if (
+        isinstance(shuiyuan_raw, dict)
+        and "db_path" in shuiyuan_raw
+        and "db_base_dir" not in shuiyuan_raw
+    ):
         p = Path(str(shuiyuan_raw["db_path"]))
         shuiyuan_raw["db_base_dir"] = str(p.parent)
 

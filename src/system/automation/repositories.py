@@ -32,7 +32,9 @@ def _automation_base_dir(base_dir: Optional[str] = None) -> Path:
 
 class JobDefinitionRepository(JSONRepository[JobDefinition]):
     def __init__(self, base_dir: Optional[str] = None):
-        super().__init__(_automation_base_dir(base_dir) / "job_definitions.json", JobDefinition)
+        super().__init__(
+            _automation_base_dir(base_dir) / "job_definitions.json", JobDefinition
+        )
 
     def get_enabled(self) -> List[JobDefinition]:
         return [item for item in self.get_all() if item.enabled]
@@ -42,7 +44,9 @@ class JobRunRepository(JSONRepository[JobRun]):
     def __init__(self, base_dir: Optional[str] = None):
         super().__init__(_automation_base_dir(base_dir) / "job_runs.json", JobRun)
 
-    def list_recent(self, limit: int = 20, job_type: Optional[str] = None) -> List[JobRun]:
+    def list_recent(
+        self, limit: int = 20, job_type: Optional[str] = None
+    ) -> List[JobRun]:
         items = self.get_all()
         if job_type:
             items = [item for item in items if item.job_type == job_type]
@@ -52,17 +56,23 @@ class JobRunRepository(JSONRepository[JobRun]):
 
 class SourceAccountRepository(JSONRepository[SourceAccount]):
     def __init__(self, base_dir: Optional[str] = None):
-        super().__init__(_automation_base_dir(base_dir) / "source_accounts.json", SourceAccount)
+        super().__init__(
+            _automation_base_dir(base_dir) / "source_accounts.json", SourceAccount
+        )
 
 
 class SyncCursorRepository(JSONRepository[SyncCursor]):
     def __init__(self, base_dir: Optional[str] = None):
-        super().__init__(_automation_base_dir(base_dir) / "sync_cursors.json", SyncCursor)
+        super().__init__(
+            _automation_base_dir(base_dir) / "sync_cursors.json", SyncCursor
+        )
 
 
 class ExternalItemRepository(JSONRepository[ExternalItem]):
     def __init__(self, base_dir: Optional[str] = None):
-        super().__init__(_automation_base_dir(base_dir) / "external_items.json", ExternalItem)
+        super().__init__(
+            _automation_base_dir(base_dir) / "external_items.json", ExternalItem
+        )
 
     def get_by_source(self, source_type: str, limit: int = 50) -> List[ExternalItem]:
         items = [item for item in self.get_all() if item.source_type == source_type]
@@ -84,9 +94,14 @@ class DigestRepository(JSONRepository[Digest]):
 
 class NotificationOutboxRepository(JSONRepository[NotificationOutbox]):
     def __init__(self, base_dir: Optional[str] = None):
-        super().__init__(_automation_base_dir(base_dir) / "notification_outbox.json", NotificationOutbox)
+        super().__init__(
+            _automation_base_dir(base_dir) / "notification_outbox.json",
+            NotificationOutbox,
+        )
 
-    def list_by_status(self, status: Optional[NotificationStatus] = None, limit: int = 50) -> List[NotificationOutbox]:
+    def list_by_status(
+        self, status: Optional[NotificationStatus] = None, limit: int = 50
+    ) -> List[NotificationOutbox]:
         items = self.get_all()
         if status is not None:
             items = [item for item in items if item.status == status]
@@ -96,7 +111,9 @@ class NotificationOutboxRepository(JSONRepository[NotificationOutbox]):
 
 class AutomationPolicyRepository(JSONRepository[AutomationPolicy]):
     def __init__(self, base_dir: Optional[str] = None):
-        super().__init__(_automation_base_dir(base_dir) / "automation_policy.json", AutomationPolicy)
+        super().__init__(
+            _automation_base_dir(base_dir) / "automation_policy.json", AutomationPolicy
+        )
 
     def get_default(self) -> AutomationPolicy:
         current = self.get("default")

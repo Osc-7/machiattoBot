@@ -9,11 +9,9 @@
 - 记忆检索策略
 """
 
-import json
 import tempfile
 from pathlib import Path
 
-import pytest
 
 from agent_core.memory.types import MemoryEntry, SessionSummary
 from agent_core.memory.working_memory import (
@@ -100,13 +98,16 @@ class TestWorkingMemory:
         ctx.add_assistant_message(
             content=None,
             tool_calls=[
-                {"id": "call_1", "type": "function", "function": {"name": "foo", "arguments": "{}"}},
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "foo", "arguments": "{}"},
+                },
             ],
         )
         ctx.add_tool_result("call_1", "ok")
         ctx.add_assistant_message("处理完了")
         ctx.add_user_message("新问题")
-        messages = ctx.get_messages()
         # 模拟 recent_start 切在「工具块」中间：保留段 = [tool, assistant, user]
         recent_start = 2  # 即保留从 index 2 开始：tool, assistant, user
         wm = WorkingMemory(ctx, keep_recent=4)
@@ -207,7 +208,7 @@ class TestShortTermMemory:
                     time_end="t",
                     summary=f"summary {i}",
                 )
-                evicted = stm.add(s)
+                stm.add(s)
             assert stm.count == 2
             assert stm.entries[0].session_id == "s1"
             assert stm.entries[1].session_id == "s2"
@@ -215,12 +216,14 @@ class TestShortTermMemory:
     def test_persistence(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             stm1 = ShortTermMemory(tmpdir, k=10)
-            stm1.add(SessionSummary(
-                session_id="s1",
-                time_start="t1",
-                time_end="t2",
-                summary="persistent",
-            ))
+            stm1.add(
+                SessionSummary(
+                    session_id="s1",
+                    time_start="t1",
+                    time_end="t2",
+                    summary="persistent",
+                )
+            )
 
             stm2 = ShortTermMemory(tmpdir, k=10)
             assert stm2.count == 1
@@ -229,14 +232,24 @@ class TestShortTermMemory:
     def test_search(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             stm = ShortTermMemory(tmpdir, k=10)
-            stm.add(SessionSummary(
-                session_id="s1", time_start="t", time_end="t",
-                summary="讨论了日程安排", tags=["日程"],
-            ))
-            stm.add(SessionSummary(
-                session_id="s2", time_start="t", time_end="t",
-                summary="讨论了代码审查", tags=["代码"],
-            ))
+            stm.add(
+                SessionSummary(
+                    session_id="s1",
+                    time_start="t",
+                    time_end="t",
+                    summary="讨论了日程安排",
+                    tags=["日程"],
+                )
+            )
+            stm.add(
+                SessionSummary(
+                    session_id="s2",
+                    time_start="t",
+                    time_end="t",
+                    summary="讨论了代码审查",
+                    tags=["代码"],
+                )
+            )
             results = stm.search("日程")
             assert len(results) == 1
             assert results[0].session_id == "s1"
@@ -244,10 +257,14 @@ class TestShortTermMemory:
     def test_to_context_string(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             stm = ShortTermMemory(tmpdir, k=10)
-            stm.add(SessionSummary(
-                session_id="s1", time_start="2026-01-01", time_end="t",
-                summary="会话摘要1",
-            ))
+            stm.add(
+                SessionSummary(
+                    session_id="s1",
+                    time_start="2026-01-01",
+                    time_end="t",
+                    summary="会话摘要1",
+                )
+            )
             ctx = stm.to_context_string()
             assert "会话摘要1" in ctx
 
@@ -264,12 +281,15 @@ class TestLongTermMemory:
     def test_search(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             ltm = LongTermMemory(str(Path(tmpdir) / "lt"), str(Path(tmpdir) / "M.md"))
-            ltm._entries.append(MemoryEntry(
-                id="m1", created_at="t",
-                content="用户偏好下午开会",
-                category="preference",
-                tags=["偏好"],
-            ))
+            ltm._entries.append(
+                MemoryEntry(
+                    id="m1",
+                    created_at="t",
+                    content="用户偏好下午开会",
+                    category="preference",
+                    tags=["偏好"],
+                )
+            )
             results = ltm.search("偏好")
             assert len(results) == 1
             assert results[0].id == "m1"
@@ -339,9 +359,13 @@ class TestRecallPolicy:
         result = RecallResult(
             long_term=[
                 MemoryEntry(
-                    id="e1", created_at="", source_session_ids=[],
-                    content="偏好工作日安排会议", category="preference",
-                    tags=[], confidence=0.9,
+                    id="e1",
+                    created_at="",
+                    source_session_ids=[],
+                    content="偏好工作日安排会议",
+                    category="preference",
+                    tags=[],
+                    confidence=0.9,
                 ),
             ],
             content=[("path/to/notes.md", "snippet 内容")],

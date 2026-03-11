@@ -3,7 +3,6 @@
 """
 
 import pytest
-from typing import Any, Dict
 
 from agent_core.tools import (
     BaseTool,
@@ -33,9 +32,7 @@ class MockTool(BaseTool):
                     required=True,
                 )
             ],
-            examples=[
-                {"description": "示例用法", "params": {"input": "测试"}}
-            ],
+            examples=[{"description": "示例用法", "params": {"input": "测试"}}],
             usage_notes=["这是一个模拟工具"],
         )
 
@@ -177,9 +174,7 @@ class TestToolDefinition:
         definition = ToolDefinition(
             name="create_event",
             description="创建新日程",
-            examples=[
-                {"description": "创建会议", "params": {"title": "团队周会"}}
-            ],
+            examples=[{"description": "创建会议", "params": {"title": "团队周会"}}],
             usage_notes=["请确保填写标题"],
         )
 

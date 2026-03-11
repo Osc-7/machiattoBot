@@ -8,11 +8,9 @@
 4. 查看日程
 """
 
-import os
 import tempfile
 from datetime import datetime, date, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
@@ -28,14 +26,16 @@ from agent_core.tools import (
 )
 from agent_core.storage.json_repository import EventRepository, TaskRepository
 from agent_core.models import (
-    Event, Task, EventStatus, TaskStatus, EventPriority, TaskPriority,
-    TimeSlot, SlotType,
+    TaskStatus,
+    EventPriority,
+    TaskPriority,
 )
 
 
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def temp_dir():
@@ -77,11 +77,13 @@ def tool_registry(event_repository, task_repository):
             for i in range(1, 8)
         ]
     )
-    registry.register(PlanTasksTool(
-        event_repository=event_repository,
-        task_repository=task_repository,
-        planning_config=planning_config,
-    ))
+    registry.register(
+        PlanTasksTool(
+            event_repository=event_repository,
+            task_repository=task_repository,
+            planning_config=planning_config,
+        )
+    )
 
     return registry
 
@@ -89,6 +91,7 @@ def tool_registry(event_repository, task_repository):
 # ============================================================================
 # 场景1: 基本添加 Event
 # ============================================================================
+
 
 class TestScenario1AddEvent:
     """
@@ -185,7 +188,9 @@ class TestScenario1AddEvent:
         assert len(events) == 3
 
     @pytest.mark.asyncio
-    async def test_add_event_with_conflict_warning(self, tool_registry, event_repository):
+    async def test_add_event_with_conflict_warning(
+        self, tool_registry, event_repository
+    ):
         """测试添加冲突事件时返回警告"""
         tomorrow = date.today() + timedelta(days=1)
 
@@ -214,6 +219,7 @@ class TestScenario1AddEvent:
 # ============================================================================
 # 场景2: 添加 Task
 # ============================================================================
+
 
 class TestScenario2AddTask:
     """
@@ -312,6 +318,7 @@ class TestScenario2AddTask:
 # 场景3: 混合输入和规划
 # ============================================================================
 
+
 class TestScenario3Planning:
     """
     场景3: 混合输入和规划
@@ -365,7 +372,9 @@ class TestScenario3Planning:
                 assert slot.end_time.hour <= 10 or slot.start_time.hour >= 12
 
     @pytest.mark.asyncio
-    async def test_plan_single_task(self, tool_registry, event_repository, task_repository):
+    async def test_plan_single_task(
+        self, tool_registry, event_repository, task_repository
+    ):
         """测试规划单个任务"""
         # 创建一个任务
         await tool_registry.execute(
@@ -392,7 +401,9 @@ class TestScenario3Planning:
         assert "[任务] 完成报告" in events[0].title
 
     @pytest.mark.asyncio
-    async def test_plan_multiple_tasks(self, tool_registry, event_repository, task_repository):
+    async def test_plan_multiple_tasks(
+        self, tool_registry, event_repository, task_repository
+    ):
         """测试规划多个任务"""
         # 创建多个任务
         await tool_registry.execute(
@@ -430,7 +441,9 @@ class TestScenario3Planning:
         assert planned[0]["task_title"] == "任务A"
 
     @pytest.mark.asyncio
-    async def test_plan_with_existing_events(self, tool_registry, event_repository, task_repository):
+    async def test_plan_with_existing_events(
+        self, tool_registry, event_repository, task_repository
+    ):
         """测试在现有事件周围规划任务"""
         tomorrow = date.today() + timedelta(days=1)
 
@@ -461,10 +474,14 @@ class TestScenario3Planning:
         if result.data["planned_tasks"]:
             # 规划的事件不应该与现有事件冲突
             planned_event = result.data["created_events"][0]
-            assert planned_event.start_time.hour >= 12 or planned_event.start_time.hour < 9
+            assert (
+                planned_event.start_time.hour >= 12 or planned_event.start_time.hour < 9
+            )
 
     @pytest.mark.asyncio
-    async def test_plan_respects_sleep_time(self, tool_registry, event_repository, task_repository):
+    async def test_plan_respects_sleep_time(
+        self, tool_registry, event_repository, task_repository
+    ):
         """测试规划避开睡眠时间"""
         # 创建一个需要长时间的任务
         await tool_registry.execute(
@@ -495,6 +512,7 @@ class TestScenario3Planning:
 # ============================================================================
 # 场景4: 查看日程
 # ============================================================================
+
 
 class TestScenario4ViewSchedule:
     """
@@ -690,6 +708,7 @@ class TestScenario4ViewSchedule:
 # 集成测试: 完整用户流程
 # ============================================================================
 
+
 class TestIntegrationFlow:
     """
     集成测试: 测试完整的用户使用流程
@@ -698,7 +717,9 @@ class TestIntegrationFlow:
     """
 
     @pytest.mark.asyncio
-    async def test_complete_user_flow(self, tool_registry, event_repository, task_repository):
+    async def test_complete_user_flow(
+        self, tool_registry, event_repository, task_repository
+    ):
         """
         测试完整的用户流程:
         1. 用户添加几个固定日程
@@ -773,10 +794,10 @@ class TestIntegrationFlow:
         assert planned_count > 0, "应该至少规划了一个任务"
 
     @pytest.mark.asyncio
-    async def test_multi_day_planning(self, tool_registry, event_repository, task_repository):
+    async def test_multi_day_planning(
+        self, tool_registry, event_repository, task_repository
+    ):
         """测试多天规划"""
-        today = date.today()
-
         # 添加多个需要不同时间的任务
         for i in range(5):
             await tool_registry.execute(

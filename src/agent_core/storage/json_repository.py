@@ -8,13 +8,19 @@ import json
 import os
 from datetime import datetime, date, timedelta
 from pathlib import Path
-from typing import Optional, List, Generic, TypeVar, Union
+from typing import Optional, List, Generic, TypeVar, Union, Protocol
 from threading import Lock
 
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
 from ..models import Event, Task, EventStatus, TaskStatus
+
+
+class HasId(Protocol):
+    """带 id 字段的模型协议，用于静态类型检查。"""
+
+    id: str
 
 
 T = TypeVar("T", bound=BaseModel)
@@ -61,7 +67,9 @@ class JSONRepository(Generic[T]):
     def _write_data(self, data: dict) -> None:
         """写入所有数据"""
         with open(self.file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2, default=self._json_serializer)
+            json.dump(
+                data, f, ensure_ascii=False, indent=2, default=self._json_serializer
+            )
 
     @staticmethod
     def _json_serializer(obj):
@@ -210,7 +218,7 @@ class EventRepository(JSONRepository[Event]):
     提供 Event 相关的查询功能。
     """
 
-    def __init__(self, file_path: Union[str, Path] = None):
+    def __init__(self, file_path: Optional[Union[str, Path]] = None):
         if file_path is None:
             file_path = _default_events_path()
         super().__init__(file_path, Event)
@@ -241,7 +249,8 @@ class EventRepository(JSONRepository[Event]):
         end_ts = self._to_timestamp(end)
         all_events = self.get_all()
         return [
-            event for event in all_events
+            event
+            for event in all_events
             if self._to_timestamp(event.start_time) < end_ts
             and self._to_timestamp(event.end_time) > start_ts
             and event.status != EventStatus.CANCELLED
@@ -330,7 +339,8 @@ class EventRepository(JSONRepository[Event]):
         all_events = self.get_all()
         query_lower = query.lower()
         return [
-            event for event in all_events
+            event
+            for event in all_events
             if query_lower in event.title.lower()
             or (event.description and query_lower in event.description.lower())
             or any(query_lower in tag.lower() for tag in event.tags)
@@ -344,7 +354,7 @@ class TaskRepository(JSONRepository[Task]):
     提供 Task 相关的查询功能。
     """
 
-    def __init__(self, file_path: Union[str, Path] = None):
+    def __init__(self, file_path: Optional[Union[str, Path]] = None):
         if file_path is None:
             file_path = _default_tasks_path()
         super().__init__(file_path, Task)
@@ -400,8 +410,10 @@ class TaskRepository(JSONRepository[Task]):
         all_tasks = self.get_all()
         today = date.today()
         return [
-            task for task in all_tasks
-            if task.due_date == today and task.status not in (TaskStatus.COMPLETED, TaskStatus.CANCELLED)
+            task
+            for task in all_tasks
+            if task.due_date == today
+            and task.status not in (TaskStatus.COMPLETED, TaskStatus.CANCELLED)
         ]
 
     def get_due_this_week(self) -> List[Task]:
@@ -415,8 +427,10 @@ class TaskRepository(JSONRepository[Task]):
         today = date.today()
         week_end = today + timedelta(days=(7 - today.weekday()))
         return [
-            task for task in all_tasks
-            if task.due_date and today <= task.due_date <= week_end
+            task
+            for task in all_tasks
+            if task.due_date
+            and today <= task.due_date <= week_end
             and task.status not in (TaskStatus.COMPLETED, TaskStatus.CANCELLED)
         ]
 
@@ -439,7 +453,8 @@ class TaskRepository(JSONRepository[Task]):
         """
         all_tasks = self.get_all()
         return [
-            task for task in all_tasks
+            task
+            for task in all_tasks
             if not task.is_scheduled and task.status == TaskStatus.TODO
         ]
 
@@ -456,7 +471,8 @@ class TaskRepository(JSONRepository[Task]):
         all_tasks = self.get_all()
         query_lower = query.lower()
         return [
-            task for task in all_tasks
+            task
+            for task in all_tasks
             if query_lower in task.title.lower()
             or (task.description and query_lower in task.description.lower())
             or any(query_lower in tag.lower() for tag in task.tags)

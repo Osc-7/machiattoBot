@@ -1,10 +1,10 @@
-from __future__ import annotations
-
 """
 飞书会话映射工具。
 
 负责将飞书的 user/chat 信息映射为内部的 Schedule Agent session_id。
 """
+
+from __future__ import annotations
 
 from typing import Dict, Tuple
 
@@ -35,7 +35,9 @@ def map_event_to_session(event: FeishuMessageEvent) -> Tuple[str, Dict[str, str]
         session_id = f"feishu:chat:{key}"
 
     # user_id 用于记忆路径：p2p 用 open_id，群聊用 chat_id，供 data/memory/feishu/{user_id}/ 隔离
-    memory_user_id = open_id or user_id if chat_type == "p2p" else chat_id or open_id or user_id
+    memory_user_id = (
+        open_id or user_id if chat_type == "p2p" else chat_id or open_id or user_id
+    )
 
     metadata: Dict[str, str] = {
         "feishu_open_id": open_id,
@@ -47,4 +49,3 @@ def map_event_to_session(event: FeishuMessageEvent) -> Tuple[str, Dict[str, str]
         "user_id": memory_user_id or "unknown",
     }
     return session_id, metadata
-

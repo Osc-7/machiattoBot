@@ -19,7 +19,9 @@ from agent_core.interfaces import AgentHooks, AgentRunInput, AgentRunResult
 @pytest.mark.asyncio
 async def test_ipc_server_client_run_turn_and_session_commands(tmp_path: Path):
     default_core = AsyncMock()
-    default_core.run_turn = AsyncMock(return_value=AgentRunResult(output_text="default"))
+    default_core.run_turn = AsyncMock(
+        return_value=AgentRunResult(output_text="default")
+    )
     default_core.get_session_state = MagicMock(return_value=MagicMock(turn_count=0))
     default_core.get_token_usage = MagicMock(
         return_value={
@@ -34,9 +36,12 @@ async def test_ipc_server_client_run_turn_and_session_commands(tmp_path: Path):
     default_core.close = AsyncMock()
 
     work_core = AsyncMock()
+
     async def _run_turn(agent_input, hooks=None):
         if hooks and hooks.on_trace_event:
-            await hooks.on_trace_event({"type": "llm_request", "iteration": 1, "tool_count": 3})
+            await hooks.on_trace_event(
+                {"type": "llm_request", "iteration": 1, "tool_count": 3}
+            )
         if hooks and hooks.on_reasoning_delta:
             await hooks.on_reasoning_delta("thinking...")
         if hooks and hooks.on_assistant_delta:
@@ -68,7 +73,9 @@ async def test_ipc_server_client_run_turn_and_session_commands(tmp_path: Path):
     )
 
     socket_path = str(tmp_path / "automation.sock")
-    server = AutomationIPCServer(gateway, owner_id="root", source="cli", socket_path=socket_path)
+    server = AutomationIPCServer(
+        gateway, owner_id="root", source="cli", socket_path=socket_path
+    )
     await server.start()
     client = AutomationIPCClient(owner_id="root", source="cli", socket_path=socket_path)
     try:
@@ -120,9 +127,13 @@ async def test_ipc_server_client_run_turn_and_session_commands(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_ipc_session_delete_rejected_when_session_is_active_for_any_client(tmp_path: Path):
+async def test_ipc_session_delete_rejected_when_session_is_active_for_any_client(
+    tmp_path: Path,
+):
     default_core = AsyncMock()
-    default_core.run_turn = AsyncMock(return_value=AgentRunResult(output_text="default"))
+    default_core.run_turn = AsyncMock(
+        return_value=AgentRunResult(output_text="default")
+    )
     default_core.get_session_state = MagicMock(return_value=MagicMock(turn_count=0))
     default_core.get_token_usage = MagicMock(return_value={})
     default_core.close = AsyncMock()
@@ -141,10 +152,16 @@ async def test_ipc_session_delete_rejected_when_session_is_active_for_any_client
         session_registry=SessionRegistry(str(tmp_path / "sessions.db")),
     )
     socket_path = str(tmp_path / "automation.sock")
-    server = AutomationIPCServer(gateway, owner_id="root", source="cli", socket_path=socket_path)
+    server = AutomationIPCServer(
+        gateway, owner_id="root", source="cli", socket_path=socket_path
+    )
     await server.start()
-    client_a = AutomationIPCClient(owner_id="root", source="cli", socket_path=socket_path)
-    client_b = AutomationIPCClient(owner_id="root", source="cli", socket_path=socket_path)
+    client_a = AutomationIPCClient(
+        owner_id="root", source="cli", socket_path=socket_path
+    )
+    client_b = AutomationIPCClient(
+        owner_id="root", source="cli", socket_path=socket_path
+    )
     try:
         await client_a.connect()
         await client_b.connect()

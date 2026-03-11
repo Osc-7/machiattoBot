@@ -17,14 +17,14 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Callable, Dict, Optional
 
 from agent_core.interfaces import AgentHooks, AgentRunResult
 from agent_core.kernel_interface import KernelRequest
 
 if TYPE_CHECKING:
-        from .kernel import AgentKernel
-        from .core_pool import CorePool, CoreEntry
+    from .kernel import AgentKernel
+    from .core_pool import CorePool, CoreEntry
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,9 @@ class OutputRouter:
         """Kernel 完成时调用，将结果设置到对应 Future 上。"""
         fut = self._pending.pop(request_id, None)
         if fut is None:
-            logger.warning("OutputRouter: no pending future for request_id=%s", request_id)
+            logger.warning(
+                "OutputRouter: no pending future for request_id=%s", request_id
+            )
             return
         if not fut.done():
             fut.set_result(result)
@@ -138,7 +140,10 @@ class KernelScheduler:
         self._ttl_task = asyncio.create_task(
             self._ttl_loop(), name="kernel-scheduler-ttl"
         )
-        logger.info("KernelScheduler: started (ttl_scan_interval=%.0fs)", self._ttl_scan_interval)
+        logger.info(
+            "KernelScheduler: started (ttl_scan_interval=%.0fs)",
+            self._ttl_scan_interval,
+        )
 
     async def stop(self) -> None:
         """停止调度器，等待所有活跃任务完成。"""
@@ -241,7 +246,9 @@ class KernelScheduler:
                 await self._core_pool.evict(session_id)
                 logger.info("KernelScheduler: evicted expired session %s", session_id)
             except Exception as exc:
-                logger.warning("KernelScheduler: evict failed (session=%s): %s", session_id, exc)
+                logger.warning(
+                    "KernelScheduler: evict failed (session=%s): %s", session_id, exc
+                )
 
     async def _run_and_route(self, request: KernelRequest) -> None:
         """
@@ -300,7 +307,9 @@ class KernelScheduler:
                     pass
 
             content_items = request.metadata.get("content_items")
-            agent._context.add_user_message(request.text, media_items=content_items or None)
+            agent._context.add_user_message(
+                request.text, media_items=content_items or None
+            )
             agent._outgoing_attachments.clear()
 
             # session_logger 写入用户消息

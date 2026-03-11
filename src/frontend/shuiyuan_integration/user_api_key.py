@@ -97,7 +97,9 @@ def generate_user_api_key(
         "public_key": public_key_pem,
         "nonce": nonce,
     }
-    params_str = "&".join(f"{k}={urllib.parse.quote(v)}" for k, v in params_dict.items())
+    params_str = "&".join(
+        f"{k}={urllib.parse.quote(v)}" for k, v in params_dict.items()
+    )
     webbrowser.open(f"{base}/user-api-key/new?{params_str}")
 
     print("在水源社区授权后，请粘贴返回的加密 payload（可多行），以空行结束:")

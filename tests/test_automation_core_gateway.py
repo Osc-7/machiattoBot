@@ -8,7 +8,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from system.automation import AutomationCoreGateway, SessionCutPolicy, SessionRegistry
-from agent_core.interfaces import AgentHooks, AgentRunInput, AgentRunResult, InjectMessageCommand
+from agent_core.interfaces import (
+    AgentHooks,
+    AgentRunInput,
+    AgentRunResult,
+    InjectMessageCommand,
+)
 
 
 @pytest.mark.asyncio
@@ -51,7 +56,9 @@ async def test_gateway_expire_flow_calls_finalize_then_reset(tmp_path):
     assert changed is True
     core.finalize_session.assert_awaited_once()
     core.reset_session.assert_called_once()
-    core.activate_session.assert_awaited_once_with("cli:default", replay_messages_limit=0)
+    core.activate_session.assert_awaited_once_with(
+        "cli:default", replay_messages_limit=0
+    )
 
 
 @pytest.mark.asyncio
@@ -63,12 +70,16 @@ async def test_gateway_expire_still_resets_when_finalize_fails(tmp_path):
     core.run_turn = AsyncMock(return_value=AgentRunResult(output_text="ok"))
     core.get_session_state = MagicMock(return_value=MagicMock(turn_count=0))
 
-    gateway = AutomationCoreGateway(core, session_registry=SessionRegistry(str(tmp_path / "sessions.db")))
+    gateway = AutomationCoreGateway(
+        core, session_registry=SessionRegistry(str(tmp_path / "sessions.db"))
+    )
     await gateway.expire_session(reason="manual")
 
     core.finalize_session.assert_awaited_once()
     core.reset_session.assert_called_once()
-    core.activate_session.assert_awaited_once_with("cli:default", replay_messages_limit=0)
+    core.activate_session.assert_awaited_once_with(
+        "cli:default", replay_messages_limit=0
+    )
 
 
 @pytest.mark.asyncio
@@ -91,8 +102,19 @@ async def test_gateway_inject_message_forwards_command_metadata(tmp_path):
     await gateway.inject_message(
         command=InjectMessageCommand(
             session_id="wechat:user-1",
-            input=AgentRunInput(text="hello", metadata={"from_input": "1", "trace_id": "input", "session_id": "bad-input"}),
-            metadata={"from_command": "2", "trace_id": "command", "session_id": "bad-command"},
+            input=AgentRunInput(
+                text="hello",
+                metadata={
+                    "from_input": "1",
+                    "trace_id": "input",
+                    "session_id": "bad-input",
+                },
+            ),
+            metadata={
+                "from_command": "2",
+                "trace_id": "command",
+                "session_id": "bad-command",
+            },
         ),
         hooks=AgentHooks(),
     )
@@ -107,7 +129,9 @@ async def test_gateway_inject_message_forwards_command_metadata(tmp_path):
 @pytest.mark.asyncio
 async def test_gateway_switch_session_creates_and_routes_to_new_core(tmp_path):
     core_default = AsyncMock()
-    core_default.run_turn = AsyncMock(return_value=AgentRunResult(output_text="default"))
+    core_default.run_turn = AsyncMock(
+        return_value=AgentRunResult(output_text="default")
+    )
     core_default.get_session_state = MagicMock(return_value=MagicMock(turn_count=0))
 
     created_core = AsyncMock()
@@ -128,16 +152,22 @@ async def test_gateway_switch_session_creates_and_routes_to_new_core(tmp_path):
     assert created is True
     assert result.output_text == "new"
     factory.assert_awaited_once_with("cli:work")
-    created_core.activate_session.assert_awaited_once_with("cli:work", replay_messages_limit=0)
+    created_core.activate_session.assert_awaited_once_with(
+        "cli:work", replay_messages_limit=0
+    )
     created_core.run_turn.assert_awaited_once()
     assert "cli:default" in gateway.list_sessions()
     assert "cli:work" in gateway.list_sessions()
 
 
 @pytest.mark.asyncio
-async def test_gateway_inject_message_uses_target_session_without_switching_active(tmp_path):
+async def test_gateway_inject_message_uses_target_session_without_switching_active(
+    tmp_path,
+):
     core_default = AsyncMock()
-    core_default.run_turn = AsyncMock(return_value=AgentRunResult(output_text="default"))
+    core_default.run_turn = AsyncMock(
+        return_value=AgentRunResult(output_text="default")
+    )
     core_default.get_session_state = MagicMock(return_value=MagicMock(turn_count=0))
 
     created_core = AsyncMock()
@@ -167,7 +197,9 @@ async def test_gateway_inject_message_uses_target_session_without_switching_acti
 async def test_gateway_close_only_closes_owned_sessions(tmp_path):
     core_default = AsyncMock()
     core_default.get_session_state = MagicMock(return_value=MagicMock(turn_count=0))
-    core_default.run_turn = AsyncMock(return_value=AgentRunResult(output_text="default"))
+    core_default.run_turn = AsyncMock(
+        return_value=AgentRunResult(output_text="default")
+    )
     core_default.close = AsyncMock()
 
     created_core = AsyncMock()
@@ -230,7 +262,9 @@ async def test_gateway_sessions_visible_across_instances(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_gateway_should_expire_uses_registry_timestamp_for_unloaded_session(tmp_path):
+async def test_gateway_should_expire_uses_registry_timestamp_for_unloaded_session(
+    tmp_path,
+):
     db_path = str(tmp_path / "sessions.db")
     registry = SessionRegistry(db_path)
     registry.upsert_session("root", "cli", "cli:stale")
@@ -288,7 +322,9 @@ async def test_gateway_expired_session_not_repeated_until_activity(tmp_path):
 @pytest.mark.asyncio
 async def test_gateway_expire_unloaded_session_marks_only_without_finalize(tmp_path):
     core_default = AsyncMock()
-    core_default.run_turn = AsyncMock(return_value=AgentRunResult(output_text="default"))
+    core_default.run_turn = AsyncMock(
+        return_value=AgentRunResult(output_text="default")
+    )
     core_default.get_session_state = MagicMock(return_value=MagicMock(turn_count=0))
 
     created_core = AsyncMock()
@@ -318,9 +354,13 @@ async def test_gateway_expire_unloaded_session_marks_only_without_finalize(tmp_p
 
 
 @pytest.mark.asyncio
-async def test_gateway_create_session_from_expired_registry_activates_without_replay(tmp_path):
+async def test_gateway_create_session_from_expired_registry_activates_without_replay(
+    tmp_path,
+):
     core_default = AsyncMock()
-    core_default.run_turn = AsyncMock(return_value=AgentRunResult(output_text="default"))
+    core_default.run_turn = AsyncMock(
+        return_value=AgentRunResult(output_text="default")
+    )
     core_default.get_session_state = MagicMock(return_value=MagicMock(turn_count=0))
 
     created_core = AsyncMock()
@@ -343,7 +383,9 @@ async def test_gateway_create_session_from_expired_registry_activates_without_re
     )
 
     await gateway.switch_session("cli:expired", create_if_missing=False)
-    created_core.activate_session.assert_awaited_once_with("cli:expired", replay_messages_limit=0)
+    created_core.activate_session.assert_awaited_once_with(
+        "cli:expired", replay_messages_limit=0
+    )
     await gateway.close()
 
 
@@ -352,13 +394,17 @@ async def test_gateway_delete_session_returns_false_when_history_delete_fails(tm
     registry = SessionRegistry(str(tmp_path / "sessions.db"))
 
     core_default = AsyncMock()
-    core_default.run_turn = AsyncMock(return_value=AgentRunResult(output_text="default"))
+    core_default.run_turn = AsyncMock(
+        return_value=AgentRunResult(output_text="default")
+    )
     core_default.get_session_state = MagicMock(return_value=MagicMock(turn_count=0))
 
     broken_core = AsyncMock()
     broken_core.get_session_state = MagicMock(return_value=MagicMock(turn_count=0))
     broken_core.activate_session = AsyncMock(return_value=None)
-    broken_core.delete_session_history = MagicMock(side_effect=RuntimeError("db write failed"))
+    broken_core.delete_session_history = MagicMock(
+        side_effect=RuntimeError("db write failed")
+    )
     broken_core.close = AsyncMock()
     factory = AsyncMock(return_value=broken_core)
 
@@ -381,12 +427,16 @@ async def test_gateway_delete_session_returns_false_when_history_delete_fails(tm
 
 
 @pytest.mark.asyncio
-async def test_gateway_delete_session_returns_false_without_core_session_for_cold_session(tmp_path):
+async def test_gateway_delete_session_returns_false_without_core_session_for_cold_session(
+    tmp_path,
+):
     registry = SessionRegistry(str(tmp_path / "sessions.db"))
     registry.upsert_session("root", "cli", "cli:cold")
 
     core_default = AsyncMock()
-    core_default.run_turn = AsyncMock(return_value=AgentRunResult(output_text="default"))
+    core_default.run_turn = AsyncMock(
+        return_value=AgentRunResult(output_text="default")
+    )
     core_default.get_session_state = MagicMock(return_value=MagicMock(turn_count=0))
 
     gateway = AutomationCoreGateway(

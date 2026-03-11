@@ -40,7 +40,9 @@ class SessionRegistry:
         cur = self._conn.execute("PRAGMA table_info(sessions)")
         cols = {str(r[1]) for r in cur.fetchall()}
         if "is_expired" not in cols:
-            self._conn.execute("ALTER TABLE sessions ADD COLUMN is_expired INTEGER NOT NULL DEFAULT 0")
+            self._conn.execute(
+                "ALTER TABLE sessions ADD COLUMN is_expired INTEGER NOT NULL DEFAULT 0"
+            )
 
     def upsert_session(self, owner_id: str, source: str, session_id: str) -> None:
         now = datetime.now(timezone.utc).isoformat()
@@ -86,7 +88,9 @@ class SessionRegistry:
         except Exception:
             return False
 
-    def get_updated_at(self, owner_id: str, source: str, session_id: str) -> Optional[datetime]:
+    def get_updated_at(
+        self, owner_id: str, source: str, session_id: str
+    ) -> Optional[datetime]:
         cur = self._conn.execute(
             "SELECT updated_at FROM sessions WHERE owner_id=? AND source=? AND session_id=? LIMIT 1",
             (owner_id, source, session_id),

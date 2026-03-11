@@ -2,8 +2,6 @@
 run_command 工具测试
 """
 
-import os
-
 import pytest
 
 from typing import Optional
@@ -118,12 +116,16 @@ class TestRunCommandTool:
         config = _make_config(base_dir=str(tmp_path))
         tool = RunCommandTool(config=config)
         # rm -rf 不存在的目录会成功（exit 0）
-        result = await tool.execute(command="rm -rf /tmp/nonexistent-dir-xyz", confirm=True)
+        result = await tool.execute(
+            command="rm -rf /tmp/nonexistent-dir-xyz", confirm=True
+        )
         assert result.success
 
     @pytest.mark.asyncio
     async def test_run_command_output_limit(self, tmp_path):
-        config = _make_config(base_dir=str(tmp_path), default_output_limit=20, max_output_limit=20)
+        config = _make_config(
+            base_dir=str(tmp_path), default_output_limit=20, max_output_limit=20
+        )
         tool = RunCommandTool(config=config)
         result = await tool.execute(command="python -c \"print('x'*200)\"")
         assert result.data["truncated"] is True
@@ -154,9 +156,7 @@ class TestRunCommandTool:
     @pytest.mark.asyncio
     async def test_run_command_select_mode_allowed(self, tmp_path):
         """select mode 下白名单内命令可执行"""
-        config = _make_config(
-            base_dir=str(tmp_path), allow_run_in_select_mode=True
-        )
+        config = _make_config(base_dir=str(tmp_path), allow_run_in_select_mode=True)
         tool = RunCommandTool(config=config)
         result = await tool.execute(
             command="echo ok",
@@ -168,9 +168,7 @@ class TestRunCommandTool:
     @pytest.mark.asyncio
     async def test_run_command_select_mode_not_whitelisted(self, tmp_path):
         """select mode 下非白名单命令拒绝"""
-        config = _make_config(
-            base_dir=str(tmp_path), allow_run_in_select_mode=True
-        )
+        config = _make_config(base_dir=str(tmp_path), allow_run_in_select_mode=True)
         tool = RunCommandTool(config=config)
         result = await tool.execute(
             command="rm -rf /tmp/test",
@@ -183,9 +181,7 @@ class TestRunCommandTool:
     @pytest.mark.asyncio
     async def test_run_command_select_mode_shell_operator_denied(self, tmp_path):
         """select mode 下禁止管道等 shell 运算符"""
-        config = _make_config(
-            base_dir=str(tmp_path), allow_run_in_select_mode=True
-        )
+        config = _make_config(base_dir=str(tmp_path), allow_run_in_select_mode=True)
         tool = RunCommandTool(config=config)
         result = await tool.execute(
             command="ls | grep x",

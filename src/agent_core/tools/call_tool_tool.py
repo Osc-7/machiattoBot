@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 from .versioned_registry import VersionedToolRegistry
@@ -45,7 +45,7 @@ class CallToolTool(BaseTool):
                 "name 必须是已注册的工具名称。",
                 "arguments 需符合目标工具参数定义。",
             ],
-            tags=['工具', '执行'],
+            tags=["工具", "执行"],
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:

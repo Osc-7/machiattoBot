@@ -11,4 +11,3 @@
 """
 
 from .content_resolver import FeishuContentResolver  # noqa: F401
-

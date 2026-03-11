@@ -17,7 +17,13 @@ from .repositories import (
     NotificationOutboxRepository,
     SyncCursorRepository,
 )
-from .types import Digest, ExternalItem, NotificationOutbox, NotificationStatus, SyncCursor
+from .types import (
+    Digest,
+    ExternalItem,
+    NotificationOutbox,
+    NotificationStatus,
+    SyncCursor,
+)
 
 
 class SyncIngestionService:
@@ -28,7 +34,9 @@ class SyncIngestionService:
         cursor_repo: SyncCursorRepository,
         event_bus: AsyncEventBus,
     ):
-        self._connectors: Dict[str, BaseConnector] = {connector.source_type: connector for connector in connectors}
+        self._connectors: Dict[str, BaseConnector] = {
+            connector.source_type: connector for connector in connectors
+        }
         self._external_repo = external_repo
         self._cursor_repo = cursor_repo
         self._event_bus = event_bus
@@ -36,7 +44,12 @@ class SyncIngestionService:
     async def run_source(self, source_type: str, account_id: str = "default") -> dict:
         connector = self._connectors.get(source_type)
         if connector is None:
-            return {"source": source_type, "error": "CONNECTOR_NOT_FOUND", "created": 0, "updated": 0}
+            return {
+                "source": source_type,
+                "error": "CONNECTOR_NOT_FOUND",
+                "created": 0,
+                "updated": 0,
+            }
 
         cursor_id = f"{source_type}:{account_id}"
         cursor = self._cursor_repo.get(cursor_id)
@@ -74,7 +87,9 @@ class SyncIngestionService:
             )
 
         next_cursor = result.next_cursor or datetime.now().isoformat()
-        cursor_model = SyncCursor(source_type=source_type, account_id=account_id, cursor=next_cursor)
+        cursor_model = SyncCursor(
+            source_type=source_type, account_id=account_id, cursor=next_cursor
+        )
         if cursor is None:
             self._cursor_repo.create(cursor_model)
         else:
@@ -139,7 +154,9 @@ class NormalizationWriteService:
             origin_ref=payload.get("origin_ref"),
         )
         self._event_repo.create(event)
-        await self._event_bus.publish("schedule.changed", {"event_id": event.id, "source_type": source_type})
+        await self._event_bus.publish(
+            "schedule.changed", {"event_id": event.id, "source_type": source_type}
+        )
 
     async def _write_task(self, source_type: str, payload: dict) -> None:
         title = payload.get("title") or "[自动化] 未命名任务"
@@ -156,7 +173,9 @@ class NormalizationWriteService:
             origin_ref=payload.get("origin_ref"),
         )
         self._task_repo.create(task)
-        await self._event_bus.publish("task.changed", {"task_id": task.id, "source_type": source_type})
+        await self._event_bus.publish(
+            "task.changed", {"task_id": task.id, "source_type": source_type}
+        )
 
 
 class SummaryService:
@@ -177,10 +196,14 @@ class SummaryService:
         digest_type = payload.get("digest_type", "daily")
         if digest_type == "weekly":
             digest = self.generate_weekly_digest()
-            await self._event_bus.publish("weekly_digest.ready", {"digest_id": digest.id})
+            await self._event_bus.publish(
+                "weekly_digest.ready", {"digest_id": digest.id}
+            )
         else:
             digest = self.generate_daily_digest()
-            await self._event_bus.publish("daily_digest.ready", {"digest_id": digest.id})
+            await self._event_bus.publish(
+                "daily_digest.ready", {"digest_id": digest.id}
+            )
 
     def generate_daily_digest(self, day: Optional[date] = None) -> Digest:
         target_day = day or date.today()
@@ -243,7 +266,9 @@ class SummaryService:
             content_lines.append("")
             content_lines.append("## 今日关键事件")
             for e in important_events:
-                time_str = f"{e.start_time.strftime('%H:%M')} - {e.end_time.strftime('%H:%M')}"
+                time_str = (
+                    f"{e.start_time.strftime('%H:%M')} - {e.end_time.strftime('%H:%M')}"
+                )
                 tags = ", ".join(e.tags[:3]) if e.tags else ""
                 tags_part = f"，标签：{tags}" if tags else ""
                 content_lines.append(
@@ -349,7 +374,9 @@ class SummaryService:
             content_lines.append("## 本周关键事件")
             for e in important_events:
                 day_str = e.start_time.strftime("%Y-%m-%d")
-                time_str = f"{e.start_time.strftime('%H:%M')} - {e.end_time.strftime('%H:%M')}"
+                time_str = (
+                    f"{e.start_time.strftime('%H:%M')} - {e.end_time.strftime('%H:%M')}"
+                )
                 tags = ", ".join(e.tags[:3]) if e.tags else ""
                 tags_part = f"，标签：{tags}" if tags else ""
                 content_lines.append(
@@ -396,7 +423,9 @@ class NotificationOutboxService:
         )
         self._outbox_repo.create(outbox)
 
-    def list_notifications(self, limit: int = 20, status: Optional[str] = None) -> list[NotificationOutbox]:
+    def list_notifications(
+        self, limit: int = 20, status: Optional[str] = None
+    ) -> list[NotificationOutbox]:
         parsed_status = None
         if status:
             try:

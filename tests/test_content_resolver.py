@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
 
 import pytest
 
-from agent_core.content import ContentReference, resolve_content_refs
+from agent_core.content import resolve_content_refs
 from agent_core.content.models import ContentReference as CR
 
 
@@ -20,7 +18,12 @@ class TestContentReference:
         assert d["key"] == "a.png"
 
     def test_from_dict(self):
-        d = {"source": "feishu", "ref_type": "image", "key": "img_xxx", "extra": {"message_id": "om_1"}}
+        d = {
+            "source": "feishu",
+            "ref_type": "image",
+            "key": "img_xxx",
+            "extra": {"message_id": "om_1"},
+        }
         r = CR.from_dict(d)
         assert r.source == "feishu"
         assert r.ref_type == "image"

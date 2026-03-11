@@ -39,7 +39,11 @@ class _DummyClient:
 
     def create_post(self, *, raw: str, topic_id: int, reply_to_post_number=None):
         self.payloads.append(
-            {"raw": raw, "topic_id": topic_id, "reply_to_post_number": reply_to_post_number}
+            {
+                "raw": raw,
+                "topic_id": topic_id,
+                "reply_to_post_number": reply_to_post_number,
+            }
         )
         return {"id": 123}, 200, ""
 
@@ -86,4 +90,3 @@ def test_is_invocation_invalid_when_marker_present():
 
     ok2, _ = is_invocation_valid_from_raw(text)
     assert ok2 is False
-

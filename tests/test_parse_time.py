@@ -3,7 +3,7 @@
 """
 
 import pytest
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from agent_core.tools import ParseTimeTool, ParsedTime, TimeParser
@@ -436,7 +436,7 @@ class TestTimeParserEdgeCases:
     def test_february_29_invalid(self, parser, fixed_now):
         """测试无效的2月29日（2026年不是闰年）"""
         parser.set_now(fixed_now)
-        result = parser.parse("2月29日")
+        parser.parse("2月29日")
         # 2026年2月只有28天，应该失败或回退
         # 由于日期已过，应该跳到2027年，而2027也不是闰年
         # 实际行为取决于实现

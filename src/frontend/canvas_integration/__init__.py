@@ -35,7 +35,13 @@ Modules:
 
 from .config import CanvasConfig
 from .client import CanvasClient, CanvasAPIError, CanvasAuthError, CanvasRateLimitError
-from .models import CanvasAssignment, CanvasEvent, CanvasPlannerItem, CanvasFile, SyncResult
+from .models import (
+    CanvasAssignment,
+    CanvasEvent,
+    CanvasPlannerItem,
+    CanvasFile,
+    SyncResult,
+)
 from .sync import CanvasSync, sync_canvas_to_schedule
 
 __version__ = "1.0.0"
@@ -44,20 +50,17 @@ __author__ = "Machiatto"
 __all__ = [
     # 配置
     "CanvasConfig",
-
     # 客户端
     "CanvasClient",
     "CanvasAPIError",
     "CanvasAuthError",
     "CanvasRateLimitError",
-
     # 模型
     "CanvasAssignment",
     "CanvasEvent",
     "CanvasPlannerItem",
     "CanvasFile",
     "SyncResult",
-
     # 同步
     "CanvasSync",
     "sync_canvas_to_schedule",

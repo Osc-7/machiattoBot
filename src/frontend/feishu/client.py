@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """
 飞书开放平台 HTTP 客户端封装。
 
 - 发送文本消息、图片消息
 - 下载消息中的资源文件（图片、视频、音频、文件）
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -47,7 +47,9 @@ class FeishuClient:
             return self._tenant_token_cache.token
 
         if not (self._cfg.app_id and self._cfg.app_secret):
-            raise RuntimeError("Feishu app_id/app_secret 未配置，无法获取 tenant_access_token")
+            raise RuntimeError(
+                "Feishu app_id/app_secret 未配置，无法获取 tenant_access_token"
+            )
 
         url = f"{self._base_url}/open-apis/auth/v3/tenant_access_token/internal"
         async with httpx.AsyncClient(timeout=self._timeout) as client:
@@ -103,7 +105,9 @@ class FeishuClient:
             # 失败时抛出异常，由上层记录日志并向用户返回友好错误
             raise RuntimeError(f"发送飞书消息失败: {data}")
 
-    async def upload_image(self, *, image_bytes: bytes, content_type: str = "image/png") -> str:
+    async def upload_image(
+        self, *, image_bytes: bytes, content_type: str = "image/png"
+    ) -> str:
         """
         上传图片并返回 image_key，用于发送图片消息。
 
@@ -189,7 +193,9 @@ class FeishuClient:
             if not image_bytes or len(image_bytes) > 10 * 1024 * 1024:
                 continue
             try:
-                image_key = await self.upload_image(image_bytes=image_bytes, content_type=content_type)
+                image_key = await self.upload_image(
+                    image_bytes=image_bytes, content_type=content_type
+                )
                 await self.send_image_message(chat_id=chat_id, image_key=image_key)
             except Exception as exc:
                 logging.getLogger(__name__).warning("飞书发送回复附图失败: %s", exc)
@@ -235,4 +241,3 @@ class FeishuClient:
         content_type = resp.headers.get("content-type", "application/octet-stream")
         mime = content_type.split(";")[0].strip() or "application/octet-stream"
         return resp.content, mime
-

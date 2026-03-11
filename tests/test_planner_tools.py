@@ -3,7 +3,7 @@
 """
 
 import pytest
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 import tempfile
 import os
 
@@ -142,7 +142,9 @@ class TestPlanTasksToolExecute:
         assert updated_task.is_scheduled is True
 
     @pytest.mark.asyncio
-    async def test_execute_dry_run_does_not_persist(self, plan_tasks_tool, task_repo, event_repo):
+    async def test_execute_dry_run_does_not_persist(
+        self, plan_tasks_tool, task_repo, event_repo
+    ):
         task = Task(title="dry run task", estimated_minutes=60)
         task_repo.create(task)
 
@@ -159,7 +161,9 @@ class TestPlanTasksToolExecute:
         assert refreshed.status == TaskStatus.TODO
 
     @pytest.mark.asyncio
-    async def test_replace_existing_plans_cancels_old_blocks(self, plan_tasks_tool, event_repo, task_repo):
+    async def test_replace_existing_plans_cancels_old_blocks(
+        self, plan_tasks_tool, event_repo, task_repo
+    ):
         old_block = Event(
             title="旧计划",
             start_time=datetime(2026, 2, 17, 9, 0),
@@ -184,7 +188,9 @@ class TestPlanTasksToolExecute:
         assert updated_old.status == EventStatus.CANCELLED
 
     @pytest.mark.asyncio
-    async def test_score_prefers_urgent_important_difficult(self, plan_tasks_tool, task_repo):
+    async def test_score_prefers_urgent_important_difficult(
+        self, plan_tasks_tool, task_repo
+    ):
         # 同一天窗口，检查排序与评分
         a = Task(
             title="普通任务",
@@ -203,7 +209,9 @@ class TestPlanTasksToolExecute:
         task_repo.create(a)
         task_repo.create(b)
 
-        result = await plan_tasks_tool.execute(start_date="2026-02-17", days=1, max_tasks=2)
+        result = await plan_tasks_tool.execute(
+            start_date="2026-02-17", days=1, max_tasks=2
+        )
         assert result.success is True
         planned = result.data["planned_items"]
         assert len(planned) == 2
@@ -211,7 +219,9 @@ class TestPlanTasksToolExecute:
         assert planned[0]["score"] >= planned[1]["score"]
 
     @pytest.mark.asyncio
-    async def test_avoid_conflicts_with_blocking_events(self, plan_tasks_tool, event_repo, task_repo):
+    async def test_avoid_conflicts_with_blocking_events(
+        self, plan_tasks_tool, event_repo, task_repo
+    ):
         # 9-18 被 blocking 事件占用，只能排在 18 点之后
         busy = Event(
             title="全天培训",
@@ -223,7 +233,9 @@ class TestPlanTasksToolExecute:
         task = Task(title="测试任务", estimated_minutes=60)
         task_repo.create(task)
 
-        result = await plan_tasks_tool.execute(start_date="2026-02-17", days=1, max_tasks=1)
+        result = await plan_tasks_tool.execute(
+            start_date="2026-02-17", days=1, max_tasks=1
+        )
         assert result.success is True
         if result.data["planned_items"]:
             start = datetime.fromisoformat(result.data["planned_items"][0]["start_at"])
@@ -267,7 +279,9 @@ class TestPlannerIntegration:
             task_repository=task_repo,
             planning_config=planning_config,
         )
-        plan_result = await plan_tool.execute(start_date="2026-02-17", days=3, max_tasks=5)
+        plan_result = await plan_tool.execute(
+            start_date="2026-02-17", days=3, max_tasks=5
+        )
 
         assert plan_result.success is True
         assert plan_result.data["summary"]["planned"] >= 1
@@ -291,9 +305,7 @@ class TestPlannerIntegration:
             planning_config=config,
         )
         for i in range(3):
-            task_repo.create(
-                Task(title=f"任务{i+1}", estimated_minutes=60)
-            )
+            task_repo.create(Task(title=f"任务{i + 1}", estimated_minutes=60))
 
         result = await tool.execute(start_date="2026-02-17", days=1, dry_run=True)
         assert result.success is True
@@ -326,9 +338,7 @@ class TestPlannerIntegration:
         task_repo.create(Task(title="唯一任务", estimated_minutes=60))
 
         # 2026-02-28 是周六，若优先工作日则应排在周一 03-02
-        result = await tool.execute(
-            start_date="2026-02-28", days=7, dry_run=True
-        )
+        result = await tool.execute(start_date="2026-02-28", days=7, dry_run=True)
         assert result.success is True
         planned = result.data["planned_items"]
         assert len(planned) == 1

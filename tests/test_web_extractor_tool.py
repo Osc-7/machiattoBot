@@ -21,7 +21,7 @@ class TestWebExtractorTool:
         registry = VersionedToolRegistry()
         tool = WebExtractorTool(registry=registry)
         definition = tool.get_definition()
-        
+
         assert definition.name == "extract_web_content"
         assert len(definition.parameters) == 2
         assert definition.parameters[0].name == "url"
@@ -33,7 +33,7 @@ class TestWebExtractorTool:
         registry = VersionedToolRegistry()
         tool = WebExtractorTool(registry=registry)
         result = await tool.execute()
-        
+
         assert result.success is False
         assert result.error == "MISSING_URL"
 
@@ -43,7 +43,7 @@ class TestWebExtractorTool:
         registry = VersionedToolRegistry()
         tool = WebExtractorTool(registry=registry)
         result = await tool.execute(url="invalid-url")
-        
+
         assert result.success is False
         assert result.error == "INVALID_URL"
 
@@ -69,17 +69,36 @@ class TestWebExtractorTool:
                 return "tavily.extract"
 
             def to_openai_tool(self):
-                return {"type": "function", "function": {"name": "tavily.extract", "description": "", "parameters": {"type": "object", "properties": {}, "required": []}}}
+                return {
+                    "type": "function",
+                    "function": {
+                        "name": "tavily.extract",
+                        "description": "",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {},
+                            "required": [],
+                        },
+                    },
+                }
 
             async def execute(self, **kwargs):
                 assert "urls" in kwargs or "url" in kwargs
-                return type("R", (), {
-                    "success": True,
-                    "data": {"results": [{"url": "https://example.com", "content": "网页正文"}]},
-                    "message": "ok",
-                    "error": None,
-                    "metadata": {},
-                })()
+                return type(
+                    "R",
+                    (),
+                    {
+                        "success": True,
+                        "data": {
+                            "results": [
+                                {"url": "https://example.com", "content": "网页正文"}
+                            ]
+                        },
+                        "message": "ok",
+                        "error": None,
+                        "metadata": {},
+                    },
+                )()
 
         registry.register(FakeExtractTool())
         tool = WebExtractorTool(registry=registry)

@@ -122,7 +122,9 @@ class ShuiyuanClientPool:
 
         self._site_url = site_url
         self._timeout = timeout
-        self._state_path = state_path or Path("./data/shuiyuan/user_api_keys_state.json")
+        self._state_path = state_path or Path(
+            "./data/shuiyuan/user_api_keys_state.json"
+        )
         self._cooldown_seconds = max(1, int(cooldown_hours * 3600))
 
         self._clients: dict[str, ShuiyuanClient] = {}
@@ -163,7 +165,9 @@ class ShuiyuanClientPool:
                 "blocked_until": self._blocked_until,
                 "current_index": self._current_index,
             }
-            path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
         except Exception:
             # 状态持久化失败不应影响主流程
             pass
@@ -174,7 +178,9 @@ class ShuiyuanClientPool:
         now = time.time()
         # 所有可用 key 的索引
         available_indices = [
-            i for i, k in enumerate(self._keys) if self._blocked_until.get(k, 0.0) <= now
+            i
+            for i, k in enumerate(self._keys)
+            if self._blocked_until.get(k, 0.0) <= now
         ]
         if not available_indices:
             raise RuntimeError("所有 User-Api-Key 已在冷却中，请稍后再试")
@@ -205,7 +211,9 @@ class ShuiyuanClientPool:
 
     def _mark_rate_limited(self, key: str) -> None:
         now = time.time()
-        self._blocked_until[key] = max(self._blocked_until.get(key, 0.0), now + self._cooldown_seconds)
+        self._blocked_until[key] = max(
+            self._blocked_until.get(key, 0.0), now + self._cooldown_seconds
+        )
         self._save_state()
 
     def _should_mark_daily_limit(self, exc: Exception) -> bool:
@@ -246,7 +254,9 @@ class ShuiyuanClientPool:
 
         # 所有 key 都已尝试且遇到日级限流或其它错误
         if last_error is not None and self._should_mark_daily_limit(last_error):
-            raise RuntimeError("所有 User-Api-Key 今日请求次数已达上限，请 5 小时后重试") from last_error
+            raise RuntimeError(
+                "所有 User-Api-Key 今日请求次数已达上限，请 5 小时后重试"
+            ) from last_error
         if last_error is not None:
             raise last_error
         raise RuntimeError("未能使用任何 User-Api-Key 完成请求")
@@ -343,7 +353,9 @@ class ShuiyuanClient:
             if len(post_ids) > 20:
                 post_ids = post_ids[:20]
             params = [("post_ids[]", pid) for pid in post_ids]
-            r = requests.get(url, params=params, headers=self._headers, timeout=self._timeout)
+            r = requests.get(
+                url, params=params, headers=self._headers, timeout=self._timeout
+            )
         else:
             r = requests.get(url, headers=self._headers, timeout=self._timeout)
         if r.status_code == 404:
@@ -432,9 +444,7 @@ class ShuiyuanClient:
         r.raise_for_status()
         return r.json()
 
-    def get_post_by_id(
-        self, topic_id: int, post_id: int
-    ) -> Optional[dict[str, Any]]:
+    def get_post_by_id(self, topic_id: int, post_id: int) -> Optional[dict[str, Any]]:
         """根据 post_id 直接获取单条帖子（含 raw 正文）。用于长帖，不依赖 stream 分页。"""
         data = self.get_topic_posts(topic_id, post_ids=[post_id])
         if not data:

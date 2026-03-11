@@ -15,7 +15,6 @@ import threading
 import time
 from typing import Any, Optional
 
-from agent_core import ScheduleAgent
 from agent_core.interfaces import AgentHooks, AgentRunInput
 from system.automation.repositories import _automation_base_dir
 from agent_core.utils.cli_style import (
@@ -35,6 +34,7 @@ try:
     from prompt_toolkit import PromptSession as _PromptSession
     from prompt_toolkit.formatted_text import HTML
     from prompt_toolkit.patch_stdout import patch_stdout as _patch_stdout
+
     _HAS_PROMPT_TOOLKIT = True
 except ImportError:
     _HAS_PROMPT_TOOLKIT = False
@@ -46,6 +46,7 @@ try:
     from rich.console import Console
     from rich.live import Live
     from rich.markdown import Markdown
+
     _HAS_RICH = True
     _RICH_CONSOLE: Any = Console()
 except Exception:  # pragma: no cover
@@ -78,7 +79,9 @@ def print_welcome():
         print("  • 查询日程和任务")
         print("  • 智能规划时间")
         print()
-        print("命令： quit/exit 退出  |  clear 清空对话  |  help 帮助  |  usage/stats 用量")
+        print(
+            "命令： quit/exit 退出  |  clear 清空对话  |  help 帮助  |  usage/stats 用量"
+        )
         print("-" * 50)
         print()
 
@@ -145,16 +148,23 @@ def print_token_usage_data(u: dict):
     prompt_tokens = u.get("prompt_tokens", 0)
     completion_tokens = u.get("completion_tokens", 0)
     total_tokens = u.get("total_tokens", 0)
-    cost_line = f"\n- **预估费用**: `¥{u['cost_yuan']:.4f}`" if u.get("cost_yuan") is not None else ""
+    cost_line = (
+        f"\n- **预估费用**: `¥{u['cost_yuan']:.4f}`"
+        if u.get("cost_yuan") is not None
+        else ""
+    )
 
     # 上下文窗口使用情况（如果后端提供）
     ctx_max = u.get("context_window_max_tokens")
     ctx_cur = u.get("context_window_current_tokens")
     ctx_rem = u.get("context_window_remaining_tokens")
-    if isinstance(ctx_max, int) and ctx_max > 0 and isinstance(ctx_cur, int) and isinstance(ctx_rem, int):
-        ctx_line = (
-            f"\n- **上下文窗口**: `当前 {ctx_cur:,} / 最大 {ctx_max:,}，剩余 {ctx_rem:,} token`"
-        )
+    if (
+        isinstance(ctx_max, int)
+        and ctx_max > 0
+        and isinstance(ctx_cur, int)
+        and isinstance(ctx_rem, int)
+    ):
+        ctx_line = f"\n- **上下文窗口**: `当前 {ctx_cur:,} / 最大 {ctx_max:,}，剩余 {ctx_rem:,} token`"
     else:
         ctx_line = ""
     md = f"""
@@ -178,8 +188,15 @@ def print_token_usage_data(u: dict):
         print(f"  合计 token:   {u.get('total_tokens', 0)}")
         if u.get("cost_yuan") is not None:
             print(f"  预估费用:     ¥{u['cost_yuan']:.4f}")
-        if isinstance(ctx_max, int) and ctx_max > 0 and isinstance(ctx_cur, int) and isinstance(ctx_rem, int):
-            print(f"  上下文窗口:   当前 {ctx_cur:,} / 最大 {ctx_max:,}，剩余 {ctx_rem:,} token")
+        if (
+            isinstance(ctx_max, int)
+            and ctx_max > 0
+            and isinstance(ctx_cur, int)
+            and isinstance(ctx_rem, int)
+        ):
+            print(
+                f"  上下文窗口:   当前 {ctx_cur:,} / 最大 {ctx_max:,}，剩余 {ctx_rem:,} token"
+            )
         print("=" * 50)
         print()
 
@@ -200,7 +217,11 @@ async def run_interactive_loop(agent: Any) -> str:
     processing_task: Optional[asyncio.Task[str]] = None
     is_processing = False
     interrupted_processing = False
-    show_reasoning = (os.getenv("SCHEDULE_SHOW_REASONING", "1").strip().lower() not in {"0", "false", "no"})
+    show_reasoning = os.getenv("SCHEDULE_SHOW_REASONING", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
 
     async def _maybe_await(value: Any) -> Any:
         if inspect.isawaitable(value):
@@ -226,7 +247,9 @@ async def run_interactive_loop(agent: Any) -> str:
 
     async def _get_token_usage() -> dict:
         usage = await _call_method("get_token_usage")
-        return _normalize_usage(usage) if isinstance(usage, dict) else dict(_DEFAULT_USAGE)
+        return (
+            _normalize_usage(usage) if isinstance(usage, dict) else dict(_DEFAULT_USAGE)
+        )
 
     def _supports_session_commands() -> bool:
         return (
@@ -286,8 +309,14 @@ async def run_interactive_loop(agent: Any) -> str:
             print(thin_separator())
             return True
         if sub == "new":
-            session_id = parts[2].strip() if len(parts) > 2 and parts[2].strip() else f"cli:{int(time.time())}"
-            created = await _call_method("switch_session", session_id, create_if_missing=True)
+            session_id = (
+                parts[2].strip()
+                if len(parts) > 2 and parts[2].strip()
+                else f"cli:{int(time.time())}"
+            )
+            created = await _call_method(
+                "switch_session", session_id, create_if_missing=True
+            )
             if created:
                 print(hint(f"  已创建并切换到新会话: {session_id}"))
             else:
@@ -307,7 +336,11 @@ async def run_interactive_loop(agent: Any) -> str:
                 print(hint(f"  无法删除会话: {target}（可能是当前活跃会话或不存在）"))
             print(thin_separator())
             return True
-        print(hint("  用法: session | session whoami | session list | session switch <id> | session new [id] | session delete <id>"))
+        print(
+            hint(
+                "  用法: session | session whoami | session list | session switch <id> | session new [id] | session delete <id>"
+            )
+        )
         print(thin_separator())
         return True
 
@@ -338,9 +371,7 @@ async def run_interactive_loop(agent: Any) -> str:
     if activity_path.exists():
         try:
             _text0 = activity_path.read_text(encoding="utf-8")
-            automation_last_seen = len(
-                [ln for ln in _text0.splitlines() if ln.strip()]
-            )
+            automation_last_seen = len([ln for ln in _text0.splitlines() if ln.strip()])
         except Exception:
             automation_last_seen = 0
 
@@ -358,7 +389,7 @@ async def run_interactive_loop(agent: Any) -> str:
         lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
         if automation_last_seen >= len(lines):
             return
-        new_lines = lines[automation_last_seen : ]
+        new_lines = lines[automation_last_seen:]
         automation_last_seen = len(lines)
 
         def _strip_markdown(s: str) -> str:
@@ -392,7 +423,7 @@ async def run_interactive_loop(agent: Any) -> str:
 
     async def _automation_notifier_loop() -> None:
         """后台轮询 automation_activity.jsonl，有新记录时打印 [system] 消息。
-        
+
         Agent 处理用户输入期间（is_processing=True）暂停打印，
         避免系统消息插入 spinner 或 streaming 输出中破坏 UI。
         积压的消息会在 Agent 回复完成后由主循环统一冲刷。
@@ -405,11 +436,15 @@ async def run_interactive_loop(agent: Any) -> str:
                 # 不让通知异常影响主循环
                 pass
             try:
-                await asyncio.wait_for(asyncio.shield(automation_stop_event.wait()), timeout=5.0)
+                await asyncio.wait_for(
+                    asyncio.shield(automation_stop_event.wait()), timeout=5.0
+                )
             except asyncio.TimeoutError:
                 continue
 
-    automation_task: Optional[asyncio.Task[Any]] = asyncio.create_task(_automation_notifier_loop())
+    automation_task: Optional[asyncio.Task[Any]] = asyncio.create_task(
+        _automation_notifier_loop()
+    )
 
     # patch_stdout 让所有 print() 通过 prompt_toolkit 渲染，
     # 避免后台通知直接写 stdout 破坏输入提示符的显示。
@@ -466,8 +501,16 @@ async def run_interactive_loop(agent: Any) -> str:
                 u = await _get_token_usage()
                 if u["call_count"] > 0:
                     print()
-                    cost_str = f"，约 ¥{u['cost_yuan']:.4f}" if u.get("cost_yuan") is not None else ""
-                    print(hint(f"本会话共调用 LLM {u['call_count']} 次，合计 token: {u['total_tokens']}（输入 {u['prompt_tokens']} + 输出 {u['completion_tokens']}）{cost_str}"))
+                    cost_str = (
+                        f"，约 ¥{u['cost_yuan']:.4f}"
+                        if u.get("cost_yuan") is not None
+                        else ""
+                    )
+                    print(
+                        hint(
+                            f"本会话共调用 LLM {u['call_count']} 次，合计 token: {u['total_tokens']}（输入 {u['prompt_tokens']} + 输出 {u['completion_tokens']}）{cost_str}"
+                        )
+                    )
                 print()
                 print(label("再见！"))
                 print()
@@ -517,7 +560,9 @@ async def run_interactive_loop(agent: Any) -> str:
                     frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
                     i = 0
                     while not _spinner_stop.is_set():
-                        if spinner_paused or (time.monotonic() - last_text_output_ts < 0.35):
+                        if spinner_paused or (
+                            time.monotonic() - last_text_output_ts < 0.35
+                        ):
                             with io_lock:
                                 if spinner_line_active:
                                     _erase_spinner_line()
@@ -622,7 +667,12 @@ async def run_interactive_loop(agent: Any) -> str:
 
                 def on_stream_delta(delta: str) -> None:
                     """每段 LLM 输出都是正式回复，Rich Live Markdown 流式渲染。"""
-                    nonlocal stream_started, stream_buffer, live, last_render_ts, last_text_output_ts
+                    nonlocal \
+                        stream_started, \
+                        stream_buffer, \
+                        live, \
+                        last_render_ts, \
+                        last_text_output_ts
                     if not delta:
                         return
                     stream_buffer += delta
@@ -689,7 +739,11 @@ async def run_interactive_loop(agent: Any) -> str:
                         iteration = event.get("iteration")
                         tool_count = event.get("tool_count")
                         _print_with_spinner()
-                        _print_with_spinner(hint(f"  第 {iteration} 步: 调用模型（可用工具 {tool_count}）"))
+                        _print_with_spinner(
+                            hint(
+                                f"  第 {iteration} 步: 调用模型（可用工具 {tool_count}）"
+                            )
+                        )
                     elif event_type == "tool_call":
                         _flush_reasoning_buffer()
                         if stream_started:
@@ -703,7 +757,9 @@ async def run_interactive_loop(agent: Any) -> str:
                         ok = "成功" if event.get("success") else "失败"
                         msg = _short(event.get("message", ""))
                         ms = event.get("duration_ms")
-                        _print_with_spinner(hint(f"  → 工具结果: {name} {ok}（{ms}ms） {msg}"))
+                        _print_with_spinner(
+                            hint(f"  → 工具结果: {name} {ok}（{ms}ms） {msg}")
+                        )
 
                 is_processing = True
                 if hasattr(agent, "run_turn"):
@@ -717,7 +773,9 @@ async def run_interactive_loop(agent: Any) -> str:
                     )
                     _raw_result = await processing_task
                     resp_text = getattr(_raw_result, "output_text", None)
-                    response = resp_text if isinstance(resp_text, str) else str(_raw_result)
+                    response = (
+                        resp_text if isinstance(resp_text, str) else str(_raw_result)
+                    )
                 else:
                     processing_task = asyncio.create_task(
                         agent.process_input(
@@ -758,7 +816,9 @@ async def run_interactive_loop(agent: Any) -> str:
                 if spinner_stop is not None:
                     spinner_stop.set()
                 with io_lock:
-                    sys.stdout.write("\r" + " " * shutil.get_terminal_size((80, 20)).columns + "\r")
+                    sys.stdout.write(
+                        "\r" + " " * shutil.get_terminal_size((80, 20)).columns + "\r"
+                    )
                     sys.stdout.flush()
                 if spinner_task is not None:
                     try:
@@ -781,7 +841,9 @@ async def run_interactive_loop(agent: Any) -> str:
                 if spinner_stop is not None:
                     spinner_stop.set()
                 with io_lock:
-                    sys.stdout.write("\r" + " " * shutil.get_terminal_size((80, 20)).columns + "\r")
+                    sys.stdout.write(
+                        "\r" + " " * shutil.get_terminal_size((80, 20)).columns + "\r"
+                    )
                     sys.stdout.flush()
                 if spinner_task is not None:
                     try:

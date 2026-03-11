@@ -84,7 +84,9 @@ class CoreLifecycleLogger:
             }
         )
 
-    def on_turn_end(self, turn_id: int, *, output_text: str, metadata: Dict[str, Any] | None = None) -> None:
+    def on_turn_end(
+        self, turn_id: int, *, output_text: str, metadata: Dict[str, Any] | None = None
+    ) -> None:
         record: Dict[str, Any] = {
             "event": "turn_end",
             "timestamp": self._timestamp(),
@@ -117,4 +119,3 @@ class CoreLifecycleLogger:
     @property
     def file_path(self) -> Optional[Path]:
         return self._file_path
-

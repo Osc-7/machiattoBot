@@ -8,7 +8,9 @@ from agent_core.memory.chat_history_db import ChatHistoryDB
 def test_chat_history_db_filters_by_default_source(tmp_path):
     db_path = tmp_path / "chat_history.db"
     db = ChatHistoryDB(str(db_path))
-    db.write_message(session_id="s1", role="user", content="hello from cli", source="cli")
+    db.write_message(
+        session_id="s1", role="user", content="hello from cli", source="cli"
+    )
     db.write_message(session_id="s2", role="user", content="hello from qq", source="qq")
     db.close()
 
@@ -67,8 +69,12 @@ def test_chat_history_db_get_session_messages_after_with_role_filter(tmp_path):
 def test_chat_history_db_delete_session_messages_can_filter_source(tmp_path):
     db_path = tmp_path / "chat_history.db"
     db = ChatHistoryDB(str(db_path))
-    db.write_message(session_id="shared:s1", role="user", content="from cli", source="cli")
-    db.write_message(session_id="shared:s1", role="user", content="from qq", source="qq")
+    db.write_message(
+        session_id="shared:s1", role="user", content="from cli", source="cli"
+    )
+    db.write_message(
+        session_id="shared:s1", role="user", content="from qq", source="qq"
+    )
 
     deleted = db.delete_session_messages("shared:s1", source="cli")
     remain = db.get_session_messages("shared:s1")

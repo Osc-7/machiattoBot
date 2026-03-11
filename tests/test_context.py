@@ -2,8 +2,7 @@
 上下文管理测试
 """
 
-import pytest
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 from zoneinfo import ZoneInfo
 
 from agent_core.context import (
@@ -54,7 +53,9 @@ class TestTimeContext:
 
         # 早上
         morning = datetime(2026, 2, 17, 8, 0, 0, tzinfo=tz)
-        ctx = TimeContext(now=morning, today=morning.date(), timezone_name="Asia/Shanghai")
+        ctx = TimeContext(
+            now=morning, today=morning.date(), timezone_name="Asia/Shanghai"
+        )
         assert ctx.time_period == "早上"
 
         # 上午
@@ -74,7 +75,9 @@ class TestTimeContext:
 
         # 晚上
         evening = datetime(2026, 2, 17, 20, 0, 0, tzinfo=tz)
-        ctx = TimeContext(now=evening, today=evening.date(), timezone_name="Asia/Shanghai")
+        ctx = TimeContext(
+            now=evening, today=evening.date(), timezone_name="Asia/Shanghai"
+        )
         assert ctx.time_period == "晚上"
 
         # 深夜
@@ -88,17 +91,23 @@ class TestTimeContext:
 
         # 周二
         tuesday = datetime(2026, 2, 17, 14, 0, 0, tzinfo=tz)
-        ctx = TimeContext(now=tuesday, today=tuesday.date(), timezone_name="Asia/Shanghai")
+        ctx = TimeContext(
+            now=tuesday, today=tuesday.date(), timezone_name="Asia/Shanghai"
+        )
         assert ctx.is_weekend is False
 
         # 周六
         saturday = datetime(2026, 2, 21, 14, 0, 0, tzinfo=tz)
-        ctx = TimeContext(now=saturday, today=saturday.date(), timezone_name="Asia/Shanghai")
+        ctx = TimeContext(
+            now=saturday, today=saturday.date(), timezone_name="Asia/Shanghai"
+        )
         assert ctx.is_weekend is True
 
         # 周日
         sunday = datetime(2026, 2, 22, 14, 0, 0, tzinfo=tz)
-        ctx = TimeContext(now=sunday, today=sunday.date(), timezone_name="Asia/Shanghai")
+        ctx = TimeContext(
+            now=sunday, today=sunday.date(), timezone_name="Asia/Shanghai"
+        )
         assert ctx.is_weekend is True
 
     def test_start_of_week(self):
@@ -344,8 +353,16 @@ class TestConversationContext:
         ctx.add_assistant_message(
             content=None,
             tool_calls=[
-                {"id": "c1", "type": "function", "function": {"name": "add_event", "arguments": "{}"}},
-                {"id": "c2", "type": "function", "function": {"name": "add_event", "arguments": "{}"}},
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "add_event", "arguments": "{}"},
+                },
+                {
+                    "id": "c2",
+                    "type": "function",
+                    "function": {"name": "add_event", "arguments": "{}"},
+                },
             ],
         )
         ctx.add_tool_result("c1", "ok")
@@ -354,7 +371,13 @@ class TestConversationContext:
         ctx.add_user_message("再创建一个")
         ctx.add_assistant_message(
             content=None,
-            tool_calls=[{"id": "c3", "type": "function", "function": {"name": "add_event", "arguments": "{}"}}],
+            tool_calls=[
+                {
+                    "id": "c3",
+                    "type": "function",
+                    "function": {"name": "add_event", "arguments": "{}"},
+                }
+            ],
         )
         ctx.add_tool_result("c3", "ok")
         ctx.add_assistant_message("完成")
@@ -367,7 +390,11 @@ class TestConversationContext:
                 j = i - 1
                 while j >= 0 and messages[j].get("role") == "tool":
                     j -= 1
-                assert j >= 0 and messages[j].get("role") == "assistant" and "tool_calls" in messages[j]
+                assert (
+                    j >= 0
+                    and messages[j].get("role") == "assistant"
+                    and "tool_calls" in messages[j]
+                )
 
     def test_trim_skips_incomplete_tool_blocks(self):
         """裁剪时跳过不完整的 assistant+tool_calls 块，避免产出非法 API 请求（tool_calls 后无 tool 结果）"""
@@ -377,7 +404,13 @@ class TestConversationContext:
         ctx.add_user_message("2")
         ctx.add_assistant_message(
             content=None,
-            tool_calls=[{"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}}],
+            tool_calls=[
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "f", "arguments": "{}"},
+                }
+            ],
         )
         # 最后一块 [assistant+tool_calls] 不完整；添加 user3 触发 trim，应跳过该块
         ctx.add_user_message("3")
@@ -385,5 +418,7 @@ class TestConversationContext:
         # 任何 assistant+tool_calls 后必须有 tool 消息
         for i, m in enumerate(messages):
             if m.get("role") == "assistant" and m.get("tool_calls"):
-                has_following_tool = i + 1 < len(messages) and messages[i + 1].get("role") == "tool"
+                has_following_tool = (
+                    i + 1 < len(messages) and messages[i + 1].get("role") == "tool"
+                )
                 assert has_following_tool, "assistant+tool_calls 后必须有 tool 消息"

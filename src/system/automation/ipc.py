@@ -9,9 +9,14 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
-from agent_core.interfaces import AgentHooks, AgentRunInput, AgentRunResult, InjectMessageCommand
+from agent_core.interfaces import (
+    AgentHooks,
+    AgentRunInput,
+    AgentRunResult,
+    InjectMessageCommand,
+)
 
 from .core_gateway import AutomationCoreGateway
 
@@ -61,8 +66,12 @@ class AutomationIPCServer:
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists():
             path.unlink()
-        self._server = await asyncio.start_unix_server(self._handle_client, path=str(path))
-        self._expire_task = asyncio.create_task(self._expire_loop(), name="automation-ipc-expire")
+        self._server = await asyncio.start_unix_server(
+            self._handle_client, path=str(path)
+        )
+        self._expire_task = asyncio.create_task(
+            self._expire_loop(), name="automation-ipc-expire"
+        )
 
     async def stop(self) -> None:
         self._stopped.set()
@@ -82,14 +91,18 @@ class AutomationIPCServer:
         interval = max(5, int(self._policy.expire_check_interval_seconds))
         while not self._stopped.is_set():
             try:
-                await asyncio.wait_for(asyncio.shield(self._stopped.wait()), timeout=interval)
+                await asyncio.wait_for(
+                    asyncio.shield(self._stopped.wait()), timeout=interval
+                )
                 break
             except asyncio.TimeoutError:
                 pass
             try:
                 for sid in self._gateway.list_sessions():
                     if self._gateway.should_expire_session(session_id=sid):
-                        await self._gateway.expire_session(reason="timer", session_id=sid)
+                        await self._gateway.expire_session(
+                            reason="timer", session_id=sid
+                        )
             except Exception as exc:
                 logger.warning("automation ipc expire loop failed: %s", exc)
 
@@ -117,7 +130,9 @@ class AutomationIPCServer:
                     payload = {"id": req_id, "ok": True, "result": result}
                 except Exception as exc:
                     payload = {"id": req_id, "ok": False, "error": str(exc)}
-                writer.write((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"))
+                writer.write(
+                    (json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8")
+                )
                 await writer.drain()
         finally:
             try:
@@ -232,14 +247,19 @@ class AutomationIPCServer:
             }
 
         if method == "session_list":
-            return {"sessions": self._gateway.list_sessions(), "active_session_id": active_session}
+            return {
+                "sessions": self._gateway.list_sessions(),
+                "active_session_id": active_session,
+            }
 
         if method == "session_switch":
             session_id = str(params.get("session_id") or "").strip()
             if not session_id:
                 raise ValueError("session_id 不能为空")
             create_if_missing = bool(params.get("create_if_missing", True))
-            created = await self._gateway.ensure_session(session_id, create_if_missing=create_if_missing)
+            created = await self._gateway.ensure_session(
+                session_id, create_if_missing=create_if_missing
+            )
             self._client_active_session[client_id] = session_id
             self._gateway.mark_activity(session_id)
             return {"created": created, "active_session_id": session_id}
@@ -250,12 +270,18 @@ class AutomationIPCServer:
                 raise ValueError("session_id 不能为空")
             # 任一客户端仍将此会话作为 active 时，不允许删除，避免并发使用中的状态错乱。
             if session_id in set(self._client_active_session.values()):
-                return {"deleted": False, "active_session_id": self._client_active_session.get(client_id)}
+                return {
+                    "deleted": False,
+                    "active_session_id": self._client_active_session.get(client_id),
+                }
             ok = await self._gateway.delete_session(session_id)
             # 如果客户端当前活跃会话被删除，则回退到默认会话标识；实际 CoreSession 需按需显式切换。
             if ok and self._client_active_session.get(client_id) == session_id:
                 self._client_active_session[client_id] = f"{self._source}:default"
-            return {"deleted": ok, "active_session_id": self._client_active_session.get(client_id)}
+            return {
+                "deleted": ok,
+                "active_session_id": self._client_active_session.get(client_id),
+            }
 
         if method == "clear_context":
             await self._gateway.clear_context_for_session(active_session)
@@ -333,7 +359,9 @@ class AutomationIPCClient:
         data = await self._request("session_get", {})
         self.owner_id = str(data.get("owner_id") or self.owner_id)
         self.source = str(data.get("source") or self.source)
-        self.active_session_id = str(data.get("active_session_id") or self.active_session_id)
+        self.active_session_id = str(
+            data.get("active_session_id") or self.active_session_id
+        )
 
     async def close(self) -> None:
         return
@@ -358,7 +386,9 @@ class AutomationIPCClient:
         try:
             writer.write((json.dumps(req, ensure_ascii=False) + "\n").encode("utf-8"))
             await writer.drain()
-            raw = await asyncio.wait_for(reader.readline(), timeout=self._timeout_seconds)
+            raw = await asyncio.wait_for(
+                reader.readline(), timeout=self._timeout_seconds
+            )
         finally:
             writer.close()
             await writer.wait_closed()
@@ -372,13 +402,17 @@ class AutomationIPCClient:
 
     async def list_sessions(self) -> list[str]:
         data = await self._request("session_list", {})
-        self.active_session_id = str(data.get("active_session_id") or self.active_session_id)
+        self.active_session_id = str(
+            data.get("active_session_id") or self.active_session_id
+        )
         sessions = data.get("sessions")
         if not isinstance(sessions, list):
             return []
         return [str(s) for s in sessions]
 
-    async def switch_session(self, session_id: str, *, create_if_missing: bool = True) -> bool:
+    async def switch_session(
+        self, session_id: str, *, create_if_missing: bool = True
+    ) -> bool:
         data = await self._request(
             "session_switch",
             {"session_id": session_id, "create_if_missing": create_if_missing},
@@ -415,7 +449,9 @@ class AutomationIPCClient:
             self._turn_count_cache = 0
         return self._turn_count_cache
 
-    async def run_turn(self, agent_input: AgentRunInput, hooks: AgentHooks | None = None) -> AgentRunResult:
+    async def run_turn(
+        self, agent_input: AgentRunInput, hooks: AgentHooks | None = None
+    ) -> AgentRunResult:
         reader, writer = await asyncio.wait_for(
             asyncio.open_unix_connection(self._socket_path),
             timeout=self._timeout_seconds,
@@ -435,7 +471,9 @@ class AutomationIPCClient:
         final_result: Optional[Dict[str, Any]] = None
         try:
             while True:
-                raw = await asyncio.wait_for(reader.readline(), timeout=self._timeout_seconds)
+                raw = await asyncio.wait_for(
+                    reader.readline(), timeout=self._timeout_seconds
+                )
                 if not raw:
                     break
                 payload = json.loads(raw.decode("utf-8"))
@@ -465,7 +503,9 @@ class AutomationIPCClient:
                     continue
                 if event_type == "final":
                     if not payload.get("ok"):
-                        raise RuntimeError(str(payload.get("error") or "automation ipc error"))
+                        raise RuntimeError(
+                            str(payload.get("error") or "automation ipc error")
+                        )
                     result_data = payload.get("result")
                     final_result = result_data if isinstance(result_data, dict) else {}
                     break

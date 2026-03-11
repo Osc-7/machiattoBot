@@ -18,7 +18,9 @@ if TYPE_CHECKING:
 class SearchToolsTool(BaseTool):
     """搜索工具库并更新工作集。"""
 
-    def __init__(self, registry: VersionedToolRegistry, working_set: "ToolWorkingSetManager"):
+    def __init__(
+        self, registry: VersionedToolRegistry, working_set: "ToolWorkingSetManager"
+    ):
         self._registry = registry
         self._working_set = working_set
 

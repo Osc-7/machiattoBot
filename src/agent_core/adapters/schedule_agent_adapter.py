@@ -68,21 +68,31 @@ class ScheduleAgentAdapter:
         try:
             if self._is_kernel_compatible():
                 # 新架构路径：直接使用 AgentKernel 驱动 run_loop()
-                run_result = await self._run_via_kernel(agent_input, content_items, wrapped_hooks)
+                run_result = await self._run_via_kernel(
+                    agent_input, content_items, wrapped_hooks
+                )
             else:
                 # 兼容路径：回退到 process_input()（用于 mock/非 ScheduleAgent 场景）
-                run_result = await self._run_via_process_input(agent_input, content_items, wrapped_hooks)
+                run_result = await self._run_via_process_input(
+                    agent_input, content_items, wrapped_hooks
+                )
 
             await self._emit_event(
                 hooks,
-                CoreEvent(name="assistant_final", payload={"content": run_result.output_text}),
+                CoreEvent(
+                    name="assistant_final", payload={"content": run_result.output_text}
+                ),
             )
             await self._emit_event(hooks, CoreEvent(name="turn_end"))
 
             attachments = run_result.attachments or []
             if not attachments:
-                attachments = getattr(self._agent, "get_outgoing_attachments", lambda: [])()
-            return AgentRunResult(output_text=run_result.output_text, attachments=attachments)
+                attachments = getattr(
+                    self._agent, "get_outgoing_attachments", lambda: []
+                )()
+            return AgentRunResult(
+                output_text=run_result.output_text, attachments=attachments
+            )
 
         except Exception as exc:
             await self._emit_event(
@@ -108,8 +118,7 @@ class ScheduleAgentAdapter:
         content_items: List[Dict[str, Any]],
         hooks: AgentHooks,
     ) -> AgentRunResult:
-        """新架构路径：通过 AgentKernel 驱动 run_loop()。
-        """
+        """新架构路径：通过 AgentKernel 驱动 run_loop()。"""
         from agent_core.memory import RecallResult
 
         await self._agent._sync_external_session_updates()
@@ -119,7 +128,9 @@ class ScheduleAgentAdapter:
         input_text = agent_input.text
 
         # 记忆检索
-        if self._agent._memory_enabled and self._agent._recall_policy.should_recall(input_text):
+        if self._agent._memory_enabled and self._agent._recall_policy.should_recall(
+            input_text
+        ):
             recall_result = await asyncio.to_thread(
                 self._agent._recall_policy.recall,
                 query=input_text,
@@ -143,7 +154,9 @@ class ScheduleAgentAdapter:
                 content=input_text,
                 source=self._agent._source,
             )
-            self._agent._last_history_id = max(self._agent._last_history_id, int(msg_id))
+            self._agent._last_history_id = max(
+                self._agent._last_history_id, int(msg_id)
+            )
 
         # 工作记忆并行总结
         summary_task = None
@@ -152,7 +165,8 @@ class ScheduleAgentAdapter:
             actual_tokens=self._agent._last_prompt_tokens
         ):
             result = self._agent._working_memory.start_summarize(
-                self._agent._summary_llm_client, actual_tokens=self._agent._last_prompt_tokens
+                self._agent._summary_llm_client,
+                actual_tokens=self._agent._last_prompt_tokens,
             )
             if result:
                 summary_task, summary_recent_start = result
@@ -172,6 +186,7 @@ class ScheduleAgentAdapter:
         hooks: AgentHooks,
     ) -> AgentRunResult:
         """兼容路径：通过 process_input() 运行（支持 mock/非 ScheduleAgent）。"""
+
         async def on_stream_delta(delta: str) -> None:
             if hooks.on_assistant_delta:
                 maybe = hooks.on_assistant_delta(delta)

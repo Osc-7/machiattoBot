@@ -12,8 +12,8 @@ InternalLoader — 在每次 LLM 调用前，动态组装完整的请求 Payload
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Dict, List
 
 if TYPE_CHECKING:
     from agent_core.agent.agent import ScheduleAgent
@@ -75,7 +75,9 @@ class InternalLoader:
 
         # 工具快照：kernel 模式取工作集，否则取全量
         if agent._kernel_enabled:
-            agent._last_snapshot = agent._working_set.build_snapshot(agent._tool_registry)
+            agent._last_snapshot = agent._working_set.build_snapshot(
+                agent._tool_registry
+            )
             tools = agent._last_snapshot.openai_tools
             visible_names: set = set(agent._last_snapshot.tool_names)
         else:
@@ -86,7 +88,8 @@ class InternalLoader:
         profile = getattr(agent, "_core_profile", None)
         if profile is not None:
             tools = [
-                t for t in tools
+                t
+                for t in tools
                 if profile.is_tool_allowed(t.get("function", {}).get("name", ""))
             ]
             visible_names = {

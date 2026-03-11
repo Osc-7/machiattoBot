@@ -118,7 +118,11 @@ class WebSearchTool(BaseTool):
             return True
 
         # 含「你」「我」且带时间指代，大概率是在指代双方之前的对话
-        if "你" in q and "我" in q and any(t in q for t in ["之前", "刚才", "刚刚", "上次"]):
+        if (
+            "你" in q
+            and "我" in q
+            and any(t in q for t in ["之前", "刚才", "刚刚", "上次"])
+        ):
             return True
 
         return False

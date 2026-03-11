@@ -21,7 +21,6 @@ System-level tool registry assembly.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import List, Optional
 
 from agent_core.config import Config, get_config
@@ -144,14 +143,14 @@ def _build_memory_tools(
     if not mem_cfg or not getattr(mem_cfg, "enabled", False):
         return tools
 
-    user_id = (memory_owner_id or os.getenv("SCHEDULE_USER_ID", "root")).strip() or "root"
+    user_id = (
+        memory_owner_id or os.getenv("SCHEDULE_USER_ID", "root")
+    ).strip() or "root"
     source = (memory_source or os.getenv("SCHEDULE_SOURCE", "cli")).strip() or "cli"
 
     from agent_core.agent.memory_paths import resolve_memory_owner_paths
 
-    paths = resolve_memory_owner_paths(
-        mem_cfg, user_id, config=config, source=source
-    )
+    paths = resolve_memory_owner_paths(mem_cfg, user_id, config=config, source=source)
 
     long_term = LongTermMemory(
         storage_dir=paths["long_term_dir"],
@@ -184,14 +183,14 @@ def _build_chat_history_tools(
     if not mem_cfg or not getattr(mem_cfg, "enabled", False):
         return tools
 
-    user_id = (memory_owner_id or os.getenv("SCHEDULE_USER_ID", "root")).strip() or "root"
+    user_id = (
+        memory_owner_id or os.getenv("SCHEDULE_USER_ID", "root")
+    ).strip() or "root"
     source = (memory_source or os.getenv("SCHEDULE_SOURCE", "cli")).strip() or "cli"
 
     from agent_core.agent.memory_paths import resolve_memory_owner_paths
 
-    paths = resolve_memory_owner_paths(
-        mem_cfg, user_id, config=config, source=source
-    )
+    paths = resolve_memory_owner_paths(mem_cfg, user_id, config=config, source=source)
     chat_db = ChatHistoryDB(
         paths["chat_history_db_path"],
         default_source=None,
@@ -246,7 +245,11 @@ def _build_automation_tools(
         default_core_mode = getattr(profile, "mode", None) or "background"
         if getattr(profile, "memory_enabled", False):
             src = getattr(profile, "frontend_id", None) or memory_source or ""
-            uid = getattr(profile, "dialog_window_id", None) or memory_owner_id or "default"
+            uid = (
+                getattr(profile, "dialog_window_id", None)
+                or memory_owner_id
+                or "default"
+            )
             if src and uid:
                 default_memory_owner = f"{src}:{uid}"
 
@@ -302,14 +305,16 @@ def build_tool_registry(
             _build_memory_tools(
                 cfg,
                 memory_owner_id=memory_owner_id,
-                memory_source=memory_source or (profile.frontend_id if profile else None),
+                memory_source=memory_source
+                or (profile.frontend_id if profile else None),
             )
         )
         tools.extend(
             _build_chat_history_tools(
                 cfg,
                 memory_owner_id=memory_owner_id,
-                memory_source=memory_source or (profile.frontend_id if profile else None),
+                memory_source=memory_source
+                or (profile.frontend_id if profile else None),
             )
         )
     tools.extend(_build_multimodal_tools(cfg))
@@ -335,12 +340,16 @@ def build_tool_registry(
 
     # kernel 模式核心工具：search_tools、call_tool（Kernel 调度时需在此注册）
     agent_cfg = getattr(cfg, "agent", None)
-    pinned = list(getattr(agent_cfg, "pinned_tools", None) or ["search_tools", "call_tool"])
+    pinned = list(
+        getattr(agent_cfg, "pinned_tools", None) or ["search_tools", "call_tool"]
+    )
     for core in ["search_tools", "call_tool"]:
         if core not in pinned:
             pinned.append(core)
     working_set_size = int(getattr(agent_cfg, "working_set_size", 6) or 6)
-    working_set = ToolWorkingSetManager(pinned_tools=pinned, working_set_size=working_set_size)
+    working_set = ToolWorkingSetManager(
+        pinned_tools=pinned, working_set_size=working_set_size
+    )
     if not registry.has("search_tools"):
         registry.register(SearchToolsTool(registry=registry, working_set=working_set))
     if not registry.has("call_tool"):

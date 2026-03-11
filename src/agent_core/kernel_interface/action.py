@@ -91,7 +91,9 @@ class CoreStatsAction:
     session_id: str = ""
 
 
-KernelAction = Union[ToolCallAction, ReturnAction, ContextOverflowAction, CoreStatsAction]
+KernelAction = Union[
+    ToolCallAction, ReturnAction, ContextOverflowAction, CoreStatsAction
+]
 
 
 # ---------------------------------------------------------------------------

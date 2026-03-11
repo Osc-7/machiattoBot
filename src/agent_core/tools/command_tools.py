@@ -14,6 +14,8 @@ import signal
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+from agent_core.config import CommandToolsConfig, Config, get_config
+from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 
 # 超时后给进程退出留的宽限时间（秒）；超时后仍未退出则 SIGKILL
 _KILL_GRACE_SECONDS = 5
@@ -30,10 +32,6 @@ _DANGEROUS_PATTERNS = [
     re.compile(r">\s*/dev/(sd|hd|nvme|vd)[a-z]", re.I),
     re.compile(r"\bformat\s+", re.I),
 ]
-
-from agent_core.config import CommandToolsConfig, Config, get_config
-
-from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 
 
 @dataclass
@@ -165,7 +163,7 @@ class RunCommandTool(BaseTool):
                 "超时时会终止进程并返回 COMMAND_TIMEOUT",
                 "即使 return_code 非 0，也会返回 stdout/stderr 方便排查",
             ],
-            tags=['命令', '执行'],
+            tags=["命令", "执行"],
         )
 
     def _resolve_cwd(self, cwd: Optional[str]) -> tuple[Optional[Path], Optional[str]]:
@@ -198,16 +196,17 @@ class RunCommandTool(BaseTool):
         Returns:
             (allowed, message) - 允许时 message 为空
         """
-        whitelist = getattr(
-            self._cmd_config, "select_mode_command_whitelist", []
-        ) or []
+        whitelist = getattr(self._cmd_config, "select_mode_command_whitelist", []) or []
         whitelist_lower = {c.strip().lower() for c in whitelist if c}
 
         # 禁止管道、重定向、子 shell 等，防止绕过
         dangerous_chars = ("|", "&", ";", "`", "$(", ">", ">>", "<", "&&", "||")
         for c in dangerous_chars:
             if c in command:
-                return False, f"select mode 下禁止使用 shell 运算符（如 {c}），仅允许单条非破坏性命令"
+                return (
+                    False,
+                    f"select mode 下禁止使用 shell 运算符（如 {c}），仅允许单条非破坏性命令",
+                )
 
         parts = command.split()
         if not parts:

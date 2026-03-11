@@ -18,4 +18,3 @@ def test_long_term_memory_recent_topic_appends_across_instances(tmp_path):
     contents = [t.content for t in topics]
     assert "first" in contents
     assert "second" in contents
-

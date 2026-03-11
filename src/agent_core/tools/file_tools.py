@@ -95,7 +95,7 @@ class ReadFileTool(BaseTool):
                 "文件不存在时返回明确错误",
                 "对于大文件，建议结合 start_line 和 max_lines 分段读取，以避免一次性加载过多内容",
             ],
-            tags=['文件', '读取'],
+            tags=["文件", "读取"],
         )
 
     def _resolve_path(self, path: str) -> tuple[Optional[Path], Optional[str]]:
@@ -141,8 +141,12 @@ class ReadFileTool(BaseTool):
             from agent_core.config import MemoryConfig  # 局部导入避免循环
             from agent_core.agent.memory_paths import resolve_memory_owner_paths
 
-            mem_cfg: MemoryConfig = getattr(self._config, "memory", None) or MemoryConfig()
-            paths = resolve_memory_owner_paths(mem_cfg, user_id, config=self._config, source="shuiyuan")
+            mem_cfg: MemoryConfig = (
+                getattr(self._config, "memory", None) or MemoryConfig()
+            )
+            paths = resolve_memory_owner_paths(
+                mem_cfg, user_id, config=self._config, source="shuiyuan"
+            )
             allowed_memory_md = Path(paths["memory_md_path"]).resolve()
             if resolved != allowed_memory_md:
                 return ToolResult(
@@ -158,8 +162,12 @@ class ReadFileTool(BaseTool):
             from agent_core.config import MemoryConfig  # 局部导入避免循环
             from agent_core.agent.memory_paths import resolve_memory_owner_paths
 
-            mem_cfg: MemoryConfig = getattr(self._config, "memory", None) or MemoryConfig()
-            paths = resolve_memory_owner_paths(mem_cfg, user_id, config=self._config, source="shuiyuan")
+            mem_cfg: MemoryConfig = (
+                getattr(self._config, "memory", None) or MemoryConfig()
+            )
+            paths = resolve_memory_owner_paths(
+                mem_cfg, user_id, config=self._config, source="shuiyuan"
+            )
             allowed_memory_md = Path(paths["memory_md_path"]).resolve()
             if resolved != allowed_memory_md:
                 return ToolResult(
@@ -236,7 +244,9 @@ class ReadFileTool(BaseTool):
                     "path": str(resolved),
                     "content": sliced_content,
                     "start_line": start,
-                    "max_lines": max_lines if max_lines is not None else total_lines - start_idx,
+                    "max_lines": max_lines
+                    if max_lines is not None
+                    else total_lines - start_idx,
                     "total_lines": total_lines,
                     "has_more": end_idx < total_lines,
                 },
@@ -323,7 +333,10 @@ class WriteFileTool(BaseTool):
             examples=[
                 {
                     "description": "创建并写入新文件",
-                    "params": {"path": "notes.txt", "content": "今日待办：1. 开会 2. 写报告"},
+                    "params": {
+                        "path": "notes.txt",
+                        "content": "今日待办：1. 开会 2. 写报告",
+                    },
                 },
             ],
             usage_notes=[
@@ -331,7 +344,7 @@ class WriteFileTool(BaseTool):
                 "path 支持任意有效路径（/etc、~/.config 等）",
                 "会完全覆盖已存在的文件",
             ],
-            tags=['文件', '写入'],
+            tags=["文件", "写入"],
         )
 
     def _resolve_path(self, path: str) -> tuple[Optional[Path], Optional[str]]:
@@ -386,8 +399,12 @@ class WriteFileTool(BaseTool):
             from agent_core.config import MemoryConfig  # 局部导入避免循环
             from agent_core.agent.memory_paths import resolve_memory_owner_paths
 
-            mem_cfg: MemoryConfig = getattr(self._config, "memory", None) or MemoryConfig()
-            paths = resolve_memory_owner_paths(mem_cfg, user_id, config=self._config, source="shuiyuan")
+            mem_cfg: MemoryConfig = (
+                getattr(self._config, "memory", None) or MemoryConfig()
+            )
+            paths = resolve_memory_owner_paths(
+                mem_cfg, user_id, config=self._config, source="shuiyuan"
+            )
             allowed_memory_md = Path(paths["memory_md_path"]).resolve()
             if resolved != allowed_memory_md:
                 return ToolResult(
@@ -447,7 +464,7 @@ def _search_replace_with_fallbacks(
     old_lines = old_text.splitlines()
     content_lines = content.splitlines()
     if old_lines and len(content_lines) >= len(old_lines):
-        old_stripped = [l.rstrip() for l in old_lines]
+        old_stripped = [line.rstrip() for line in old_lines]
         i = 0
         replaced = False
         while i <= len(content_lines) - len(old_lines):
@@ -456,7 +473,7 @@ def _search_replace_with_fallbacks(
                 for j in range(len(old_lines))
             )
             if match:
-                block = '\n'.join(content_lines[i:i + len(old_lines)])
+                block = "\n".join(content_lines[i : i + len(old_lines)])
                 new_content = content.replace(block, new_text, 1)
                 if not replace_all:
                     return new_content, None
@@ -470,7 +487,9 @@ def _search_replace_with_fallbacks(
             return content, None
 
     # 3. 锚点匹配：用首尾行定位块（块至少 2 行）
-    old_stripped = [l.strip() for l in old_text.strip().splitlines() if l.strip()]
+    old_stripped = [
+        line.strip() for line in old_text.strip().splitlines() if line.strip()
+    ]
     if len(old_stripped) >= 2:
         first_line = old_stripped[0]
         last_line = old_stripped[-1]
@@ -486,7 +505,7 @@ def _search_replace_with_fallbacks(
                     end_idx = i
                     break
         if start_idx is not None and end_idx is not None and end_idx >= start_idx:
-            block = '\n'.join(content_lines[start_idx:end_idx + 1])
+            block = "\n".join(content_lines[start_idx : end_idx + 1])
             if replace_all:
                 new_content = content.replace(block, new_text)
             else:
@@ -605,7 +624,11 @@ class ModifyFileTool(BaseTool):
                 },
                 {
                     "description": "覆盖整个文件（兜底）",
-                    "params": {"path": "config.txt", "mode": "overwrite", "content": "新配置内容"},
+                    "params": {
+                        "path": "config.txt",
+                        "mode": "overwrite",
+                        "content": "新配置内容",
+                    },
                 },
             ],
             usage_notes=[
@@ -614,7 +637,7 @@ class ModifyFileTool(BaseTool):
                 "search_replace 时 old_text 需与文件内容完全一致；失败时建议 read_file + write_file",
                 "append 模式下文件不存在会先创建",
             ],
-            tags=['文件', '修改'],
+            tags=["文件", "修改"],
         )
 
     def _resolve_path(self, path: str) -> tuple[Optional[Path], Optional[str]]:
@@ -703,7 +726,11 @@ class ModifyFileTool(BaseTool):
                 )
 
             if self._permission_provider:
-                summary = f"search_replace {path_str}，替换 1 处" if not replace_all else f"search_replace {path_str}，替换多处"
+                summary = (
+                    f"search_replace {path_str}，替换 1 处"
+                    if not replace_all
+                    else f"search_replace {path_str}，替换多处"
+                )
                 allowed = await self._permission_provider("modify", path_str, summary)
                 if not allowed:
                     return ToolResult(

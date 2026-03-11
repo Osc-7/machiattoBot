@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Any, Dict
 
 import pytest
@@ -18,7 +17,9 @@ def _reset_global_config() -> None:
 
 
 @pytest.mark.asyncio
-async def test_maybe_notify_feishu_activity_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_maybe_notify_feishu_activity_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """When Feishu or automation activity push is disabled, notifier should be a no-op."""
 
     cfg = get_config()
@@ -53,7 +54,9 @@ async def test_maybe_notify_feishu_activity_disabled(monkeypatch: pytest.MonkeyP
 
 
 @pytest.mark.asyncio
-async def test_maybe_notify_feishu_activity_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_maybe_notify_feishu_activity_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """When enabled and chat_id is configured, notifier should send a Feishu message."""
 
     cfg = get_config()
@@ -79,7 +82,11 @@ async def test_maybe_notify_feishu_activity_enabled(monkeypatch: pytest.MonkeyPa
     record = {
         "timestamp": "2026-03-06T12:00:00",
         "source": "cron:sync.course",
-        "result": {"success": True, "message": "课程同步完成，共创建 3 条事件", "error": None},
+        "result": {
+            "success": True,
+            "message": "课程同步完成，共创建 3 条事件",
+            "error": None,
+        },
     }
 
     await daemon._maybe_notify_feishu_activity(record)
@@ -88,4 +95,3 @@ async def test_maybe_notify_feishu_activity_enabled(monkeypatch: pytest.MonkeyPa
     text = sent.get("text", "")
     assert "cron:sync.course" in text
     assert "课程同步完成" in text
-

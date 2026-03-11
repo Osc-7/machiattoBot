@@ -33,7 +33,14 @@ from system.automation.repositories import JobDefinitionRepository, JobRunReposi
 from agent_core.config import get_config
 from agent_core import ScheduleAgent, ScheduleAgentAdapter
 from agent_core.interfaces import AgentHooks
-from system.kernel import AgentKernel, CorePool, CoreProfile, KernelRequest, KernelScheduler, SessionSummarizer
+from system.kernel import (
+    AgentKernel,
+    CorePool,
+    CoreProfile,
+    KernelRequest,
+    KernelScheduler,
+    SessionSummarizer,
+)
 from agent_core.llm.client import LLMClient
 from system.tools import build_tool_registry
 
@@ -67,7 +74,9 @@ async def _consume_loop(
         task = queue.pop_pending()
         if task is None:
             try:
-                await asyncio.wait_for(asyncio.shield(stop_event.wait()), timeout=POLL_INTERVAL_SECONDS)
+                await asyncio.wait_for(
+                    asyncio.shield(stop_event.wait()), timeout=POLL_INTERVAL_SECONDS
+                )
             except asyncio.TimeoutError:
                 pass
             continue
@@ -75,6 +84,7 @@ async def _consume_loop(
         task_logger.log_task_start()
         activity_record: dict[str, Any] | None = None
         try:
+
             async def on_trace_event(event: dict) -> None:
                 task_logger.log_trace_event(event)
 
@@ -152,21 +162,32 @@ async def _consume_loop(
             op_ok, op_problems = task_logger.evaluate_required_operations()
             if op_ok:
                 queue.update_status(task.task_id, TaskStatus.SUCCESS, result=result)
-                activity_record = task_logger.log_task_end(status=TaskStatus.SUCCESS, result=result, error=None)
+                activity_record = task_logger.log_task_end(
+                    status=TaskStatus.SUCCESS, result=result, error=None
+                )
             else:
                 error_msg = "; ".join(op_problems)
-                queue.update_status(task.task_id, TaskStatus.FAILED, result=result, error=error_msg)
-                activity_record = task_logger.log_task_end(status=TaskStatus.FAILED, result=result, error=error_msg)
+                queue.update_status(
+                    task.task_id, TaskStatus.FAILED, result=result, error=error_msg
+                )
+                activity_record = task_logger.log_task_end(
+                    status=TaskStatus.FAILED, result=result, error=error_msg
+                )
         except Exception as exc:
             logger.exception("Task %s failed: %s", task.task_id, exc)
-            activity_record = task_logger.log_task_end(status=TaskStatus.FAILED, result=None, error=str(exc))
+            activity_record = task_logger.log_task_end(
+                status=TaskStatus.FAILED, result=None, error=str(exc)
+            )
             queue.update_status(task.task_id, TaskStatus.FAILED, error=str(exc))
         finally:
             if activity_record is not None:
                 try:
                     await _maybe_notify_feishu_activity(activity_record)
                 except Exception as notify_exc:  # noqa: BLE001
-                    logger.warning("Failed to send Feishu automation activity notification: %s", notify_exc)
+                    logger.warning(
+                        "Failed to send Feishu automation activity notification: %s",
+                        notify_exc,
+                    )
 
 
 async def _maybe_notify_feishu_activity(record: dict[str, Any]) -> None:
@@ -228,7 +249,9 @@ async def _main() -> None:
     job_def_repo = JobDefinitionRepository()
     job_run_repo = JobRunRepository()
     sync_job_definitions_from_config(config=cfg, job_def_repo=job_def_repo)
-    scheduler = AutomationScheduler(job_def_repo=job_def_repo, job_run_repo=job_run_repo, task_queue=queue)
+    scheduler = AutomationScheduler(
+        job_def_repo=job_def_repo, job_run_repo=job_run_repo, task_queue=queue
+    )
 
     kernel_tool_registry = build_tool_registry(config=cfg)
     kernel = AgentKernel(tool_registry=kernel_tool_registry)
@@ -321,7 +344,9 @@ async def _main() -> None:
                 )
                 logger.debug("MCP deferred connect traceback", exc_info=True)
 
-        mcp_task = asyncio.create_task(_connect_mcp_in_background(), name="daemon-mcp-connect")
+        mcp_task = asyncio.create_task(
+            _connect_mcp_in_background(), name="daemon-mcp-connect"
+        )
 
         def _mcp_done_cb(task: asyncio.Task[None]) -> None:
             try:
@@ -363,7 +388,9 @@ def main() -> None:
     asyncio.set_event_loop(loop)
     stop_event = asyncio.Event()
 
-    def _loop_exception_handler(loop_obj: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
+    def _loop_exception_handler(
+        loop_obj: asyncio.AbstractEventLoop, context: dict[str, Any]
+    ) -> None:
         # 屏蔽 anyio/mcp 在异步生成器/子任务关闭时的已知噪音：
         # RuntimeError: Attempted to exit cancel scope in a different task than it was entered in
         message = str(context.get("message") or "")
@@ -376,7 +403,10 @@ def main() -> None:
                 and "cancel scope" in str(e)
             )
 
-        if "an error occurred during closing of asynchronous generator" in message and _is_anyio_cancel_scope(exc):
+        if (
+            "an error occurred during closing of asynchronous generator" in message
+            and _is_anyio_cancel_scope(exc)
+        ):
             return
         # 子任务（如 MCP stdio_client 内部 task）未被 await 时，asyncio 会报 "Task exception was never retrieved"
         if "Task exception was never retrieved" in message:
@@ -414,7 +444,9 @@ def main() -> None:
             for t in pending:
                 t.cancel()
             if pending:
-                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
             try:
                 loop.run_until_complete(loop.shutdown_asyncgens())
             except Exception:

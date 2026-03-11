@@ -25,5 +25,7 @@ class ConnectorFetchResult:
 class BaseConnector:
     source_type: str = "base"
 
-    async def fetch(self, since_cursor: Optional[str], account_id: str = "default") -> ConnectorFetchResult:
+    async def fetch(
+        self, since_cursor: Optional[str], account_id: str = "default"
+    ) -> ConnectorFetchResult:
         raise NotImplementedError

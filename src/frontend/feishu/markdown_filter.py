@@ -1,4 +1,8 @@
 from __future__ import annotations
+from typing import Optional
+
+from markdown_it import MarkdownIt
+from bs4 import BeautifulSoup
 
 """
 飞书端 Markdown 过滤工具。
@@ -10,11 +14,6 @@ from __future__ import annotations
 - 用 BeautifulSoup 提取可读文本，并保留链接/图片 URL
 - 再做一次简单的换行归一化，避免一整段糊成一坨
 """
-
-from typing import Optional
-
-from markdown_it import MarkdownIt
-from bs4 import BeautifulSoup
 
 
 def _normalize_whitespace(text: str) -> str:
@@ -102,5 +101,3 @@ def filter_markdown_for_feishu(text: str) -> str:
     plain = _html_to_plain_text(html)
     result = _normalize_whitespace(plain)
     return result
-
-

@@ -50,7 +50,11 @@ def _config_job_to_definition(cfg: Config, job_config: Any) -> JobDefinition:
 
     # interval_seconds: one-shot 用最小合法值；其余模式沿用原策略。
     interval_seconds = 1 if one_shot else 24 * 3600
-    if not one_shot and job_config.interval_minutes is not None and job_config.interval_minutes >= 1:
+    if (
+        not one_shot
+        and job_config.interval_minutes is not None
+        and job_config.interval_minutes >= 1
+    ):
         interval_seconds = job_config.interval_minutes * 60
     if not one_shot and (job_config.times or job_config.daily_time):
         interval_seconds = 24 * 3600
@@ -148,7 +152,11 @@ def sync_job_definitions_from_config(
                 kept_id_for_key[key] = job.job_id
             count += 1
         except Exception as exc:  # noqa: BLE001
-            logger.warning("sync config job %s to job_definitions failed: %s", getattr(job_config, "name", "?"), exc)
+            logger.warning(
+                "sync config job %s to job_definitions failed: %s",
+                getattr(job_config, "name", "?"),
+                exc,
+            )
     for item in list(repo.get_all()):
         pt = item.payload_template or {}
         k = (
@@ -162,9 +170,16 @@ def sync_job_definitions_from_config(
             continue
         # 对于由 config 派生的任务（job-config-*），如果当前 config 中已不存在对应 key，
         # 则自动将其标记为 disabled，而不是直接删除，以便保留历史运行记录。
-        if item.job_id.startswith("job-config-") and k not in kept_id_for_key and item.enabled:
+        if (
+            item.job_id.startswith("job-config-")
+            and k not in kept_id_for_key
+            and item.enabled
+        ):
             item.enabled = False
             repo.update(item)
     if count:
-        logger.info("synced %d job(s) from config.automation.jobs to job_definitions.json", count)
+        logger.info(
+            "synced %d job(s) from config.automation.jobs to job_definitions.json",
+            count,
+        )
     return count

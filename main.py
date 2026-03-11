@@ -13,7 +13,6 @@ import argparse
 import asyncio
 import os
 import sys
-from pathlib import Path
 from typing import Any, Callable, Awaitable, List, Optional, cast
 
 from agent_core.config import Config, get_config
@@ -112,7 +111,9 @@ def get_default_tools(config: Optional[Config] = None) -> List[BaseTool]:
     # 联网工具（在启用 MCP 时由 Agent 内部注册）
 
     # 技能按需加载工具（skills.enabled 或 skills.cli_dir 时注册）
-    if config and ((config.skills.enabled or []) or getattr(config.skills, "cli_dir", None)):
+    if config and (
+        (config.skills.enabled or []) or getattr(config.skills, "cli_dir", None)
+    ):
         tools.append(LoadSkillTool(config=config))
 
     # 记忆系统工具（使用 resolve_memory_owner_paths，与 Agent 一致：data/memory/{frontend}/{user}/）
@@ -122,7 +123,9 @@ def get_default_tools(config: Optional[Config] = None) -> List[BaseTool]:
         mem_cfg = config.memory
         user_id = os.getenv("SCHEDULE_USER_ID", "root").strip() or "root"
         source = os.getenv("SCHEDULE_SOURCE", "cli").strip() or "cli"
-        paths = resolve_memory_owner_paths(mem_cfg, user_id, config=config, source=source)
+        paths = resolve_memory_owner_paths(
+            mem_cfg, user_id, config=config, source=source
+        )
 
         long_term = LongTermMemory(
             storage_dir=paths["long_term_dir"],
@@ -269,7 +272,9 @@ async def main_async(args: Optional[List[str]] = None):
     session_logger = None
 
     agent_ref = None
-    ipc_socket = os.getenv("SCHEDULE_AUTOMATION_SOCKET", "").strip() or default_socket_path()
+    ipc_socket = (
+        os.getenv("SCHEDULE_AUTOMATION_SOCKET", "").strip() or default_socket_path()
+    )
 
     try:
         if not direct_mode:
@@ -321,6 +326,7 @@ async def main_async(args: Optional[List[str]] = None):
             scheduler_runtime = KernelScheduler(kernel=kernel, core_pool=core_pool)
             await scheduler_runtime.start()
             core_session = ScheduleAgentAdapter(agent)
+
             async def _build_core_session(session_key: str) -> ScheduleAgentAdapter:
                 # 新会话使用独立 Agent，确保多会话上下文隔离。
                 created_agent = ScheduleAgent(
@@ -337,6 +343,7 @@ async def main_async(args: Optional[List[str]] = None):
                 # 不在 factory 里调用 activate_session，由 gateway._create_session 根据
                 # is_expired 状态决定 replay_messages_limit，避免全量历史被错误加载。
                 return adapter
+
             try:
                 idle_timeout = int(config.memory.idle_timeout_minutes)
             except Exception:
@@ -392,11 +399,15 @@ def main():
             for task in pending:
                 task.cancel()
             if pending:
-                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
             loop.run_until_complete(loop.shutdown_asyncgens())
             shutdown_default_executor = getattr(loop, "shutdown_default_executor", None)
             if shutdown_default_executor is not None:
-                shutdown_executor_fn = cast(Callable[[], Awaitable[None]], shutdown_default_executor)
+                shutdown_executor_fn = cast(
+                    Callable[[], Awaitable[None]], shutdown_default_executor
+                )
                 loop.run_until_complete(shutdown_executor_fn())
         except Exception:
             pass

@@ -22,9 +22,11 @@ from .agent_task import ContextPolicy
 
 logger = logging.getLogger(__name__)
 
+
 # Lazy import to avoid circular dependency issues at module load time.
 def _import_schedule_agent():
     from agent_core.agent import ScheduleAgent
+
     return ScheduleAgent
 
 
@@ -65,7 +67,9 @@ class SessionManager:
         - ephemeral: 新建临时 Agent，执行完立即关闭，不保留对话历史。
         - persistent: 按 session_id 复用 Agent 实例，保留对话历史和长期记忆。
         """
-        command = RunTurnCommand(session_id=session_id, input=AgentRunInput(text=instruction))
+        command = RunTurnCommand(
+            session_id=session_id, input=AgentRunInput(text=instruction)
+        )
         if context_policy == ContextPolicy.EPHEMERAL:
             return await self._run_ephemeral(command, on_trace_event=on_trace_event)
         return await self._run_persistent(command, on_trace_event=on_trace_event)

@@ -14,6 +14,7 @@ from .types import JobDefinition, JobRun, JobStatus
 if TYPE_CHECKING:
     from .task_queue import AgentTaskQueue
 
+
 class AutomationScheduler:
     def __init__(
         self,
@@ -35,9 +36,9 @@ class AutomationScheduler:
         self._job_run_repo = job_run_repo or JobRunRepository()
         self._task_queue = task_queue
         # job_id -> 调度协程任务
-        self._tasks: Dict[str, asyncio.Task] = {}
+        self._tasks: dict[str, asyncio.Task] = {}
         # job_id -> 最近一次用于调度的 JobDefinition 快照（用于检测配置变更）
-        self._job_snapshots: Dict[str, JobDefinition] = {}
+        self._job_snapshots: dict[str, JobDefinition] = {}
         self._running = False
         # 周期性检查 job_definitions 是否有新增/禁用的任务，默认 60s 刷新一次。
         # 仅在队列模式下实际有意义，但在 event_bus 模式下开启也无害。
@@ -62,7 +63,9 @@ class AutomationScheduler:
 
         # 队列驱动模式下，支持在运行期通过修改 job_definitions.json 添加/禁用任务，
         # 由后台 watcher 周期性刷新内存中的任务列表，避免必须重启后台守护进程（如 automation_daemon）。
-        self._watch_task = asyncio.create_task(self._watch_job_definitions(), name="scheduler:watcher")
+        self._watch_task = asyncio.create_task(
+            self._watch_job_definitions(), name="scheduler:watcher"
+        )
 
     async def stop(self) -> None:
         self._running = False
@@ -258,7 +261,9 @@ class AutomationScheduler:
                 try:
                     from .config_sync import sync_job_definitions_from_config
 
-                    sync_job_definitions_from_config(config=None, job_def_repo=self._job_def_repo)
+                    sync_job_definitions_from_config(
+                        config=None, job_def_repo=self._job_def_repo
+                    )
                 except Exception:
                     # 同步失败不应影响已有调度逻辑。
                     pass

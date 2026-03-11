@@ -9,10 +9,9 @@ Covers:
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
 from typing import List
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -218,11 +217,10 @@ class TestSessionManager:
     async def test_ephemeral_creates_new_agent_each_time(self):
         from system.automation.session_manager import SessionManager
 
-        agents_created: List = []
-
         def make_agent_factory():
             def factory():
                 return []
+
             return factory
 
         manager = SessionManager(tools_factory=make_agent_factory())
@@ -235,8 +233,12 @@ class TestSessionManager:
             return ag
 
         with patch.object(manager, "_create_agent", side_effect=fake_create_agent):
-            await manager.run_task("cron:sync.course:2025-01-01", "同步课表", ContextPolicy.EPHEMERAL)
-            await manager.run_task("cron:sync.course:2025-01-01", "同步课表", ContextPolicy.EPHEMERAL)
+            await manager.run_task(
+                "cron:sync.course:2025-01-01", "同步课表", ContextPolicy.EPHEMERAL
+            )
+            await manager.run_task(
+                "cron:sync.course:2025-01-01", "同步课表", ContextPolicy.EPHEMERAL
+            )
 
         # 两次调用应各创建一个独立 Agent
         assert len(created_agents) == 2
@@ -282,7 +284,9 @@ class TestSessionManager:
 
         with patch.object(manager, "_create_agent", side_effect=fake_create_agent):
             await manager.run_task("cli:default", "来自 CLI", ContextPolicy.PERSISTENT)
-            await manager.run_task("social:wechat:u123", "来自微信", ContextPolicy.PERSISTENT)
+            await manager.run_task(
+                "social:wechat:u123", "来自微信", ContextPolicy.PERSISTENT
+            )
 
         assert len(created_agents) == 2
 
@@ -386,7 +390,9 @@ class TestSchedulerQueueDispatch:
 
         job_types = ["sync.course", "sync.email", "summary.daily", "summary.weekly"]
         for jt in job_types:
-            await scheduler.run_job_once(JobDefinition(job_type=jt, interval_seconds=3600))
+            await scheduler.run_job_once(
+                JobDefinition(job_type=jt, interval_seconds=3600)
+            )
 
         tasks = queue.list_recent(limit=20)
         assert len(tasks) == len(job_types)
@@ -428,7 +434,7 @@ class TestSchedulerQueueDispatch:
 
     @pytest.mark.asyncio
     async def test_run_job_once_disables_one_shot_job(self, tmp_path):
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         from system.automation.repositories import (
             JobDefinitionRepository,
             JobRunRepository,

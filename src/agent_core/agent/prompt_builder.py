@@ -54,7 +54,11 @@ def build_agent_system_prompt(agent: Any) -> str:
                     parts.append(f"- {ts_prefix}{topic.content}")
             md_content = agent._long_term_memory.read_memory_md()
             if md_content and len(md_content) > 50:
-                excerpt = md_content if len(md_content) <= 1000 else md_content[:1000] + "\n..."
+                excerpt = (
+                    md_content
+                    if len(md_content) <= 1000
+                    else md_content[:1000] + "\n..."
+                )
                 parts.append("\n## 核心记忆 (MEMORY.md)")
                 parts.append(excerpt)
         # long_term / content: recall 结果
@@ -68,9 +72,7 @@ def build_agent_system_prompt(agent: Any) -> str:
 
         # working: 工作记忆摘要
         if "working" in scopes and agent._working_memory.running_summary:
-            prompt += (
-                f"\n\n# 工作记忆摘要\n\n{agent._working_memory.running_summary}"
-            )
+            prompt += f"\n\n# 工作记忆摘要\n\n{agent._working_memory.running_summary}"
 
     # automation 摘要：仅在可见 long_term 时注入（作为辅助上下文）
     digest_sections: List[str] = []
@@ -95,7 +97,9 @@ def build_agent_system_prompt(agent: Any) -> str:
         if daily_digest.content_md:
             content = daily_digest.content_md
             max_len = 800
-            excerpt = content if len(content) <= max_len else content[:max_len] + "\n..."
+            excerpt = (
+                content if len(content) <= max_len else content[:max_len] + "\n..."
+            )
             digest_sections.append("")
             digest_sections.append(excerpt)
 
@@ -108,7 +112,9 @@ def build_agent_system_prompt(agent: Any) -> str:
         if weekly_digest.content_md:
             content = weekly_digest.content_md
             max_len = 800
-            excerpt = content if len(content) <= max_len else content[:max_len] + "\n..."
+            excerpt = (
+                content if len(content) <= max_len else content[:max_len] + "\n..."
+            )
             digest_sections.append("")
             digest_sections.append(excerpt)
 

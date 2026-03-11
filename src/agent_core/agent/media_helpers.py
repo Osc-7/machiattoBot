@@ -11,7 +11,9 @@ from agent_core.utils.media import resolve_media_to_content_item
 def queue_media_for_next_call(
     result: ToolResult,
     pending_multimodal_items: List[Dict[str, Any]],
-    media_resolver: Callable[[str], Tuple[Dict[str, Any] | None, str | None]] = resolve_media_to_content_item,
+    media_resolver: Callable[
+        [str], Tuple[Dict[str, Any] | None, str | None]
+    ] = resolve_media_to_content_item,
 ) -> None:
     """Queue media declared by a tool result into the next LLM call payload."""
     if not result.success:

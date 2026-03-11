@@ -33,11 +33,22 @@ class AsyncEventBus:
 
         event = BusEvent(topic=topic, payload=payload)
         results = await asyncio.gather(
-            *[handler({"topic": event.topic, "payload": event.payload, "created_at": event.created_at.isoformat()}) for handler in handlers],
+            *[
+                handler(
+                    {
+                        "topic": event.topic,
+                        "payload": event.payload,
+                        "created_at": event.created_at.isoformat(),
+                    }
+                )
+                for handler in handlers
+            ],
             return_exceptions=True,
         )
 
         failures = [r for r in results if isinstance(r, Exception)]
         if failures:
-            raise RuntimeError(f"event handlers failed for topic '{topic}': {len(failures)}")
+            raise RuntimeError(
+                f"event handlers failed for topic '{topic}': {len(failures)}"
+            )
         return len(handlers)

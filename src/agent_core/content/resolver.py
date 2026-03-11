@@ -42,7 +42,12 @@ class ContentResolver:
                 if item:
                     result.append(item)
             except Exception as exc:
-                logger.warning("content resolver %s failed for ref %s: %s", self.source, ref.key, exc)
+                logger.warning(
+                    "content resolver %s failed for ref %s: %s",
+                    self.source,
+                    ref.key,
+                    exc,
+                )
         return result
 
 
@@ -54,6 +59,7 @@ def _ensure_resolvers() -> None:
     _builtins_loaded = True
     try:
         from .resolvers.local import LocalContentResolver
+
         _resolvers.setdefault("local", LocalContentResolver())
     except ImportError:
         pass
@@ -89,7 +95,9 @@ async def resolve_content_refs(
     for source, ref_list in by_source.items():
         resolver = _resolvers.get(source)
         if not resolver:
-            logger.warning("no content resolver for source=%s, skip %d refs", source, len(ref_list))
+            logger.warning(
+                "no content resolver for source=%s, skip %d refs", source, len(ref_list)
+            )
             continue
         items = await resolver.resolve_batch(ref_list)
         result.extend(items)

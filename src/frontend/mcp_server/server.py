@@ -15,7 +15,7 @@ from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
 
 from agent_core.config import Config, get_config
-from agent_core.tools import ToolResult
+from agent_core.tools import BaseTool, ToolResult
 from system.tools import VersionedToolRegistry, build_tool_registry
 
 
@@ -88,7 +88,9 @@ class ScheduleToolsMCPServer:
             )
         return result
 
-    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> types.CallToolResult:
+    async def call_tool(
+        self, name: str, arguments: Dict[str, Any]
+    ) -> types.CallToolResult:
         """执行指定工具并转换为 MCP 标准返回。"""
         result = await self._registry.execute(name, **(arguments or {}))
         payload = self._to_payload(result)

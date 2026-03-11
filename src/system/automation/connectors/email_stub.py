@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from .base import BaseConnector, ConnectorFetchItem, ConnectorFetchResult
+from .base import BaseConnector, ConnectorFetchResult
 from zoneinfo import ZoneInfo
+
 
 class EmailConnectorStub(BaseConnector):
     source_type = "email"
 
-    async def fetch(self, since_cursor: str | None, account_id: str = "default") -> ConnectorFetchResult:
+    async def fetch(
+        self, since_cursor: str | None, account_id: str = "default"
+    ) -> ConnectorFetchResult:
 
         timezone = ZoneInfo("Asia/Shanghai")
         now = datetime.now(timezone)

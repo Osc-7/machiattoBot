@@ -69,4 +69,3 @@ class FeishuContentResolver(ContentResolver):
 
 # 模块导入即向 agent_core 注册 FeishuContentResolver，供 resolve_content_refs 使用。
 register_resolver(FeishuContentResolver())
-

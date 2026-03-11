@@ -102,6 +102,7 @@ class _ErrorClient:
 @pytest.mark.asyncio
 async def test_fetch_tool_handles_not_logged_in_error():
     """Tool should map NOT_LOGGED_IN client error to friendly ToolResult."""
+
     def factory(path: Path) -> _ErrorClient:  # type: ignore[override]
         return _ErrorClient(path)
 
@@ -174,4 +175,3 @@ async def test_fetch_tool_refresh_cookies_triggers_login_and_retry():
     assert result.error is None
     assert result.data["course_count"] == 1
     assert login_calls == [Path("dummy.json")]
-

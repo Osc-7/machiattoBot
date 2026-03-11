@@ -5,11 +5,18 @@
 """
 
 from datetime import datetime, date, timedelta
-from typing import Optional, List, Any
+from typing import Optional, List
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 from agent_core.storage.json_repository import EventRepository, TaskRepository
-from agent_core.models import Event, Task, EventStatus, TaskStatus, EventPriority, TaskPriority
+from agent_core.models import (
+    Event,
+    Task,
+    EventStatus,
+    TaskStatus,
+    EventPriority,
+    TaskPriority,
+)
 
 
 def _datetime_sort_key(dt: datetime) -> float:
@@ -97,7 +104,7 @@ class AddEventTool(BaseTool):
                 ToolParameter(
                     name="tags",
                     type="array",
-                    description="标签列表，用于分类（可选，如: [\"工作\", \"会议\"]）",
+                    description='标签列表，用于分类（可选，如: ["工作", "会议"]）',
                     required=False,
                 ),
                 ToolParameter(
@@ -170,7 +177,7 @@ class AddEventTool(BaseTool):
                 "结束时间必须晚于开始时间",
                 "如果有时间冲突，工具会返回警告但仍会创建事件",
             ],
-            tags=['日程', '创建'],
+            tags=["日程", "创建"],
         )
 
     async def execute(self, **kwargs) -> ToolResult:
@@ -347,7 +354,7 @@ class AddTaskTool(BaseTool):
                 ToolParameter(
                     name="tags",
                     type="array",
-                    description="标签列表，用于分类（可选，如: [\"工作\", \"学习\"]）",
+                    description='标签列表，用于分类（可选，如: ["工作", "学习"]）',
                     required=False,
                 ),
                 ToolParameter(
@@ -413,7 +420,7 @@ class AddTaskTool(BaseTool):
                 "如果没有指定截止日期，任务不会过期",
                 "任务创建后状态为待办(todo)，可以稍后安排时间",
             ],
-            tags=['任务', '创建'],
+            tags=["任务", "创建"],
         )
 
     async def execute(self, **kwargs) -> ToolResult:
@@ -610,7 +617,7 @@ class GetEventsTool(BaseTool):
                 "搜索会匹配标题、描述和标签",
                 "结果按开始时间升序排列",
             ],
-            tags=['日程', '查询'],
+            tags=["日程", "查询"],
         )
 
     async def execute(self, **kwargs) -> ToolResult:
@@ -694,7 +701,11 @@ class GetEventsTool(BaseTool):
                 )
             try:
                 start_dt = datetime.fromisoformat(start_date_str)
-                end_dt = datetime.fromisoformat(end_date_str) + timedelta(days=1) - timedelta(seconds=1)
+                end_dt = (
+                    datetime.fromisoformat(end_date_str)
+                    + timedelta(days=1)
+                    - timedelta(seconds=1)
+                )
                 events = self._repository.get_by_date_range(start_dt, end_dt)
                 message = f"该时间段内有 {len(events)} 个日程"
             except ValueError as e:
@@ -794,7 +805,7 @@ class GetTasksTool(BaseTool):
                 "搜索会匹配标题、描述和标签",
                 "结果按优先级和截止日期排序",
             ],
-            tags=['任务', '查询'],
+            tags=["任务", "查询"],
         )
 
     async def execute(self, **kwargs) -> ToolResult:
@@ -854,21 +865,23 @@ class GetTasksTool(BaseTool):
             TaskPriority.MEDIUM: 2,
             TaskPriority.LOW: 3,
         }
-        tasks.sort(key=lambda t: (
-            priority_order.get(t.priority, 2),
-            t.due_date or date.max,
-        ))
+        tasks.sort(
+            key=lambda t: (
+                priority_order.get(t.priority, 2),
+                t.due_date or date.max,
+            )
+        )
 
         # 检测过期任务（排除已查询过期任务的情况）
         overdue_tasks = []
         if query_type != "overdue":
             overdue_tasks = [t for t in tasks if t.is_overdue]
-        
+
         metadata = {
             "query_type": query_type,
             "count": len(tasks),
         }
-        
+
         # 如果有过期任务，在 metadata 中标记
         if overdue_tasks:
             metadata["has_overdue"] = True
@@ -973,7 +986,7 @@ class UpdateEventTool(BaseTool):
                 ToolParameter(
                     name="tags",
                     type="array",
-                    description="新的标签列表（可选，如 [\"工作\", \"会议\"]）",
+                    description='新的标签列表（可选，如 ["工作", "会议"]）',
                     required=False,
                 ),
             ],
@@ -1009,12 +1022,12 @@ class UpdateEventTool(BaseTool):
             ],
             usage_notes=[
                 "标记完成、取消和改期等都请使用本工具，不要使用 delete_schedule_data",
-                '用户说「做完了」「完成了」「搞定了」「标记为已完成」等都应调用本工具',
+                "用户说「做完了」「完成了」「搞定了」「标记为已完成」等都应调用本工具",
                 "用户说「改到X点」「延期到明天」「调整会议时间」等都应调用本工具并更新 start_time/end_time",
                 "需要先通过 get_events 获取事件 ID",
                 "status 与其他字段至少提供一个，可以同时更新多个字段",
             ],
-            tags=['日程', '修改'],
+            tags=["日程", "修改"],
         )
 
     async def execute(self, **kwargs) -> ToolResult:
@@ -1125,7 +1138,9 @@ class UpdateEventTool(BaseTool):
 
         if kwargs.get("tags") is not None:
             tags = kwargs.get("tags")
-            if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
+            if not isinstance(tags, list) or not all(
+                isinstance(tag, str) for tag in tags
+            ):
                 return ToolResult(
                     success=False,
                     error="INVALID_TAGS",
@@ -1137,7 +1152,9 @@ class UpdateEventTool(BaseTool):
 
         if start_time_str is not None:
             try:
-                new_start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+                new_start_time = datetime.fromisoformat(
+                    start_time_str.replace("Z", "+00:00")
+                )
             except ValueError as e:
                 return ToolResult(
                     success=False,
@@ -1151,7 +1168,9 @@ class UpdateEventTool(BaseTool):
 
         if end_time_str is not None:
             try:
-                new_end_time = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
+                new_end_time = datetime.fromisoformat(
+                    end_time_str.replace("Z", "+00:00")
+                )
             except ValueError as e:
                 return ToolResult(
                     success=False,
@@ -1186,7 +1205,9 @@ class UpdateEventTool(BaseTool):
         message = f"事件「{event.title}」已更新：{', '.join(updates)}"
         if conflicts:
             conflict_titles = [c.title for c in conflicts]
-            message += f"\n警告: 更新时间后与以下事件存在冲突: {', '.join(conflict_titles)}"
+            message += (
+                f"\n警告: 更新时间后与以下事件存在冲突: {', '.join(conflict_titles)}"
+            )
 
         return ToolResult(
             success=True,
@@ -1196,7 +1217,9 @@ class UpdateEventTool(BaseTool):
                 "event_id": event.id,
                 "old_status": old_status.value,
                 "new_status": event.status.value,
-                "updated_fields": [k for k, v in update_fields.items() if v is not None],
+                "updated_fields": [
+                    k for k, v in update_fields.items() if v is not None
+                ],
                 "has_conflicts": len(conflicts) > 0,
                 "conflict_count": len(conflicts),
                 "status_label_before": status_labels[old_status],
@@ -1282,17 +1305,21 @@ class UpdateTaskTool(BaseTool):
                 },
                 {
                     "description": "同时更新状态和截止日期",
-                    "params": {"task_id": "a1b2c3d4", "status": "todo", "due_date": "2026-02-25"},
+                    "params": {
+                        "task_id": "a1b2c3d4",
+                        "status": "todo",
+                        "due_date": "2026-02-25",
+                    },
                 },
             ],
             usage_notes=[
                 "标记完成、取消等状态变更请使用本工具，不要使用 delete_schedule_data",
-                '用户说「做完了」「完成了」「搞定了」「标记为已完成」等都应调用本工具',
+                "用户说「做完了」「完成了」「搞定了」「标记为已完成」等都应调用本工具",
                 "用户说「延期」「调整截止日期」「改到X号」等应使用本工具更新 due_date",
                 "需要先通过 get_tasks 获取任务 ID",
                 "status 和 due_date 至少提供一个，可以同时提供",
             ],
-            tags=['任务', '修改'],
+            tags=["任务", "修改"],
         )
 
     async def execute(self, **kwargs) -> ToolResult:
@@ -1346,7 +1373,7 @@ class UpdateTaskTool(BaseTool):
             else:
                 task.status = target_status
                 task.update_timestamp()
-            
+
             updates.append(f"状态: {old_status.value} → {target_status.value}")
 
             # 任务状态联动截止事件：确保作业完成后任务与时间同步完成
@@ -1370,7 +1397,9 @@ class UpdateTaskTool(BaseTool):
                 new_due_date = datetime.strptime(due_date_str, "%Y-%m-%d").date()
                 task.due_date = new_due_date
                 task.update_timestamp()
-                old_date_str = old_due_date.strftime("%Y-%m-%d") if old_due_date else "无"
+                old_date_str = (
+                    old_due_date.strftime("%Y-%m-%d") if old_due_date else "无"
+                )
                 updates.append(f"截止日期: {old_date_str} → {due_date_str}")
             except ValueError:
                 return ToolResult(
@@ -1381,13 +1410,6 @@ class UpdateTaskTool(BaseTool):
 
         self._repository.update(task)
 
-        status_labels = {
-            TaskStatus.TODO: "待办",
-            TaskStatus.IN_PROGRESS: "进行中",
-            TaskStatus.COMPLETED: "已完成",
-            TaskStatus.CANCELLED: "已取消",
-        }
-
         message = f"任务「{task.title}」已更新：{', '.join(updates)}"
 
         metadata = {
@@ -1397,8 +1419,12 @@ class UpdateTaskTool(BaseTool):
             metadata["old_status"] = old_status.value
             metadata["new_status"] = task.status.value
         if due_date_str:
-            metadata["old_due_date"] = old_due_date.isoformat() if old_due_date else None
-            metadata["new_due_date"] = task.due_date.isoformat() if task.due_date else None
+            metadata["old_due_date"] = (
+                old_due_date.isoformat() if old_due_date else None
+            )
+            metadata["new_due_date"] = (
+                task.due_date.isoformat() if task.due_date else None
+            )
         metadata["linked_event_updated"] = linked_event_updated
 
         return ToolResult(
@@ -1512,10 +1538,10 @@ class DeleteScheduleDataTool(BaseTool):
             ],
             usage_notes=[
                 "删除操作不可恢复。批量/全量删除前务必先列出待删项并让用户确认（是/yes/确认）后再调用并传 confirm=true。",
-                'confirm=true 仅在用户明确同意「删除」时才可设置。「标记完成」「已完成」「做完了」等表述是状态更新，不是删除确认，应使用 update_task。',
+                "confirm=true 仅在用户明确同意「删除」时才可设置。「标记完成」「已完成」「做完了」等表述是状态更新，不是删除确认，应使用 update_task。",
                 "如果用户的原始请求不是删除，而是标记完成或取消，请改用 update_task 工具。",
             ],
-            tags=['日程', '任务', '删除'],
+            tags=["日程", "任务", "删除"],
         )
 
     def _get_repository(self, resource_type: str):

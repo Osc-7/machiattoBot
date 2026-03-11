@@ -25,7 +25,6 @@ from agent_core.llm import (
     LLMClient,
     LLMResponse,
     ToolCall,
-    TokenUsage,
     get_context_window_tokens_for_model,
 )
 from agent_core.utils.media import resolve_media_to_content_item
@@ -141,7 +140,12 @@ class ScheduleAgent:
         # 本轮回复要附带发给用户的图片等附件（由 attach_image_to_reply 等工具登记）
         self._outgoing_attachments: List[Dict[str, Any]] = []
         # 本会话 token 用量累计
-        self._token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "call_count": 0}
+        self._token_usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "call_count": 0,
+        }
         # 每次调用的 (prompt_tokens, completion_tokens)，用于阶梯计费
         self._usage_calls: List[Tuple[int, int]] = []
         # 上一轮 LLM 的 prompt_tokens，供工作记忆阈值判断
@@ -160,7 +164,9 @@ class ScheduleAgent:
         # 四层记忆系统
         mem_cfg: MemoryConfig = self._config.memory
         # 允许按 CoreProfile 粒度覆写 memory.enabled（例如 cron/heartbeat 不落盘）
-        self._memory_enabled = mem_cfg.enabled if memory_enabled is None else bool(memory_enabled)
+        self._memory_enabled = (
+            mem_cfg.enabled if memory_enabled is None else bool(memory_enabled)
+        )
 
         # 工作记忆仅依赖内存中的对话上下文，不触发任何磁盘目录创建，始终可用。
         self._working_memory = WorkingMemory(
@@ -244,9 +250,13 @@ class ScheduleAgent:
         # 联网工具（基于 Tavily MCP）
         if self._config.mcp.enabled:
             if not self._tool_registry.has("web_search"):
-                self._tool_registry.register(WebSearchTool(registry=self._tool_registry))
+                self._tool_registry.register(
+                    WebSearchTool(registry=self._tool_registry)
+                )
             if not self._tool_registry.has("extract_web_content"):
-                self._tool_registry.register(WebExtractorTool(registry=self._tool_registry))
+                self._tool_registry.register(
+                    WebExtractorTool(registry=self._tool_registry)
+                )
 
     @property
     def config(self) -> Config:
@@ -347,7 +357,12 @@ class ScheduleAgent:
 
     def reset_token_usage(self) -> None:
         """重置本会话的 token 用量统计"""
-        self._token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "call_count": 0}
+        self._token_usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "call_count": 0,
+        }
         self._usage_calls.clear()
 
     async def process_input(
@@ -454,8 +469,12 @@ class ScheduleAgent:
         由 AgentKernel.run() 驱动，不应直接调用。
         """
         from agent_core.kernel_interface import (
-            ReturnAction, ToolCallAction, ToolResultEvent, InternalLoader,
-            ContextOverflowAction, ContextCompressedEvent,
+            ReturnAction,
+            ToolCallAction,
+            ToolResultEvent,
+            InternalLoader,
+            ContextOverflowAction,
+            ContextCompressedEvent,
         )
 
         loader = InternalLoader()
@@ -477,17 +496,24 @@ class ScheduleAgent:
                         message_count=len(payload.messages),
                         tool_count=len(payload.tools),
                         system_prompt_len=len(payload.system),
-                        system_prompt=payload.system if self._session_logger.enable_detailed_log else None,
-                        messages=payload.messages if self._session_logger.enable_detailed_log else None,
+                        system_prompt=payload.system
+                        if self._session_logger.enable_detailed_log
+                        else None,
+                        messages=payload.messages
+                        if self._session_logger.enable_detailed_log
+                        else None,
                     )
 
                 # Trace 事件
-                await self._emit_trace(hooks, {
-                    "type": "llm_request",
-                    "turn_id": turn_id,
-                    "iteration": iteration,
-                    "tool_count": len(payload.tools),
-                })
+                await self._emit_trace(
+                    hooks,
+                    {
+                        "type": "llm_request",
+                        "turn_id": turn_id,
+                        "iteration": iteration,
+                        "tool_count": len(payload.tools),
+                    },
+                )
 
                 # ── AgentCore 直接调用 LLM（CPU 自旋，无 Kernel 中介）───
                 response = await self._llm_client.chat_with_tools(
@@ -504,7 +530,10 @@ class ScheduleAgent:
 
                 # 累计 token 用量（AgentCore 内部状态，Kernel 在回收时读取）
                 if response.usage:
-                    pt, ct = response.usage.prompt_tokens, response.usage.completion_tokens
+                    pt, ct = (
+                        response.usage.prompt_tokens,
+                        response.usage.completion_tokens,
+                    )
                     self._token_usage["prompt_tokens"] += pt
                     self._token_usage["completion_tokens"] += ct
                     self._token_usage["total_tokens"] += pt + ct
@@ -518,14 +547,17 @@ class ScheduleAgent:
 
                     for tool_call in response.tool_calls:
                         # Trace 事件（发出调用前记录）
-                        await self._emit_trace(hooks, {
-                            "type": "tool_call",
-                            "turn_id": turn_id,
-                            "iteration": iteration,
-                            "tool_call_id": tool_call.id,
-                            "name": tool_call.name,
-                            "arguments": tool_call.arguments,
-                        })
+                        await self._emit_trace(
+                            hooks,
+                            {
+                                "type": "tool_call",
+                                "turn_id": turn_id,
+                                "iteration": iteration,
+                                "tool_call_id": tool_call.id,
+                                "name": tool_call.name,
+                                "arguments": tool_call.arguments,
+                            },
+                        )
                         if self._session_logger:
                             self._session_logger.on_tool_call(
                                 turn_id,
@@ -546,22 +578,26 @@ class ScheduleAgent:
                         )
                         duration_ms = int((time.perf_counter() - t0) * 1000)
 
-                        assert isinstance(tool_event, ToolResultEvent), \
+                        assert isinstance(tool_event, ToolResultEvent), (
                             f"run_loop: expected ToolResultEvent, got {type(tool_event)}"
+                        )
                         result = tool_event.result
 
                         # Trace 事件（收到结果后记录，含耗时）
-                        await self._emit_trace(hooks, {
-                            "type": "tool_result",
-                            "turn_id": turn_id,
-                            "iteration": iteration,
-                            "tool_call_id": tool_call.id,
-                            "name": tool_call.name,
-                            "success": result.success,
-                            "message": result.message,
-                            "duration_ms": duration_ms,
-                            "error": result.error,
-                        })
+                        await self._emit_trace(
+                            hooks,
+                            {
+                                "type": "tool_result",
+                                "turn_id": turn_id,
+                                "iteration": iteration,
+                                "tool_call_id": tool_call.id,
+                                "name": tool_call.name,
+                                "success": result.success,
+                                "message": result.message,
+                                "duration_ms": duration_ms,
+                                "error": result.error,
+                            },
+                        )
                         if self._session_logger:
                             self._session_logger.on_tool_result(
                                 turn_id, iteration, tool_call.id, result, duration_ms
@@ -579,7 +615,9 @@ class ScheduleAgent:
                                 tool_name=tool_call.name,
                                 source=self._source,
                             )
-                            self._last_history_id = max(self._last_history_id, int(msg_id))
+                            self._last_history_id = max(
+                                self._last_history_id, int(msg_id)
+                            )
 
                     continue
 
@@ -587,7 +625,9 @@ class ScheduleAgent:
                 if response.content:
                     self._context.add_assistant_message(content=response.content)
                     if self._session_logger:
-                        self._session_logger.on_assistant_message(turn_id, response.content)
+                        self._session_logger.on_assistant_message(
+                            turn_id, response.content
+                        )
                     if self._memory_enabled:
                         msg_id = self._chat_history_db.write_message(
                             session_id=self._session_id,
@@ -616,7 +656,9 @@ class ScheduleAgent:
                             if compress_event.compressed_summary:
                                 # 将 Kernel 生成的摘要写入工作记忆的 running_summary，
                                 # 下一次 _build_system_prompt 时会自动注入到系统提示
-                                self._working_memory._running_summary = compress_event.compressed_summary
+                                self._working_memory._running_summary = (
+                                    compress_event.compressed_summary
+                                )
 
                     yield ReturnAction(
                         message=response.content,
@@ -640,7 +682,9 @@ class ScheduleAgent:
                 raise
 
         # 超出最大迭代次数
-        overflow_msg = "抱歉，处理您的请求时超出了最大迭代次数。请简化您的问题或稍后重试。"
+        overflow_msg = (
+            "抱歉，处理您的请求时超出了最大迭代次数。请简化您的问题或稍后重试。"
+        )
         if self._session_logger:
             self._session_logger.on_assistant_message(turn_id, overflow_msg)
         yield ReturnAction(message=overflow_msg, status="overflow")
@@ -690,16 +734,18 @@ class ScheduleAgent:
         """
         tool_calls = []
         for tc in response.tool_calls:
-            tool_calls.append({
-                "id": tc.id,
-                "type": "function",
-                "function": {
-                    "name": tc.name,
-                    "arguments": tc.arguments
-                    if isinstance(tc.arguments, str)
-                    else json.dumps(tc.arguments, ensure_ascii=False),
-                },
-            })
+            tool_calls.append(
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.name,
+                        "arguments": tc.arguments
+                        if isinstance(tc.arguments, str)
+                        else json.dumps(tc.arguments, ensure_ascii=False),
+                    },
+                }
+            )
 
         self._context.add_assistant_message(
             content=response.content, tool_calls=tool_calls
@@ -770,7 +816,9 @@ class ScheduleAgent:
 
         注意：这是一次性注入，不写入长期对话上下文，避免 data URL 污染历史消息。
         """
-        return append_pending_multimodal_messages(messages, self._pending_multimodal_items)
+        return append_pending_multimodal_messages(
+            messages, self._pending_multimodal_items
+        )
 
     async def finalize_session(self) -> Optional[SessionSummary]:
         """
@@ -836,7 +884,9 @@ class ScheduleAgent:
             session_id=self._session_id,
         )
 
-    async def activate_session(self, session_id: str, replay_messages_limit: Optional[int] = 0) -> None:
+    async def activate_session(
+        self, session_id: str, replay_messages_limit: Optional[int] = 0
+    ) -> None:
         """
         激活指定会话并尝试从持久化历史恢复上下文。
 
@@ -907,7 +957,9 @@ class ScheduleAgent:
                 self._context.add_assistant_message(content=content)
         # 有外部新增时，强制让本轮阈值判断基于当前上下文重估，确保压缩及时触发。
         self._last_prompt_tokens = None
-        self._last_history_id = max(self._last_history_id, max(int(r.get("id", 0)) for r in new_rows))
+        self._last_history_id = max(
+            self._last_history_id, max(int(r.get("id", 0)) for r in new_rows)
+        )
 
     def reset_session(self) -> None:
         """
@@ -944,7 +996,9 @@ class ScheduleAgent:
     async def __aenter__(self) -> "ScheduleAgent":
         """异步上下文管理器入口"""
         if self._config.mcp.enabled and not self._mcp_connected:
-            self._config.mcp.servers = self._build_runtime_mcp_servers(self._config.mcp.servers)
+            self._config.mcp.servers = self._build_runtime_mcp_servers(
+                self._config.mcp.servers
+            )
             self._mcp_manager = MCPClientManager(self._config.mcp)
             if not self._defer_mcp_connect:
                 await self._mcp_manager.connect()
@@ -954,14 +1008,20 @@ class ScheduleAgent:
 
     async def ensure_mcp_connected(self) -> bool:
         """若启用了 MCP 且为延迟连接，则执行连接并更新工具注册表。用于 daemon 启动后再连 MCP。"""
-        if not self._config.mcp.enabled or self._mcp_connected or self._mcp_manager is None:
+        if (
+            not self._config.mcp.enabled
+            or self._mcp_connected
+            or self._mcp_manager is None
+        ):
             return self._mcp_connected
         await self._mcp_manager.connect()
         self._tool_registry.update_tools(self._mcp_manager.get_proxy_tools())
         self._mcp_connected = True
         return True
 
-    def _build_runtime_mcp_servers(self, servers: List[MCPServerConfig]) -> List[MCPServerConfig]:
+    def _build_runtime_mcp_servers(
+        self, servers: List[MCPServerConfig]
+    ) -> List[MCPServerConfig]:
         """
         构建运行期 MCP servers：
         - 保留用户配置
@@ -977,7 +1037,10 @@ class ScheduleAgent:
         has_local_server = any(
             (
                 server.name == "schedule_tools"
-                or (server.command in {"python", "python3", sys.executable} and script_path_str in server.args)
+                or (
+                    server.command in {"python", "python3", sys.executable}
+                    and script_path_str in server.args
+                )
                 or ("mcp_server.py" in server.args)
             )
             for server in runtime_servers

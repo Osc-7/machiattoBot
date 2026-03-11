@@ -4,21 +4,20 @@ Agent 测试用例
 测试 ScheduleAgent 的核心功能。
 """
 
-import json
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any, Dict, Optional
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agent_core.config import AgentConfig, Config, LLMConfig, reset_config
+from agent_core.config import AgentConfig, Config, LLMConfig
 from agent_core.agent import ScheduleAgent
 from agent_core.context import ConversationContext
-from agent_core.llm import LLMClient, LLMResponse, ToolCall
+from agent_core.llm import LLMResponse, ToolCall
 from agent_core.tools import BaseTool, ToolDefinition, ToolParameter, ToolResult
 
 
 # ============== 测试工具 ==============
+
 
 class MockTool(BaseTool):
     """测试用的 Mock 工具"""
@@ -63,6 +62,7 @@ class MockTool(BaseTool):
 
 # ============== Fixtures ==============
 
+
 @pytest.fixture
 def mock_config():
     """创建 Mock 配置。使用 select 模式使传入工具直接可见，便于单测。"""
@@ -102,6 +102,7 @@ def agent(mock_config, mock_tools):
 
 
 # ============== 初始化测试 ==============
+
 
 class TestScheduleAgentInit:
     """测试 Agent 初始化"""
@@ -143,6 +144,7 @@ class TestScheduleAgentInit:
 
 # ============== 工具注册测试 ==============
 
+
 class TestToolRegistration:
     """测试工具注册"""
 
@@ -173,6 +175,7 @@ class TestToolRegistration:
 
 # ============== 上下文管理测试 ==============
 
+
 class TestContextManagement:
     """测试上下文管理"""
 
@@ -190,6 +193,7 @@ class TestContextManagement:
 
 # ============== 系统提示构建测试 ==============
 
+
 class TestBuildSystemPrompt:
     """测试系统提示构建"""
 
@@ -201,6 +205,7 @@ class TestBuildSystemPrompt:
         assert "当前时间:" in prompt
         assert "日期:" in prompt
         assert "时区:" in prompt
+
     @pytest.mark.skip(reason="不再需要这些信息")
     def test_build_system_prompt_contains_agent_info(self, agent):
         """测试系统提示包含 Agent 信息"""
@@ -212,6 +217,7 @@ class TestBuildSystemPrompt:
 
 
 # ============== 工具调用处理测试 ==============
+
 
 class TestToolCallExecution:
     """测试工具调用执行"""
@@ -274,6 +280,7 @@ class TestToolCallExecution:
 
 # ============== 消息处理测试 ==============
 
+
 class TestAddAssistantMessage:
     """测试添加助手消息"""
 
@@ -320,6 +327,7 @@ class TestAddAssistantMessage:
 
 
 # ============== 主循环测试 ==============
+
 
 class TestProcessInput:
     """测试主输入处理循环"""
@@ -375,7 +383,9 @@ class TestProcessInput:
         assert result == "工具执行成功！"
 
     @pytest.mark.asyncio
-    async def test_process_input_injects_media_next_call_when_flagged(self, mock_config):
+    async def test_process_input_injects_media_next_call_when_flagged(
+        self, mock_config
+    ):
         """当工具结果声明 embed_in_next_call 时，下一轮请求应携带多模态内容。"""
         media_tool = MockTool(
             name="tool_a",
@@ -554,6 +564,7 @@ class TestProcessInput:
 
 # ============== 上下文管理器测试 ==============
 
+
 class TestAsyncContextManager:
     """测试异步上下文管理器"""
 
@@ -573,6 +584,7 @@ class TestAsyncContextManager:
 
 
 # ============== 集成测试 ==============
+
 
 class TestAgentIntegration:
     """集成测试"""
@@ -652,7 +664,9 @@ class TestAgentIntegration:
         assert len(agent.context) == 4
 
     @pytest.mark.asyncio
-    async def test_cross_window_sync_resets_prompt_token_hint_for_timely_compression(self, mock_config):
+    async def test_cross_window_sync_resets_prompt_token_hint_for_timely_compression(
+        self, mock_config
+    ):
         """跨窗口同步到新增消息后，应让阈值判断基于当前上下文重估。"""
         agent = ScheduleAgent(config=mock_config, source="cli", user_id="root")
         await agent.activate_session("cli:shared")
@@ -665,7 +679,9 @@ class TestAgentIntegration:
         )
         agent._last_prompt_tokens = 999999
 
-        with patch.object(agent._working_memory, "check_threshold", return_value=False) as mock_threshold:
+        with patch.object(
+            agent._working_memory, "check_threshold", return_value=False
+        ) as mock_threshold:
             with patch.object(
                 agent._llm_client,
                 "chat_with_tools",
@@ -679,12 +695,18 @@ class TestAgentIntegration:
         assert call_args.kwargs.get("actual_tokens") is None
 
     @pytest.mark.asyncio
-    async def test_activate_session_with_zero_replay_does_not_crash_with_existing_history(self, mock_config):
+    async def test_activate_session_with_zero_replay_does_not_crash_with_existing_history(
+        self, mock_config
+    ):
         """当有历史且 replay_messages_limit=0 时，不应触发索引异常。"""
         agent = ScheduleAgent(config=mock_config, source="cli", user_id="root")
         sid = "cli:replay-zero"
-        agent._chat_history_db.write_message(session_id=sid, role="user", content="u1", source="cli")
-        agent._chat_history_db.write_message(session_id=sid, role="assistant", content="a1", source="cli")
+        agent._chat_history_db.write_message(
+            session_id=sid, role="user", content="u1", source="cli"
+        )
+        agent._chat_history_db.write_message(
+            session_id=sid, role="assistant", content="a1", source="cli"
+        )
 
         await agent.activate_session(sid, replay_messages_limit=0)
 

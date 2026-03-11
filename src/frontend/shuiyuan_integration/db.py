@@ -15,6 +15,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Generator, List, Optional
 
+
 # 用户名中非法文件名字符替换为 _
 def _sanitize_username(username: str) -> str:
     return re.sub(r'[<>:"/\\|?*]', "_", (username or "").strip()) or "default"
@@ -116,7 +117,9 @@ class ShuiyuanDB:
                 (username, topic_id, post_id, role, content, now),
             )
             # 保留最近 chat_limit 条，超出直接删除
-            cur.execute("SELECT COUNT(*) FROM shuiyuan_chat WHERE username = ?", (username,))
+            cur.execute(
+                "SELECT COUNT(*) FROM shuiyuan_chat WHERE username = ?", (username,)
+            )
             cnt = cur.fetchone()[0]
             if cnt > self._chat_limit:
                 to_evict = cnt - self._chat_limit
@@ -172,4 +175,6 @@ class ShuiyuanDB:
         # 清理 1 分钟前的记录
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
         with self._cursor() as cur:
-            cur.execute("DELETE FROM shuiyuan_rate_limit WHERE replied_at < ?", (cutoff,))
+            cur.execute(
+                "DELETE FROM shuiyuan_rate_limit WHERE replied_at < ?", (cutoff,)
+            )

@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from agent_core.llm import LLMResponse, ToolCall, TokenUsage
+from agent_core.llm import LLMResponse, ToolCall
 from agent_core.tools import ToolResult
 
 
@@ -62,20 +62,24 @@ class SessionLogger:
 
     def on_session_start(self) -> None:
         """会话开始"""
-        self._write_record({
-            "event": "session_start",
-            "timestamp": self._timestamp(),
-            "session_id": self._session_id,
-        })
+        self._write_record(
+            {
+                "event": "session_start",
+                "timestamp": self._timestamp(),
+                "session_id": self._session_id,
+            }
+        )
 
     def on_user_message(self, turn_id: int, content: str) -> None:
         """用户消息"""
-        self._write_record({
-            "event": "user_message",
-            "timestamp": self._timestamp(),
-            "turn_id": turn_id,
-            "content": content,
-        })
+        self._write_record(
+            {
+                "event": "user_message",
+                "timestamp": self._timestamp(),
+                "turn_id": turn_id,
+                "content": content,
+            }
+        )
 
     def on_llm_request(
         self,
@@ -100,7 +104,9 @@ class SessionLogger:
         if self.enable_detailed_log:
             if system_prompt is not None:
                 if len(system_prompt) > self.max_system_prompt_log_len:
-                    record["system_prompt"] = system_prompt[: self.max_system_prompt_log_len] + "..."
+                    record["system_prompt"] = (
+                        system_prompt[: self.max_system_prompt_log_len] + "..."
+                    )
                 else:
                     record["system_prompt"] = system_prompt
             if messages is not None:
@@ -122,11 +128,13 @@ class SessionLogger:
                     args = json.loads(args) if args else {}
                 except json.JSONDecodeError:
                     pass
-            tool_calls.append({
-                "id": tc.id,
-                "name": tc.name,
-                "arguments": args,
-            })
+            tool_calls.append(
+                {
+                    "id": tc.id,
+                    "name": tc.name,
+                    "arguments": args,
+                }
+            )
         record: Dict[str, Any] = {
             "event": "llm_response",
             "timestamp": self._timestamp(),
@@ -157,15 +165,17 @@ class SessionLogger:
                 args = json.loads(args) if args else {}
             except json.JSONDecodeError:
                 args = {"_raw": args}
-        self._write_record({
-            "event": "tool_call",
-            "timestamp": self._timestamp(),
-            "turn_id": turn_id,
-            "iteration": iteration,
-            "tool_call_id": tool_call.id,
-            "name": tool_call.name,
-            "arguments": args,
-        })
+        self._write_record(
+            {
+                "event": "tool_call",
+                "timestamp": self._timestamp(),
+                "turn_id": turn_id,
+                "iteration": iteration,
+                "tool_call_id": tool_call.id,
+                "name": tool_call.name,
+                "arguments": args,
+            }
+        )
 
     def _serialize_for_json(self, data: Any) -> Any:
         """递归序列化为可 JSON 序列化的数据结构（与 ToolResult._serialize_data 一致）"""
@@ -198,28 +208,34 @@ class SessionLogger:
         duration_ms: int,
     ) -> None:
         """工具结果"""
-        data_serialized = self._serialize_for_json(result.data) if result.data is not None else None
-        self._write_record({
-            "event": "tool_result",
-            "timestamp": self._timestamp(),
-            "turn_id": turn_id,
-            "iteration": iteration,
-            "tool_call_id": tool_call_id,
-            "success": result.success,
-            "message": result.message,
-            "data": data_serialized,
-            "error": result.error,
-            "duration_ms": duration_ms,
-        })
+        data_serialized = (
+            self._serialize_for_json(result.data) if result.data is not None else None
+        )
+        self._write_record(
+            {
+                "event": "tool_result",
+                "timestamp": self._timestamp(),
+                "turn_id": turn_id,
+                "iteration": iteration,
+                "tool_call_id": tool_call_id,
+                "success": result.success,
+                "message": result.message,
+                "data": data_serialized,
+                "error": result.error,
+                "duration_ms": duration_ms,
+            }
+        )
 
     def on_assistant_message(self, turn_id: int, content: str) -> None:
         """最终助手回复"""
-        self._write_record({
-            "event": "assistant_message",
-            "timestamp": self._timestamp(),
-            "turn_id": turn_id,
-            "content": content,
-        })
+        self._write_record(
+            {
+                "event": "assistant_message",
+                "timestamp": self._timestamp(),
+                "turn_id": turn_id,
+                "content": content,
+            }
+        )
 
     def on_session_end(
         self,

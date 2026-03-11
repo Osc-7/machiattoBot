@@ -10,7 +10,6 @@ from agent_core.config import Config, LLMConfig, SkillsConfig
 from agent_core.tools import LoadSkillTool
 from agent_core.prompts.loader import (
     _format_skills_index,
-    _load_skill_metadata,
     _parse_skill_frontmatter,
     build_system_prompt,
     load_skill_content,

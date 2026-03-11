@@ -10,7 +10,6 @@ from datetime import date, datetime, time, timedelta
 from typing import Optional, Tuple
 from zoneinfo import ZoneInfo
 
-from agent_core.context.time_context import get_time_context
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 
@@ -183,8 +182,12 @@ class TimeParser:
 
         # 处理时间范围
         if time_range:
-            start_dt = datetime.combine(parsed_date, time(hour=time_range[0][0], minute=time_range[0][1]))
-            end_dt = datetime.combine(parsed_date, time(hour=time_range[1][0], minute=time_range[1][1]))
+            start_dt = datetime.combine(
+                parsed_date, time(hour=time_range[0][0], minute=time_range[0][1])
+            )
+            end_dt = datetime.combine(
+                parsed_date, time(hour=time_range[1][0], minute=time_range[1][1])
+            )
             start_dt = start_dt.replace(tzinfo=self.timezone)
             end_dt = end_dt.replace(tzinfo=self.timezone)
 
@@ -201,7 +204,9 @@ class TimeParser:
 
         # 处理单个时间点
         if parsed_time:
-            dt = datetime.combine(parsed_date, time(hour=parsed_time[0], minute=parsed_time[1]))
+            dt = datetime.combine(
+                parsed_date, time(hour=parsed_time[0], minute=parsed_time[1])
+            )
             dt = dt.replace(tzinfo=self.timezone)
 
             return ParsedTime(
@@ -245,7 +250,16 @@ class TimeParser:
         next_week_match = re.search(r"下周([一二三四五六日天])", text)
         if next_week_match:
             weekday_char = next_week_match.group(1)
-            weekday_map = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6}
+            weekday_map = {
+                "一": 0,
+                "二": 1,
+                "三": 2,
+                "四": 3,
+                "五": 4,
+                "六": 5,
+                "日": 6,
+                "天": 6,
+            }
             target_weekday = weekday_map.get(weekday_char)
             if target_weekday is not None:
                 days_ahead = target_weekday - today.weekday()
@@ -257,7 +271,16 @@ class TimeParser:
         this_week_match = re.search(r"[这本]周([一二三四五六日天])", text)
         if this_week_match:
             weekday_char = this_week_match.group(1)
-            weekday_map = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6}
+            weekday_map = {
+                "一": 0,
+                "二": 1,
+                "三": 2,
+                "四": 3,
+                "五": 4,
+                "六": 5,
+                "日": 6,
+                "天": 6,
+            }
             target_weekday = weekday_map.get(weekday_char)
             if target_weekday is not None:
                 days_ahead = target_weekday - today.weekday()
@@ -295,7 +318,9 @@ class TimeParser:
                 pass
 
         # 7. 尝试"YYYY年X月X日"格式
-        full_date_match = re.search(r"(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]?", text)
+        full_date_match = re.search(
+            r"(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]?", text
+        )
         if full_date_match:
             year = int(full_date_match.group(1))
             month = int(full_date_match.group(2))
@@ -376,7 +401,9 @@ class TimeParser:
 
         return None
 
-    def _parse_time_range(self, text: str) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
+    def _parse_time_range(
+        self, text: str
+    ) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
         """
         解析时间范围。
 
@@ -476,7 +503,7 @@ class ParseTimeTool(BaseTool):
                 "如果没有指定时间，默认为全天事件",
                 "置信度越高表示解析越可靠",
             ],
-            tags=['时间', '解析'],
+            tags=["时间", "解析"],
         )
 
     async def execute(self, **kwargs) -> ToolResult:

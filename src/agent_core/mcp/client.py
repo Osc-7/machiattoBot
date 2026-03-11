@@ -13,7 +13,7 @@ import os
 import sys
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from agent_core.config import MCPConfig, MCPServerConfig
 from agent_core.tools.base import ToolResult
@@ -64,7 +64,12 @@ class MCPClientManager:
             args_preview = " ".join(server.args)
             if len(args_preview) > 60:
                 args_preview = args_preview[:57] + "..."
-            logger.info("Connecting to MCP server: %s (%s %s)...", server.name, server.command, args_preview)
+            logger.info(
+                "Connecting to MCP server: %s (%s %s)...",
+                server.name,
+                server.command,
+                args_preview,
+            )
             try:
                 # 合并环境变量：确保 stderr 被重定向，避免 MCP server 日志污染 CLI
                 merged_env = {**os.environ, **(server.env or {})}
@@ -80,7 +85,9 @@ class MCPClientManager:
                 )
 
                 # 对 mcp-remote 进程静默 stderr，避免其调试日志污染主 CLI 输出。
-                if server.command == "npx" and any(arg == "mcp-remote" for arg in server.args):
+                if server.command == "npx" and any(
+                    arg == "mcp-remote" for arg in server.args
+                ):
                     errlog = self._exit_stack.enter_context(open(os.devnull, "w"))
                 else:
                     errlog = sys.stderr
@@ -97,7 +104,9 @@ class MCPClientManager:
                     timeout=server.init_timeout_seconds,
                 )
 
-                self._servers[server.name] = _ServerRuntime(config=server, session=session)
+                self._servers[server.name] = _ServerRuntime(
+                    config=server, session=session
+                )
 
                 tool_resp = await asyncio.wait_for(
                     session.list_tools(),
@@ -119,14 +128,20 @@ class MCPClientManager:
                             local_name=local_name,
                             server_name=server.name,
                             remote_name=remote_name,
-                            description=getattr(tool, "description", "") or "MCP 远程工具",
+                            description=getattr(tool, "description", "")
+                            or "MCP 远程工具",
                             input_schema=getattr(tool, "inputSchema", None)
                             or getattr(tool, "input_schema", None)
                             or {"type": "object", "properties": {}},
                         )
                     )
             except Exception as exc:
-                logger.warning("MCP server %s failed: %s (%s)", server.name, type(exc).__name__, exc)
+                logger.warning(
+                    "MCP server %s failed: %s (%s)",
+                    server.name,
+                    type(exc).__name__,
+                    exc,
+                )
                 raise RuntimeError(f"MCP server '{server.name}' failed: {exc}") from exc
 
         self._connected = True
@@ -150,7 +165,9 @@ class MCPClientManager:
                 message=f"MCP Server 不存在或未连接: {server_name}",
             )
 
-        timeout_seconds = runtime.config.call_timeout_seconds or self._config.call_timeout_seconds
+        timeout_seconds = (
+            runtime.config.call_timeout_seconds or self._config.call_timeout_seconds
+        )
         try:
             result = await asyncio.wait_for(
                 runtime.session.call_tool(remote_tool_name, arguments=arguments),
@@ -187,9 +204,8 @@ class MCPClientManager:
             or getattr(call_result, "is_error", False)
         )
         content = getattr(call_result, "content", None)
-        structured = (
-            getattr(call_result, "structuredContent", None)
-            or getattr(call_result, "structured_content", None)
+        structured = getattr(call_result, "structuredContent", None) or getattr(
+            call_result, "structured_content", None
         )
 
         text_parts: List[str] = []

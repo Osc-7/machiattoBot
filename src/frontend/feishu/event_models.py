@@ -1,14 +1,13 @@
 from __future__ import annotations
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 """
 飞书事件回调数据模型。
 
 仅建模当前需要的字段，其他字段通过 extra="allow" 忽略。
 """
-
-from typing import Optional
-
-from pydantic import BaseModel, ConfigDict, Field
 
 
 class FeishuChallengeRequest(BaseModel):
@@ -86,4 +85,3 @@ class FeishuEventEnvelope(BaseModel):
     schema: str
     header: FeishuEventHeader
     event: FeishuMessageEvent
-

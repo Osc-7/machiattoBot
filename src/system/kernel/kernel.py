@@ -34,6 +34,7 @@ from agent_core.kernel_interface import (
 
 if TYPE_CHECKING:
     from agent_core.agent.agent import ScheduleAgent
+
     # VersionedToolRegistry 由 system.tools 统一导出，避免直接依赖 agent_core.tools 装配细节
     from system.tools import VersionedToolRegistry
 
@@ -107,18 +108,23 @@ class AgentKernel:
                 _maybe_touch()
                 # 内核态权限校验（双重防御：InternalLoader 已在用户态过滤，此处强制兜底）
                 profile = getattr(agent, "_core_profile", None)
-                if profile is not None and not profile.is_tool_allowed(action.tool_name):
+                if profile is not None and not profile.is_tool_allowed(
+                    action.tool_name
+                ):
                     from agent_core.tools.base import ToolResult as _ToolResult
+
                     denied_result = _ToolResult(
                         success=False,
                         data=None,
                         message=f"权限拒绝：工具 '{action.tool_name}' 不在该 Core 的权限范围内",
                         error="PERMISSION_DENIED",
                     )
-                    action = await gen.asend(ToolResultEvent(
-                        tool_call_id=action.tool_call_id,
-                        result=denied_result,
-                    ))
+                    action = await gen.asend(
+                        ToolResultEvent(
+                            tool_call_id=action.tool_call_id,
+                            result=denied_result,
+                        )
+                    )
                     continue
 
                 # 优先使用 agent 自身的 per-session registry（已过 CoreProfile 过滤），
@@ -128,10 +134,12 @@ class AgentKernel:
                     action.tool_name,
                     **self._parse_arguments(action.arguments),
                 )
-                action = await gen.asend(ToolResultEvent(
-                    tool_call_id=action.tool_call_id,
-                    result=result,
-                ))
+                action = await gen.asend(
+                    ToolResultEvent(
+                        tool_call_id=action.tool_call_id,
+                        result=result,
+                    )
+                )
 
             elif isinstance(action, ContextOverflowAction):
                 logger.info(
@@ -141,20 +149,29 @@ class AgentKernel:
                     action.session_id,
                 )
                 from agent_core.kernel_interface import ContextCompressedEvent
+
                 compressed_summary, messages_kept = await self._compress_context(agent)
-                action = await gen.asend(ContextCompressedEvent(
-                    compressed_summary=compressed_summary,
-                    messages_kept=messages_kept,
-                ))
+                action = await gen.asend(
+                    ContextCompressedEvent(
+                        compressed_summary=compressed_summary,
+                        messages_kept=messages_kept,
+                    )
+                )
 
             elif isinstance(action, CoreStatsAction):
                 # run_loop 中不应出现 CoreStatsAction，仅 run_loop_kill 会产生
                 logger.warning("AgentKernel.run: unexpected CoreStatsAction, stopping")
-                return AgentRunResult(output_text="", metadata={"error": "unexpected_core_stats"})
+                return AgentRunResult(
+                    output_text="", metadata={"error": "unexpected_core_stats"}
+                )
 
             else:
-                logger.warning("AgentKernel: unknown action type %r, stopping", type(action))
-                return AgentRunResult(output_text="", metadata={"error": "unknown_action"})
+                logger.warning(
+                    "AgentKernel: unknown action type %r, stopping", type(action)
+                )
+                return AgentRunResult(
+                    output_text="", metadata={"error": "unknown_action"}
+                )
 
     async def kill(self, agent: "ScheduleAgent") -> CoreStatsAction:
         """
@@ -167,7 +184,9 @@ class AgentKernel:
         """
         run_loop_kill = getattr(agent, "run_loop_kill", None)
         if not callable(run_loop_kill):
-            logger.warning("AgentKernel.kill: agent does not support run_loop_kill, skipping")
+            logger.warning(
+                "AgentKernel.kill: agent does not support run_loop_kill, skipping"
+            )
             return CoreStatsAction(session_id=getattr(agent, "_session_id", ""))
 
         try:
@@ -248,7 +267,11 @@ class AgentKernel:
         for m in messages:
             role = m.get("role", "")
             content = m.get("content", "")
-            if isinstance(content, str) and content.strip() and role in ("user", "assistant"):
+            if (
+                isinstance(content, str)
+                and content.strip()
+                and role in ("user", "assistant")
+            ):
                 dialogue_lines.append(f"[{role}]: {content[:400]}")
 
         if not dialogue_lines:

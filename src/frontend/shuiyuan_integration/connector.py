@@ -132,7 +132,9 @@ def _collect_from_topic_watch(
             posts = client.get_topic_recent_posts(topic_id, limit=50)
         except Exception as e:
             # 使用 warning 级别打印，避免异常静默导致看起来像“卡住”
-            logger.warning("get_topic_recent_posts topic=%s 失败，将跳过本轮: %r", topic_id, e)
+            logger.warning(
+                "get_topic_recent_posts topic=%s 失败，将跳过本轮: %r", topic_id, e
+            )
             continue
 
         posts_by_topic[topic_id] = posts
@@ -154,7 +156,9 @@ def _collect_from_topic_watch(
     return out, stream_map, posts_by_topic
 
 
-def _collect_mention_post_ids(client: Any, config: Config) -> List[Tuple[int, int, int]]:
+def _collect_mention_post_ids(
+    client: Any, config: Config
+) -> List[Tuple[int, int, int]]:
     """
     从 user_actions + notifications 收集 (topic_id, post_number, post_id) 列表。
     notifications 可能包含自 @，user_actions 通常不含。
@@ -168,14 +172,20 @@ def _collect_mention_post_ids(client: Any, config: Config) -> List[Tuple[int, in
 
     # 1. user_actions filter=7（他人 @ 你）
     try:
-        data = client.get_user_actions(owner, filter_type=USER_ACTIONS_FILTER_MENTIONS, offset=0)
+        data = client.get_user_actions(
+            owner, filter_type=USER_ACTIONS_FILTER_MENTIONS, offset=0
+        )
         actions = data.get("user_actions") or []
         if isinstance(actions, list):
             for a in actions:
                 pid = a.get("post_id")
                 tid = a.get("topic_id")
                 pn = a.get("post_number", 1)
-                if pid is not None and tid is not None and int(pid) not in seen_post_ids:
+                if (
+                    pid is not None
+                    and tid is not None
+                    and int(pid) not in seen_post_ids
+                ):
                     seen_post_ids.add(int(pid))
                     out.append((int(tid), int(pn), int(pid)))
     except Exception as e:
@@ -194,7 +204,11 @@ def _collect_mention_post_ids(client: Any, config: Config) -> List[Tuple[int, in
                 pid = a.get("post_id")
                 tid = a.get("topic_id")
                 pn = a.get("post_number", 1)
-                if pid is not None and tid is not None and int(pid) not in seen_post_ids:
+                if (
+                    pid is not None
+                    and tid is not None
+                    and int(pid) not in seen_post_ids
+                ):
                     seen_post_ids.add(int(pid))
                     out.append((int(tid), int(pn), int(pid)))
     except Exception as e:
@@ -223,6 +237,7 @@ def _collect_mention_post_ids(client: Any, config: Config) -> List[Tuple[int, in
             elif isinstance(d, str):
                 try:
                     import json
+
                     parsed = json.loads(d) if d else {}
                     if isinstance(parsed, dict):
                         raw_id = parsed.get("original_post_id") or parsed.get("post_id")
@@ -261,7 +276,9 @@ async def _poll_topic_watch(
     if not owner:
         return stream_map
 
-    items, stream_map, posts_by_topic = _collect_from_topic_watch(client, config, stream_map)
+    items, stream_map, posts_by_topic = _collect_from_topic_watch(
+        client, config, stream_map
+    )
     if not items:
         return stream_map
 
@@ -275,7 +292,9 @@ async def _poll_topic_watch(
         await asyncio.sleep(1.0)  # 降低 429 风险
         raw = (post.get("raw") or post.get("cooked") or "").strip()
         username = (post.get("username") or "").strip()
-        logger.info("触发水源回复 topic=%s post=%s user=%s", topic_id, post_number, username)
+        logger.info(
+            "触发水源回复 topic=%s post=%s user=%s", topic_id, post_number, username
+        )
         thread_posts = posts_by_topic.get(topic_id) if posts_by_topic else None
         try:
             result = await run_shuiyuan_reply(
@@ -321,7 +340,9 @@ async def _poll_once(
 
     # ShuiyuanAutoReply 逻辑：首次运行只初始化，不处理
     if not stream_list:
-        logger.info("首次运行，初始化 stream_list（%d 条），不处理历史", len(new_stream))
+        logger.info(
+            "首次运行，初始化 stream_list（%d 条），不处理历史", len(new_stream)
+        )
         return new_stream
 
     # 找到 overlap：第一个已在 stream_list 中的 post_id 的索引
@@ -364,7 +385,9 @@ async def _poll_once(
             logger.debug("跳过不满足规则 post_id=%s: %s", post_id, reason)
             continue
 
-        logger.info("触发水源回复 topic=%s post=%s user=%s", topic_id, post_number, username)
+        logger.info(
+            "触发水源回复 topic=%s post=%s user=%s", topic_id, post_number, username
+        )
         try:
             result = await run_shuiyuan_reply(
                 username=username,
@@ -450,14 +473,18 @@ async def run_connector_loop(
 
                 if isinstance(e, ShuiyuanRateLimitError):
                     headers = getattr(e, "headers", None) or {}
-                    retry_after = headers.get("Retry-After") or headers.get("retry-after")
+                    retry_after = headers.get("Retry-After") or headers.get(
+                        "retry-after"
+                    )
                     delay: float = 0.0
                     try:
                         delay = float(retry_after)
                     except Exception:
                         # 若无 Retry-After，则退避为 3 倍轮询间隔
                         delay = poll_interval_seconds * 3.0
-                    backoff_until = max(backoff_until, time.time() + max(delay, poll_interval_seconds))
+                    backoff_until = max(
+                        backoff_until, time.time() + max(delay, poll_interval_seconds)
+                    )
                     logger.warning(
                         "轮询限流(429)：%s (path=%s, headers=%s)，将在 %.0f 秒后重试",
                         getattr(e, "body_preview", ""),
@@ -495,7 +522,9 @@ async def run_connector_loop(
                     delay = float(retry_after)
                 except Exception:
                     delay = poll_interval_seconds * 3.0
-                backoff_until = max(backoff_until, time.time() + max(delay, poll_interval_seconds))
+                backoff_until = max(
+                    backoff_until, time.time() + max(delay, poll_interval_seconds)
+                )
                 logger.warning(
                     "轮询限流(429)：%s (path=%s, headers=%s)，将在 %.0f 秒后重试",
                     getattr(e, "body_preview", ""),

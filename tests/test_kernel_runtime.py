@@ -35,7 +35,9 @@ async def test_scheduler_ttl_does_not_evict_inflight_session() -> None:
 
 
 @pytest.mark.asyncio
-async def test_core_pool_acquire_hot_updates_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_core_pool_acquire_hot_updates_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     profile_old = CoreProfile.default_full(frontend_id="cli", dialog_window_id="u1")
     profile_new = CoreProfile.default_sub(
         allowed_tools=["parse_time"],
@@ -92,9 +94,15 @@ async def test_compress_context_keeps_complete_recent_turn() -> None:
         {"role": "user", "content": "u2"},
         {
             "role": "assistant",
-            "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "x", "arguments": "{}"}}],
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "x", "arguments": "{}"},
+                }
+            ],
         },
-        {"role": "tool", "tool_call_id": "c1", "content": "{\"ok\":true}"},
+        {"role": "tool", "tool_call_id": "c1", "content": '{"ok":true}'},
         {"role": "assistant", "content": "a2"},
     ]
     agent = SimpleNamespace(_context=ctx, _summary_llm_client=None)
@@ -103,5 +111,10 @@ async def test_compress_context_keeps_complete_recent_turn() -> None:
 
     assert summary == ""
     assert kept == 4
-    assert [m["role"] for m in ctx.messages] == ["user", "assistant", "tool", "assistant"]
+    assert [m["role"] for m in ctx.messages] == [
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+    ]
     assert ctx.messages[0]["content"] == "u2"

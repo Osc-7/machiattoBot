@@ -40,6 +40,7 @@ def _get_async_playwright():
     if async_playwright is None:
         try:
             from playwright.async_api import async_playwright as ap  # type: ignore[import-untyped]
+
             async_playwright = ap
         except Exception:
             pass
@@ -137,7 +138,9 @@ class SjtuUndergradClient:
 
         xqm = _convert_term_to_xqm(term)
 
-        async with httpx.AsyncClient(cookies=cookies, timeout=30.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            cookies=cookies, timeout=30.0, follow_redirects=True
+        ) as client:
             resp = await client.post(
                 SJTU_UNDERGRAD_COURSE_URL,
                 data={"xnm": year, "xqm": xqm},
@@ -197,8 +200,8 @@ class FetchSjtuUndergradScheduleTool(BaseTool):
     def __init__(
         self,
         cookies_path: Optional[str] = None,
-        client_factory: Callable[[Path], SjtuUndergradClient] = lambda p: SjtuUndergradClient(
-            cookies_path=p
+        client_factory: Callable[[Path], SjtuUndergradClient] = lambda p: (
+            SjtuUndergradClient(cookies_path=p)
         ),
         config: Optional[SjtuJwConfig] = None,
         login_helper: Optional[Callable[[Path], Awaitable[None]]] = None,
@@ -294,7 +297,9 @@ class FetchSjtuUndergradScheduleTool(BaseTool):
         cookies_path = self._resolve_cookies_path()
         client = self._client_factory(cookies_path)
 
-        def _build_error_result(error_code: str, detail: Optional[str] = None) -> ToolResult:
+        def _build_error_result(
+            error_code: str, detail: Optional[str] = None
+        ) -> ToolResult:
             message = "同步课表失败"
             if error_code == "NOT_LOGGED_IN":
                 message = (
@@ -337,13 +342,16 @@ class FetchSjtuUndergradScheduleTool(BaseTool):
 
             # 如有需要，先尝试通过浏览器刷新登录状态，然后重试一次
             should_try_login = refresh_cookies and (
-                error_code == "NOT_LOGGED_IN" or error_code.startswith("Cookie 文件不存在")
+                error_code == "NOT_LOGGED_IN"
+                or error_code.startswith("Cookie 文件不存在")
             )
             if should_try_login:
                 try:
                     await self._login_helper(cookies_path)
                 except SjtuJwClientError as login_exc:
-                    return _build_error_result(str(login_exc), getattr(login_exc, "detail", None))
+                    return _build_error_result(
+                        str(login_exc), getattr(login_exc, "detail", None)
+                    )
 
                 # 使用最新 Cookie 重建 client 再试一次
                 client = self._client_factory(cookies_path)
@@ -389,10 +397,14 @@ async def _default_login_helper(cookies_path: Path) -> None:
 
             await page.goto(SJTU_LOGIN_URL)
             # 等待用户在浏览器中完成 jAccount 登录
-            await page.wait_for_url(f"**/{SJTU_AFTER_LOGIN_PATTERN}*", timeout=5 * 60 * 1000)
+            await page.wait_for_url(
+                f"**/{SJTU_AFTER_LOGIN_PATTERN}*", timeout=5 * 60 * 1000
+            )
 
             cookies = await context.cookies()
-            cookies_path.write_text(json.dumps(cookies, ensure_ascii=False, indent=2), encoding="utf-8")
+            cookies_path.write_text(
+                json.dumps(cookies, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
 
             await browser.close()
     except Exception as exc:  # pragma: no cover - 依赖宿主环境图形/依赖库
@@ -400,5 +412,3 @@ async def _default_login_helper(cookies_path: Path) -> None:
         if isinstance(exc, (ImportError, ModuleNotFoundError)):
             raise SjtuJwClientError("PLAYWRIGHT_NOT_AVAILABLE") from exc
         raise SjtuJwClientError("PLAYWRIGHT_LOGIN_FAILED", detail=str(exc)) from exc
-
-

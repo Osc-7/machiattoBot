@@ -215,7 +215,22 @@ class CoreProfile:
         """水源社区受限 Core：仅 shuiyuan 工具，无危险命令，聊天历史由 per-user DB 管理。"""
         return cls(
             mode="sub",
-            allowed_tools=["shuiyuan_search", "shuiyuan_get_topic", "shuiyuan_post_retort","web_search","extract_web_content","memory_search_long_term","memory_search_content","chat_search","chat_context","chat_scroll","notify_owner","write_file","read_file","modify_file"],
+            allowed_tools=[
+                "shuiyuan_search",
+                "shuiyuan_get_topic",
+                "shuiyuan_post_retort",
+                "web_search",
+                "extract_web_content",
+                "memory_search_long_term",
+                "memory_search_content",
+                "chat_search",
+                "chat_context",
+                "chat_scroll",
+                "notify_owner",
+                "write_file",
+                "read_file",
+                "modify_file",
+            ],
             allow_dangerous_commands=False,
             # 为每个水源用户名维护独立记忆：recent_topic + MEMORY.md + chat_history
             visible_memory_scopes=["long_term", "chat"],

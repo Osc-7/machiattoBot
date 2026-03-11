@@ -177,4 +177,3 @@ def build_shuiyuan_prompt_from_context(
     parts.append(footer)
 
     return "".join(parts)
-

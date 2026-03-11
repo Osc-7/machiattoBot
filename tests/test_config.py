@@ -2,12 +2,9 @@
 配置加载模块测试
 """
 
-import os
-import tempfile
 from pathlib import Path
 
 import pytest
-import yaml
 
 from agent_core.config import (
     Config,
@@ -18,7 +15,6 @@ from agent_core.config import (
     MultimodalConfig,
     CanvasIntegrationConfig,
     PlanningConfig,
-    PlanningWorkingHoursConfig,
     PlanningWeightsConfig,
     FileToolsConfig,
     CommandToolsConfig,

@@ -12,11 +12,19 @@ from pathlib import Path
 
 import pytest
 
-from agent_core.models import Event, Task, EventStatus, EventPriority, TaskStatus, TaskPriority
+from agent_core.models import (
+    Event,
+    Task,
+    EventStatus,
+    EventPriority,
+    TaskStatus,
+    TaskPriority,
+)
 from agent_core.storage import JSONRepository, EventRepository, TaskRepository
 
 
 # ============ 测试夹具 ============
+
 
 @pytest.fixture
 def temp_dir():
@@ -52,7 +60,7 @@ def sample_event():
         status=EventStatus.SCHEDULED,
         priority=EventPriority.HIGH,
         tags=["会议", "团队"],
-        reminders=[15]
+        reminders=[15],
     )
 
 
@@ -67,11 +75,12 @@ def sample_task():
         due_date=date(2026, 2, 20),
         status=TaskStatus.TODO,
         priority=TaskPriority.HIGH,
-        tags=["报告", "项目"]
+        tags=["报告", "项目"],
     )
 
 
 # ============ JSONRepository 基础测试 ============
+
 
 class TestJSONRepositoryBasics:
     """测试 JSONRepository 基础功能"""
@@ -79,7 +88,7 @@ class TestJSONRepositoryBasics:
     def test_create_file_on_init(self, temp_dir):
         """测试初始化时自动创建文件"""
         file_path = Path(temp_dir) / "test.json"
-        repo = JSONRepository(file_path, Event)
+        JSONRepository(file_path, Event)
         assert os.path.exists(file_path)
 
     def test_create_and_get(self, event_repo, sample_event):
@@ -177,6 +186,7 @@ class TestJSONRepositoryBasics:
 
 
 # ============ EventRepository 测试 ============
+
 
 class TestEventRepository:
     """测试 EventRepository 专用功能"""
@@ -407,6 +417,7 @@ class TestEventRepository:
 
 # ============ TaskRepository 测试 ============
 
+
 class TestTaskRepository:
     """测试 TaskRepository 专用功能"""
 
@@ -604,6 +615,7 @@ class TestTaskRepository:
 
 # ============ 持久化测试 ============
 
+
 class TestPersistence:
     """测试数据持久化"""
 
@@ -674,6 +686,7 @@ class TestPersistence:
 
 
 # ============ 边界条件测试 ============
+
 
 class TestEdgeCases:
     """测试边界条件"""

@@ -1,4 +1,5 @@
 """Canvas LMS 数据模型定义"""
+
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional, List
@@ -12,7 +13,7 @@ def now_utc() -> datetime:
 @dataclass
 class CanvasAssignment:
     """Canvas 作业模型
-    
+
     Attributes:
         id: 作业 ID
         name: 作业名称
@@ -32,6 +33,7 @@ class CanvasAssignment:
         url: 作业链接
         html_url: Canvas 网页链接
     """
+
     id: int
     name: str
     description: str = ""
@@ -49,7 +51,7 @@ class CanvasAssignment:
     attempt: int = 0
     url: str = ""
     html_url: str = ""
-    
+
     @property
     def days_left(self) -> int:
         """距离截止还有多少天"""
@@ -63,7 +65,7 @@ class CanvasAssignment:
             due = due.replace(tzinfo=timezone.utc)
         delta = due - now
         return max(0, delta.days)
-    
+
     @property
     def is_late(self) -> bool:
         """是否已过期"""
@@ -74,27 +76,27 @@ class CanvasAssignment:
         if due.tzinfo is None:
             due = due.replace(tzinfo=timezone.utc)
         return now > due and not self.is_submitted
-    
+
     @property
     def is_graded(self) -> bool:
         """是否已评分"""
         return self.workflow_state == "graded" and self.grade is not None
-    
+
     @classmethod
     def from_api_response(cls, data: dict, course_name: str = "") -> "CanvasAssignment":
         """从 API 响应创建作业对象
-        
+
         Args:
             data: Canvas API 返回的作业数据
             course_name: 课程名称（需要单独传入）
-            
+
         Returns:
             CanvasAssignment 实例
         """
         # 解析提交信息
         submission = data.get("submission", {}) or {}
         workflow_state = submission.get("workflow_state", "")
-        
+
         return cls(
             id=data["id"],
             name=data["name"],
@@ -114,7 +116,7 @@ class CanvasAssignment:
             url=data.get("url", ""),
             html_url=data.get("html_url", ""),
         )
-    
+
     @staticmethod
     def _parse_datetime(date_str: Optional[str]) -> Optional[datetime]:
         """解析 ISO 格式日期字符串，返回 timezone-aware datetime"""
@@ -129,7 +131,7 @@ class CanvasAssignment:
             return dt
         except (ValueError, AttributeError):
             return None
-    
+
     def to_dict(self) -> dict:
         """转换为字典"""
         return {
@@ -149,7 +151,7 @@ class CanvasAssignment:
 @dataclass
 class CanvasEvent:
     """Canvas 日历事件模型
-    
+
     Attributes:
         id: 事件 ID
         title: 事件标题
@@ -163,6 +165,7 @@ class CanvasEvent:
         url: 事件链接
         html_url: Canvas 网页链接
     """
+
     id: int
     title: str
     description: str = ""
@@ -174,7 +177,7 @@ class CanvasEvent:
     all_day: bool = False
     url: str = ""
     html_url: str = ""
-    
+
     @property
     def duration_hours(self) -> float:
         """事件持续时间（小时）"""
@@ -182,14 +185,14 @@ class CanvasEvent:
             return 2.0  # 默认 2 小时
         delta = self.end_at - self.start_at
         return delta.total_seconds() / 3600
-    
+
     @classmethod
     def from_api_response(cls, data: dict) -> "CanvasEvent":
         """从 API 响应创建事件对象
-        
+
         Args:
             data: Canvas API 返回的事件数据
-            
+
         Returns:
             CanvasEvent 实例
         """
@@ -206,7 +209,7 @@ class CanvasEvent:
             url=data.get("url", ""),
             html_url=data.get("html_url", ""),
         )
-    
+
     @staticmethod
     def _parse_datetime(date_str: Optional[str]) -> Optional[datetime]:
         """解析 ISO 格式日期字符串，返回 timezone-aware datetime"""
@@ -219,7 +222,7 @@ class CanvasEvent:
             return dt
         except (ValueError, AttributeError):
             return None
-    
+
     def to_dict(self) -> dict:
         """转换为字典"""
         return {
@@ -237,10 +240,10 @@ class CanvasEvent:
 @dataclass
 class CanvasPlannerItem:
     """Canvas Planner 待办/机会项模型
-    
+
     对应 Canvas Planner API (`GET /planner/items`) 返回的条目，统一抽象为
     「用户在 Planner 上看到的一条待处理事项」。
-    
+
     Attributes:
         plannable_id: 关联对象 ID（作业/测验/讨论等）
         plannable_type: 关联对象类型 (assignment, quiz, discussion_topic, planner_note, 等)
@@ -272,9 +275,9 @@ class CanvasPlannerItem:
     @classmethod
     def from_api_response(cls, data: dict) -> "CanvasPlannerItem":
         """从 Planner API 响应创建 Planner 条目对象
-        
+
         Canvas Planner API 返回的结构大致为：
-        
+
         {
             "plannable_id": 123,
             "plannable_type": "assignment",
@@ -295,23 +298,16 @@ class CanvasPlannerItem:
         override = data.get("planner_override") or {}
 
         title = (
-            plannable.get("title")
-            or plannable.get("name")
-            or data.get("title")
-            or ""
+            plannable.get("title") or plannable.get("name") or data.get("title") or ""
         )
 
         # 课程信息：有些 plannable 会带 course_id / course_name
-        course_id = (
-            data.get("course_id")
-            or plannable.get("course_id")
-        )
+        course_id = data.get("course_id") or plannable.get("course_id")
         course_name = plannable.get("course_name", "") or data.get("course_name", "")
 
         # 截止/计划时间：不同类型字段命名略有差异
         due_at = cls._parse_datetime(
-            plannable.get("due_at")
-            or plannable.get("lock_at")
+            plannable.get("due_at") or plannable.get("lock_at")
         )
         todo_date = cls._parse_datetime(
             data.get("todo_date") or plannable.get("todo_date")
@@ -361,12 +357,12 @@ class CanvasPlannerItem:
             "todo_date": self.todo_date.isoformat() if self.todo_date else None,
             "due_at": self.due_at.isoformat() if self.due_at else None,
         }
- 
+
 
 @dataclass
 class CanvasFile:
     """Canvas 课程文件模型
-    
+
     Attributes:
         id: 文件 ID
         display_name: 文件在界面上的展示名
@@ -432,7 +428,7 @@ class CanvasFile:
 @dataclass
 class SyncResult:
     """同步结果模型
-    
+
     Attributes:
         created_count: 新建的事件数量
         updated_count: 更新的事件数量
@@ -440,28 +436,29 @@ class SyncResult:
         errors: 错误列表
         synced_ids: 已同步的事件 ID 列表
     """
+
     created_count: int = 0
     updated_count: int = 0
     skipped_count: int = 0
     errors: List[str] = field(default_factory=list)
     synced_ids: List[int] = field(default_factory=list)
-    
+
     @property
     def total_processed(self) -> int:
         """总共处理的事件数量"""
         return self.created_count + self.updated_count + self.skipped_count
-    
+
     @property
     def success_rate(self) -> float:
         """成功率"""
         if self.total_processed == 0:
             return 1.0
         return (self.created_count + self.updated_count) / self.total_processed
-    
+
     def add_error(self, error: str):
         """添加错误记录"""
         self.errors.append(error)
-    
+
     def to_dict(self) -> dict:
         """转换为字典"""
         return {
@@ -472,7 +469,7 @@ class SyncResult:
             "success_rate": self.success_rate,
             "errors": self.errors,
         }
-    
+
     def __str__(self) -> str:
         """字符串表示"""
         return (

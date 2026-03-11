@@ -116,7 +116,9 @@ class AnalyzeImageTool(BaseTool):
         suffix = detail_map.get(detail_level, detail_map["normal"])
         return f"{base_prompt}\n\n{suffix}"
 
-    def _local_image_to_data_url(self, image_path: str) -> tuple[Optional[str], Optional[str]]:
+    def _local_image_to_data_url(
+        self, image_path: str
+    ) -> tuple[Optional[str], Optional[str]]:
         p = Path(image_path).expanduser().resolve()
         if not p.exists() or not p.is_file():
             return None, f"图片不存在: {p}"

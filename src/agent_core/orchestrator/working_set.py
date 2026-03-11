@@ -9,7 +9,7 @@ from __future__ import annotations
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Dict, List, Set
+from typing import List, Set
 
 from agent_core.tools.versioned_registry import VersionedToolRegistry
 
@@ -70,12 +70,19 @@ class ToolWorkingSetManager:
 
             pinned_visible = [n for n in self._pinned_tools if n in all_tools]
             lru_recent = list(self._active_tools.keys())[-self._working_set_size :]
-            visible_names = pinned_visible + [n for n in lru_recent if n not in self._pinned_tools]
+            visible_names = pinned_visible + [
+                n for n in lru_recent if n not in self._pinned_tools
+            ]
 
         openai_tools = registry.get_openai_tools(visible_names)
-        return ToolSnapshot(version=version, tool_names=visible_names, openai_tools=openai_tools)
+        return ToolSnapshot(
+            version=version, tool_names=visible_names, openai_tools=openai_tools
+        )
 
     def get_visible_tool_names(self) -> List[str]:
         """返回当前工作集可见名称（不含 registry 过滤）。"""
         with self._lock:
-            return list(self._pinned_tools) + list(self._active_tools.keys())[-self._working_set_size :]
+            return (
+                list(self._pinned_tools)
+                + list(self._active_tools.keys())[-self._working_set_size :]
+            )

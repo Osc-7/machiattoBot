@@ -4,13 +4,18 @@
 测试 Event, Task, TimeSlot 模型的核心功能
 """
 
-import pytest
 from datetime import datetime, timedelta, date
 
 from agent_core.models import (
-    Event, EventStatus, EventPriority,
-    Task, TaskStatus, TaskPriority,
-    TimeSlot, SlotType, create_sleep_slots
+    Event,
+    EventStatus,
+    EventPriority,
+    Task,
+    TaskStatus,
+    TaskPriority,
+    TimeSlot,
+    SlotType,
+    create_sleep_slots,
 )
 
 
@@ -21,9 +26,7 @@ class TestEvent:
         """测试创建事件（必填字段）"""
         now = datetime.now()
         event = Event(
-            title="团队会议",
-            start_time=now,
-            end_time=now + timedelta(hours=1)
+            title="团队会议", start_time=now, end_time=now + timedelta(hours=1)
         )
 
         assert event.title == "团队会议"
@@ -44,7 +47,7 @@ class TestEvent:
             status=EventStatus.SCHEDULED,
             priority=EventPriority.HIGH,
             tags=["项目", "评审"],
-            reminders=[15, 30]
+            reminders=[15, 30],
         )
 
         assert event.title == "项目评审"
@@ -58,9 +61,7 @@ class TestEvent:
         """测试事件时长计算"""
         start = datetime(2026, 2, 17, 9, 0)
         event = Event(
-            title="晨会",
-            start_time=start,
-            end_time=start + timedelta(minutes=30)
+            title="晨会", start_time=start, end_time=start + timedelta(minutes=30)
         )
 
         assert event.duration_minutes == 30
@@ -71,17 +72,13 @@ class TestEvent:
 
         # 短事件
         short_event = Event(
-            title="短会议",
-            start_time=start,
-            end_time=start + timedelta(hours=1)
+            title="短会议", start_time=start, end_time=start + timedelta(hours=1)
         )
         assert not short_event.is_all_day
 
         # 全天事件
         all_day_event = Event(
-            title="全天活动",
-            start_time=start,
-            end_time=start + timedelta(hours=24)
+            title="全天活动", start_time=start, end_time=start + timedelta(hours=24)
         )
         assert all_day_event.is_all_day
 
@@ -90,16 +87,14 @@ class TestEvent:
         base = datetime(2026, 2, 17, 10, 0)
 
         event1 = Event(
-            title="会议1",
-            start_time=base,
-            end_time=base + timedelta(hours=1)
+            title="会议1", start_time=base, end_time=base + timedelta(hours=1)
         )
 
         # 重叠事件
         event2 = Event(
             title="会议2",
             start_time=base + timedelta(minutes=30),
-            end_time=base + timedelta(hours=1, minutes=30)
+            end_time=base + timedelta(hours=1, minutes=30),
         )
         assert event1.is_conflict_with(event2)
 
@@ -107,7 +102,7 @@ class TestEvent:
         event3 = Event(
             title="会议3",
             start_time=base + timedelta(hours=1),
-            end_time=base + timedelta(hours=2)
+            end_time=base + timedelta(hours=2),
         )
         assert not event1.is_conflict_with(event3)
 
@@ -115,7 +110,7 @@ class TestEvent:
         event4 = Event(
             title="会议4",
             start_time=base + timedelta(hours=2),
-            end_time=base + timedelta(hours=3)
+            end_time=base + timedelta(hours=3),
         )
         assert not event1.is_conflict_with(event4)
 
@@ -124,16 +119,14 @@ class TestEvent:
         base = datetime(2026, 2, 17, 10, 0)
 
         event1 = Event(
-            title="会议1",
-            start_time=base,
-            end_time=base + timedelta(hours=1)
+            title="会议1", start_time=base, end_time=base + timedelta(hours=1)
         )
 
         event2 = Event(
             title="会议2",
             start_time=base,
             end_time=base + timedelta(hours=1),
-            status=EventStatus.CANCELLED
+            status=EventStatus.CANCELLED,
         )
 
         assert not event1.is_conflict_with(event2)
@@ -145,7 +138,7 @@ class TestEvent:
             id="abc12345",
             title="团队周会",
             start_time=start,
-            end_time=start + timedelta(hours=1)
+            end_time=start + timedelta(hours=1),
         )
 
         result = str(event)
@@ -175,7 +168,7 @@ class TestTask:
             estimated_minutes=120,
             due_date=date(2026, 2, 20),
             priority=TaskPriority.HIGH,
-            tags=["开发", "测试"]
+            tags=["开发", "测试"],
         )
 
         assert task.title == "编写测试用例"
@@ -185,10 +178,7 @@ class TestTask:
 
     def test_task_due_date_string_parsing(self):
         """测试截止日期字符串解析"""
-        task = Task(
-            title="任务",
-            due_date="2026-02-20"
-        )
+        task = Task(title="任务", due_date="2026-02-20")
 
         assert task.due_date == date(2026, 2, 20)
 
@@ -244,24 +234,15 @@ class TestTask:
         assert not task1.is_overdue
 
         # 已过期的任务
-        task2 = Task(
-            title="已过期",
-            due_date=date(2026, 2, 1)
-        )
+        task2 = Task(title="已过期", due_date=date(2026, 2, 1))
         assert task2.is_overdue
 
         # 未过期的任务
-        task3 = Task(
-            title="未过期",
-            due_date=date.today() + timedelta(days=1)
-        )
+        task3 = Task(title="未过期", due_date=date.today() + timedelta(days=1))
         assert not task3.is_overdue
 
         # 已完成的任务不算过期
-        task4 = Task(
-            title="已完成",
-            due_date=date(2026, 2, 1)
-        )
+        task4 = Task(title="已完成", due_date=date(2026, 2, 1))
         task4.mark_completed()
         assert not task4.is_overdue
 
@@ -276,7 +257,7 @@ class TestTask:
             id="abc12345",
             title="编写代码",
             estimated_minutes=60,
-            due_date=date(2026, 2, 20)
+            due_date=date(2026, 2, 20),
         )
 
         result = str(task)
@@ -315,32 +296,24 @@ class TestTimeSlot:
         """测试时间重叠检测"""
         base = datetime(2026, 2, 17, 10, 0)
 
-        slot1 = TimeSlot(
-            start_time=base,
-            end_time=base + timedelta(hours=2)
-        )
+        slot1 = TimeSlot(start_time=base, end_time=base + timedelta(hours=2))
 
         # 重叠
         slot2 = TimeSlot(
-            start_time=base + timedelta(hours=1),
-            end_time=base + timedelta(hours=3)
+            start_time=base + timedelta(hours=1), end_time=base + timedelta(hours=3)
         )
         assert slot1.overlaps_with(slot2)
 
         # 不重叠（紧邻）
         slot3 = TimeSlot(
-            start_time=base + timedelta(hours=2),
-            end_time=base + timedelta(hours=3)
+            start_time=base + timedelta(hours=2), end_time=base + timedelta(hours=3)
         )
         assert not slot1.overlaps_with(slot3)
 
     def test_time_slot_can_fit(self):
         """测试是否可容纳指定时长"""
         start = datetime(2026, 2, 17, 9, 0)
-        slot = TimeSlot(
-            start_time=start,
-            end_time=start + timedelta(hours=2)
-        )
+        slot = TimeSlot(start_time=start, end_time=start + timedelta(hours=2))
 
         assert slot.can_fit(60)
         assert slot.can_fit(120)
@@ -352,7 +325,7 @@ class TestTimeSlot:
         slot = TimeSlot(
             start_time=start,
             end_time=start + timedelta(hours=2),
-            slot_type=SlotType.BUSY
+            slot_type=SlotType.BUSY,
         )
 
         assert not slot.can_fit(60)
@@ -360,10 +333,7 @@ class TestTimeSlot:
     def test_time_slot_split(self):
         """测试时间段分割"""
         start = datetime(2026, 2, 17, 9, 0)
-        slot = TimeSlot(
-            start_time=start,
-            end_time=start + timedelta(hours=2)
-        )
+        slot = TimeSlot(start_time=start, end_time=start + timedelta(hours=2))
 
         task_slot, remaining = slot.split_for_task(60)
 
@@ -379,10 +349,7 @@ class TestTimeSlot:
     def test_time_slot_split_no_remaining(self):
         """测试时间段分割（无剩余）"""
         start = datetime(2026, 2, 17, 9, 0)
-        slot = TimeSlot(
-            start_time=start,
-            end_time=start + timedelta(hours=1)
-        )
+        slot = TimeSlot(start_time=start, end_time=start + timedelta(hours=1))
 
         task_slot, remaining = slot.split_for_task(60)
 
@@ -393,13 +360,9 @@ class TestTimeSlot:
         """测试时间段交集"""
         base = datetime(2026, 2, 17, 10, 0)
 
-        slot1 = TimeSlot(
-            start_time=base,
-            end_time=base + timedelta(hours=3)
-        )
+        slot1 = TimeSlot(start_time=base, end_time=base + timedelta(hours=3))
         slot2 = TimeSlot(
-            start_time=base + timedelta(hours=1),
-            end_time=base + timedelta(hours=4)
+            start_time=base + timedelta(hours=1), end_time=base + timedelta(hours=4)
         )
 
         intersection = slot1.intersect(slot2)
@@ -412,13 +375,9 @@ class TestTimeSlot:
         """测试无交集的时间段"""
         base = datetime(2026, 2, 17, 10, 0)
 
-        slot1 = TimeSlot(
-            start_time=base,
-            end_time=base + timedelta(hours=1)
-        )
+        slot1 = TimeSlot(start_time=base, end_time=base + timedelta(hours=1))
         slot2 = TimeSlot(
-            start_time=base + timedelta(hours=2),
-            end_time=base + timedelta(hours=3)
+            start_time=base + timedelta(hours=2), end_time=base + timedelta(hours=3)
         )
 
         intersection = slot1.intersect(slot2)
@@ -428,13 +387,9 @@ class TestTimeSlot:
         """测试时间段合并"""
         base = datetime(2026, 2, 17, 10, 0)
 
-        slot1 = TimeSlot(
-            start_time=base,
-            end_time=base + timedelta(hours=2)
-        )
+        slot1 = TimeSlot(start_time=base, end_time=base + timedelta(hours=2))
         slot2 = TimeSlot(
-            start_time=base + timedelta(hours=2),
-            end_time=base + timedelta(hours=4)
+            start_time=base + timedelta(hours=2), end_time=base + timedelta(hours=4)
         )
 
         merged = slot1.merge(slot2)
@@ -447,13 +402,9 @@ class TestTimeSlot:
         """测试重叠时间段合并"""
         base = datetime(2026, 2, 17, 10, 0)
 
-        slot1 = TimeSlot(
-            start_time=base,
-            end_time=base + timedelta(hours=3)
-        )
+        slot1 = TimeSlot(start_time=base, end_time=base + timedelta(hours=3))
         slot2 = TimeSlot(
-            start_time=base + timedelta(hours=2),
-            end_time=base + timedelta(hours=4)
+            start_time=base + timedelta(hours=2), end_time=base + timedelta(hours=4)
         )
 
         merged = slot1.merge(slot2)
@@ -467,14 +418,12 @@ class TestTimeSlot:
         base = datetime(2026, 2, 17, 10, 0)
 
         slot1 = TimeSlot(
-            start_time=base,
-            end_time=base + timedelta(hours=2),
-            slot_type=SlotType.FREE
+            start_time=base, end_time=base + timedelta(hours=2), slot_type=SlotType.FREE
         )
         slot2 = TimeSlot(
             start_time=base + timedelta(hours=2),
             end_time=base + timedelta(hours=4),
-            slot_type=SlotType.BUSY
+            slot_type=SlotType.BUSY,
         )
 
         merged = slot1.merge(slot2)
@@ -484,11 +433,7 @@ class TestTimeSlot:
         """测试创建睡眠时间段"""
         base = datetime(2026, 2, 17, 0, 0)
 
-        sleep_slots = create_sleep_slots(
-            base,
-            sleep_start_hour=23,
-            sleep_end_hour=8
-        )
+        sleep_slots = create_sleep_slots(base, sleep_start_hour=23, sleep_end_hour=8)
 
         assert len(sleep_slots) == 1
         sleep_slot = sleep_slots[0]
@@ -504,7 +449,7 @@ class TestTimeSlot:
         slot = TimeSlot(
             start_time=start,
             end_time=start + timedelta(hours=2),
-            slot_type=SlotType.FREE
+            slot_type=SlotType.FREE,
         )
 
         result = str(slot)
@@ -519,9 +464,7 @@ class TestModelSerialization:
         """测试事件 JSON 序列化"""
         start = datetime(2026, 2, 17, 14, 0)
         event = Event(
-            title="会议",
-            start_time=start,
-            end_time=start + timedelta(hours=1)
+            title="会议", start_time=start, end_time=start + timedelta(hours=1)
         )
 
         # 转换为字典
@@ -536,11 +479,7 @@ class TestModelSerialization:
 
     def test_task_json_serialization(self):
         """测试任务 JSON 序列化"""
-        task = Task(
-            title="任务",
-            estimated_minutes=90,
-            due_date=date(2026, 2, 20)
-        )
+        task = Task(title="任务", estimated_minutes=90, due_date=date(2026, 2, 20))
 
         data = task.model_dump()
         assert data["title"] == "任务"
@@ -556,7 +495,7 @@ class TestModelSerialization:
         slot = TimeSlot(
             start_time=start,
             end_time=start + timedelta(hours=2),
-            slot_type=SlotType.FREE
+            slot_type=SlotType.FREE,
         )
 
         data = slot.model_dump()

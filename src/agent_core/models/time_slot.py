@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 class SlotType(str, Enum):
     """时间段类型"""
+
     FREE = "free"  # 空闲时间
     BUSY = "busy"  # 忙碌时间（有事件）
     SLEEP = "sleep"  # 睡眠时间
@@ -42,9 +43,7 @@ class TimeSlot(BaseModel):
     title: Optional[str] = Field(None, description="时间段标题")
     metadata: dict = Field(default_factory=dict, description="额外元数据")
 
-    model_config = ConfigDict(
-        json_encoders={datetime: lambda v: v.isoformat()}
-    )
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
     @property
     def duration_minutes(self) -> int:
@@ -89,10 +88,7 @@ class TimeSlot(BaseModel):
         Returns:
             是否存在重叠
         """
-        return (
-            self.start_time < other.end_time and
-            self.end_time > other.start_time
-        )
+        return self.start_time < other.end_time and self.end_time > other.start_time
 
     def can_fit(self, minutes: int) -> bool:
         """
@@ -126,15 +122,13 @@ class TimeSlot(BaseModel):
             start_time=self.start_time,
             end_time=task_end,
             slot_type=SlotType.BUSY,
-            title=self.title
+            title=self.title,
         )
 
         remaining_minutes = self.duration_minutes - minutes
         if remaining_minutes > 0:
             remaining_slot = TimeSlot(
-                start_time=task_end,
-                end_time=self.end_time,
-                slot_type=SlotType.FREE
+                start_time=task_end, end_time=self.end_time, slot_type=SlotType.FREE
             )
         else:
             remaining_slot = None
@@ -157,7 +151,7 @@ class TimeSlot(BaseModel):
         return TimeSlot(
             start_time=max(self.start_time, other.start_time),
             end_time=min(self.end_time, other.end_time),
-            slot_type=self.slot_type
+            slot_type=self.slot_type,
         )
 
     def merge(self, other: "TimeSlot") -> Optional["TimeSlot"]:
@@ -174,14 +168,18 @@ class TimeSlot(BaseModel):
         if self.slot_type != other.slot_type:
             return None
 
-        if not self.overlaps_with(other) and self.end_time != other.start_time and other.end_time != self.start_time:
+        if (
+            not self.overlaps_with(other)
+            and self.end_time != other.start_time
+            and other.end_time != self.start_time
+        ):
             return None
 
         return TimeSlot(
             start_time=min(self.start_time, other.start_time),
             end_time=max(self.end_time, other.end_time),
             slot_type=self.slot_type,
-            title=self.title or other.title
+            title=self.title or other.title,
         )
 
     def __str__(self) -> str:
@@ -197,7 +195,7 @@ def create_sleep_slots(
     sleep_start_hour: int = 23,
     sleep_start_minute: int = 0,
     sleep_end_hour: int = 8,
-    sleep_end_minute: int = 0
+    sleep_end_minute: int = 0,
 ) -> list[TimeSlot]:
     """
     为指定日期创建睡眠时间段
@@ -214,17 +212,11 @@ def create_sleep_slots(
     """
     # 当天晚上的睡眠时间
     evening_sleep_start = date_start.replace(
-        hour=sleep_start_hour,
-        minute=sleep_start_minute,
-        second=0,
-        microsecond=0
+        hour=sleep_start_hour, minute=sleep_start_minute, second=0, microsecond=0
     )
     # 第二天早上的醒来时间
     morning_wake = (date_start + timedelta(days=1)).replace(
-        hour=sleep_end_hour,
-        minute=sleep_end_minute,
-        second=0,
-        microsecond=0
+        hour=sleep_end_hour, minute=sleep_end_minute, second=0, microsecond=0
     )
 
     return [
@@ -232,6 +224,6 @@ def create_sleep_slots(
             start_time=evening_sleep_start,
             end_time=morning_wake,
             slot_type=SlotType.SLEEP,
-            title="睡眠时间"
+            title="睡眠时间",
         )
     ]

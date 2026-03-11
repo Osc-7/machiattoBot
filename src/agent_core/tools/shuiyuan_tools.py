@@ -9,8 +9,7 @@
 
 from __future__ import annotations
 
-import os
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from agent_core.config import Config, ShuiyuanConfig
 
@@ -256,7 +255,15 @@ class ShuiyuanGetTopicTool(BaseTool):
             "title": topic.get("title"),
             "fancy_title": topic.get("fancy_title"),
             "posts_count": topic.get("posts_count"),
-            "posts": [{"id": p.get("id"), "post_number": p.get("post_number"), "username": p.get("username"), "raw": (p.get("raw") or p.get("cooked") or "")[:500]} for p in posts],
+            "posts": [
+                {
+                    "id": p.get("id"),
+                    "post_number": p.get("post_number"),
+                    "username": p.get("username"),
+                    "raw": (p.get("raw") or p.get("cooked") or "")[:500],
+                }
+                for p in posts
+            ],
             "_posts_limit": self._posts_limit,
             "_truncated": (topic.get("posts_count") or 0) > self._posts_limit,
         }
@@ -311,9 +318,18 @@ post_id 可从 shuiyuan_get_topic 返回的 posts 中的 id 字段获取。""",
                 ),
             ],
             examples=[
-                {"description": "给帖子点赞", "params": {"post_id": 123456, "emoji": "thumbsup"}},
-                {"description": "贴个心", "params": {"post_id": 123456, "emoji": "heart"}},
-                {"description": "贴笑哭", "params": {"post_id": 123456, "emoji": "joy"}},
+                {
+                    "description": "给帖子点赞",
+                    "params": {"post_id": 123456, "emoji": "thumbsup"},
+                },
+                {
+                    "description": "贴个心",
+                    "params": {"post_id": 123456, "emoji": "heart"},
+                },
+                {
+                    "description": "贴笑哭",
+                    "params": {"post_id": 123456, "emoji": "joy"},
+                },
             ],
             usage_notes=[
                 "需配置 shuiyuan.enabled=true 和 user_api_key（或 SHUIYUAN_USER_API_KEY）",
@@ -496,5 +512,3 @@ class ShuiyuanPostReplyTool(BaseTool):
         if success:
             return ToolResult(success=True, message=msg, data={"posted": True})
         return ToolResult(success=False, error="SHUIYUAN_POST_FAILED", message=msg)
-
-

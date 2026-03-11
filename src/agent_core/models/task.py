@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 class TaskStatus(str, Enum):
     """任务状态"""
+
     TODO = "todo"  # 待办
     IN_PROGRESS = "in_progress"  # 进行中
     COMPLETED = "completed"  # 已完成
@@ -23,6 +24,7 @@ class TaskStatus(str, Enum):
 
 class TaskPriority(str, Enum):
     """任务优先级"""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -58,7 +60,7 @@ class Task(BaseModel):
         default=60,
         description="预计所需时间（分钟）",
         ge=1,
-        le=1440  # 最大 24 小时
+        le=1440,  # 最大 24 小时
     )
     due_date: Optional[date] = Field(None, description="截止日期")
     status: TaskStatus = Field(default=TaskStatus.TODO, description="任务状态")
@@ -103,7 +105,7 @@ class Task(BaseModel):
     model_config = ConfigDict(
         json_encoders={
             datetime: lambda v: v.isoformat() if v else None,
-            date: lambda v: v.isoformat() if v else None
+            date: lambda v: v.isoformat() if v else None,
         }
     )
 
@@ -181,8 +183,10 @@ class Task(BaseModel):
             TaskStatus.TODO: "📋",
             TaskStatus.IN_PROGRESS: "🔄",
             TaskStatus.COMPLETED: "✅",
-            TaskStatus.CANCELLED: "❌"
+            TaskStatus.CANCELLED: "❌",
         }
         emoji = status_emoji.get(self.status, "📋")
         due_str = f" (截止: {self.due_date})" if self.due_date else ""
-        return f"{emoji} [{self.id}] {self.title} - {self.estimated_minutes}分钟{due_str}"
+        return (
+            f"{emoji} [{self.id}] {self.title} - {self.estimated_minutes}分钟{due_str}"
+        )

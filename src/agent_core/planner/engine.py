@@ -30,7 +30,9 @@ def _to_naive_local(dt: datetime, timezone: str) -> datetime:
     return dt.astimezone(ZoneInfo(timezone)).replace(tzinfo=None)
 
 
-def _overlap(a_start: datetime, a_end: datetime, b_start: datetime, b_end: datetime) -> bool:
+def _overlap(
+    a_start: datetime, a_end: datetime, b_start: datetime, b_end: datetime
+) -> bool:
     return a_start < b_end and a_end > b_start
 
 
@@ -86,7 +88,9 @@ class PlannerEngine:
         intervals.sort(key=lambda item: item[0])
         return intervals
 
-    def _subtract_interval(self, slot: TimeSlot, busy: tuple[datetime, datetime]) -> list[TimeSlot]:
+    def _subtract_interval(
+        self, slot: TimeSlot, busy: tuple[datetime, datetime]
+    ) -> list[TimeSlot]:
         b_start, b_end = busy
         s_start = slot.start_time
         s_end = slot.end_time
@@ -114,7 +118,11 @@ class PlannerEngine:
             )
         return result
 
-    def _subtract_busy(self, working_slots: list[TimeSlot], busy_intervals: list[tuple[datetime, datetime]]) -> list[TimeSlot]:
+    def _subtract_busy(
+        self,
+        working_slots: list[TimeSlot],
+        busy_intervals: list[tuple[datetime, datetime]],
+    ) -> list[TimeSlot]:
         free_slots = working_slots
         for busy in busy_intervals:
             updated: list[TimeSlot] = []
@@ -122,7 +130,9 @@ class PlannerEngine:
                 updated.extend(self._subtract_interval(slot, busy))
             free_slots = updated
         free_slots = [
-            slot for slot in free_slots if slot.duration_minutes >= self._config.min_block_minutes
+            slot
+            for slot in free_slots
+            if slot.duration_minutes >= self._config.min_block_minutes
         ]
         free_slots.sort(key=lambda slot: slot.start_time)
         return free_slots
@@ -218,4 +228,3 @@ class PlannerEngine:
             window_start=window_start,
             window_end=window_end,
         )
-

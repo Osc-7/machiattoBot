@@ -46,7 +46,9 @@ async def test_sync_sources_tool_creates_cursor_and_status():
 @pytest.mark.asyncio
 async def test_digest_and_notification_flow():
     digest_tool = GetDigestTool()
-    digest_result = await digest_tool.execute(digest_type="daily", generate_if_missing=True)
+    digest_result = await digest_tool.execute(
+        digest_type="daily", generate_if_missing=True
+    )
 
     assert digest_result.success is True
     digest = digest_result.data["digest"]
@@ -139,7 +141,9 @@ def test_automation_task_logger_accepts_call_tool_for_required_operation():
 
 
 @pytest.mark.asyncio
-async def test_get_automation_activity_tool_reads_compact_records(tmp_path, monkeypatch):
+async def test_get_automation_activity_tool_reads_compact_records(
+    tmp_path, monkeypatch
+):
     monkeypatch.setenv("SCHEDULE_AGENT_TEST_DATA_DIR", str(tmp_path))
     activity_file = tmp_path / "automation" / "automation_activity.jsonl"
     activity_file.parent.mkdir(parents=True, exist_ok=True)

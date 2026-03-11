@@ -21,10 +21,10 @@ wheels/
 *.egg
 
 # Virtual Environment
-venv/
-ENV/
-env/
 .venv/
+venv/
+env/
+ENV/
 
 # IDE
 .idea/
@@ -38,30 +38,33 @@ env/
 .coverage
 htmlcov/
 
-# Project specific
-# prompts 文件夹不纳入版本控制（可能包含私有配置）
-src/agent_core/prompts/
-data/*.json
-!data/.gitkeep
-config.yaml
-.env
-src/schedule_agent/prompts/system/
-automation-logs/
-logs/
-src/schedule_agent/prompts/skills/maker-time-protector/
 # OS
 .DS_Store
 Thumbs.db
 
-# Machiatto - 私有文件夹（日记、笔记等私密内容）
+# Logs
+logs/
+automation-logs/
+
+# Env / Config
+.env
+config.yaml
+
+# Project-specific private or generated data
+src/agent_core/prompts/user.md
+data/
+!data/.gitkeep
+MEMORY.md
 machiatto/
 memory/
-
-# Agent 自主管理的长期记忆（不纳入版本控制）
-MEMORY.md
-data/
 user_file/
 pictures/
 scripts/
 docs/
-!src/agent_core/prompts/loader.py
+
+# Local-only helpers
+gitleaks
+claude-progress.txt
+claude_code_env.sh
+feature_list.json
+run_automation.sh

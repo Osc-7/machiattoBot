@@ -53,4 +53,3 @@ def rank_tasks(
         )
     )
     return scored
-

@@ -85,7 +85,7 @@ class WebExtractorTool(BaseTool):
                 "如果指定了 query，会作为抽取意图透传给 Tavily（若该参数被支持）",
                 "查询火车/航班时刻时，务必在 query 中写明出发地、目的地（如「厦门到上海 G260 时刻表」），否则可能返回同名车次/航班的其它线路信息。",
             ],
-            tags=['网络', '抓取'],
+            tags=["网络", "抓取"],
         )
 
     def _resolve_remote_tool_name(self) -> str | None:
@@ -140,7 +140,9 @@ class WebExtractorTool(BaseTool):
         if query:
             payload["query"] = query
         payload_candidates.append(payload)
-        payload_candidates.append({"url": url, "query": query} if query else {"url": url})
+        payload_candidates.append(
+            {"url": url, "query": query} if query else {"url": url}
+        )
 
         last_result: ToolResult | None = None
         for candidate_payload in payload_candidates:

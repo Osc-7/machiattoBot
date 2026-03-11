@@ -28,8 +28,18 @@ class SyncSourcesTool(BaseTool):
             name=self.name,
             description="手动触发外部来源同步（课表/邮件）。",
             parameters=[
-                ToolParameter(name="source", type="string", description="来源：course | email | all", required=False),
-                ToolParameter(name="account_id", type="string", description="账户 ID，默认 default", required=False),
+                ToolParameter(
+                    name="source",
+                    type="string",
+                    description="来源：course | email | all",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="account_id",
+                    type="string",
+                    description="账户 ID，默认 default",
+                    required=False,
+                ),
             ],
             tags=["自动化", "同步"],
         )
@@ -43,7 +53,9 @@ class SyncSourcesTool(BaseTool):
 
         results = []
         for source_type in sources:
-            result = await runtime.sync_service.run_source(source_type=source_type, account_id=account_id)
+            result = await runtime.sync_service.run_source(
+                source_type=source_type, account_id=account_id
+            )
             results.append(result)
 
         return ToolResult(
@@ -63,8 +75,18 @@ class GetSyncStatusTool(BaseTool):
             name=self.name,
             description="查看同步游标与最近作业运行状态。",
             parameters=[
-                ToolParameter(name="job_type", type="string", description="可选，筛选 job_type", required=False),
-                ToolParameter(name="limit", type="integer", description="返回数量，默认 10", required=False),
+                ToolParameter(
+                    name="job_type",
+                    type="string",
+                    description="可选，筛选 job_type",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="limit",
+                    type="integer",
+                    description="返回数量，默认 10",
+                    required=False,
+                ),
             ],
             tags=["自动化", "同步", "状态"],
         )
@@ -96,8 +118,18 @@ class GetDigestTool(BaseTool):
             name=self.name,
             description="查询日结/周结摘要，若不存在可触发生成。",
             parameters=[
-                ToolParameter(name="digest_type", type="string", description="daily | weekly", required=False),
-                ToolParameter(name="generate_if_missing", type="boolean", description="缺失时是否生成", required=False),
+                ToolParameter(
+                    name="digest_type",
+                    type="string",
+                    description="daily | weekly",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="generate_if_missing",
+                    type="boolean",
+                    description="缺失时是否生成",
+                    required=False,
+                ),
             ],
             tags=["自动化", "总结"],
         )
@@ -111,10 +143,14 @@ class GetDigestTool(BaseTool):
         if digest is None and generate_if_missing:
             if digest_type == "weekly":
                 digest = runtime.summary_service.generate_weekly_digest()
-                await runtime.bus.publish("weekly_digest.ready", {"digest_id": digest.id})
+                await runtime.bus.publish(
+                    "weekly_digest.ready", {"digest_id": digest.id}
+                )
             else:
                 digest = runtime.summary_service.generate_daily_digest()
-                await runtime.bus.publish("daily_digest.ready", {"digest_id": digest.id})
+                await runtime.bus.publish(
+                    "daily_digest.ready", {"digest_id": digest.id}
+                )
 
         if digest is None:
             return ToolResult(success=True, message="暂无摘要", data={"digest": None})
@@ -136,8 +172,18 @@ class ListNotificationsTool(BaseTool):
             name=self.name,
             description="列出自动化通知（默认应用内通知）。",
             parameters=[
-                ToolParameter(name="limit", type="integer", description="返回数量，默认 20", required=False),
-                ToolParameter(name="status", type="string", description="pending|sent|acked|failed", required=False),
+                ToolParameter(
+                    name="limit",
+                    type="integer",
+                    description="返回数量，默认 20",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="status",
+                    type="string",
+                    description="pending|sent|acked|failed",
+                    required=False,
+                ),
             ],
             tags=["自动化", "通知"],
         )
@@ -147,11 +193,17 @@ class ListNotificationsTool(BaseTool):
         status = kwargs.get("status")
 
         runtime = await get_runtime()
-        notifications = runtime.notification_service.list_notifications(limit=limit, status=status)
+        notifications = runtime.notification_service.list_notifications(
+            limit=limit, status=status
+        )
         return ToolResult(
             success=True,
             message=f"返回 {len(notifications)} 条通知",
-            data={"notifications": [item.model_dump(mode="json") for item in notifications]},
+            data={
+                "notifications": [
+                    item.model_dump(mode="json") for item in notifications
+                ]
+            },
         )
 
 
@@ -165,7 +217,12 @@ class AckNotificationTool(BaseTool):
             name=self.name,
             description="确认已读一条通知。",
             parameters=[
-                ToolParameter(name="outbox_id", type="string", description="通知 ID", required=True),
+                ToolParameter(
+                    name="outbox_id",
+                    type="string",
+                    description="通知 ID",
+                    required=True,
+                ),
             ],
             tags=["自动化", "通知"],
         )
@@ -173,12 +230,16 @@ class AckNotificationTool(BaseTool):
     async def execute(self, **kwargs: Any) -> ToolResult:
         outbox_id = str(kwargs.get("outbox_id") or "").strip()
         if not outbox_id:
-            return ToolResult(success=False, error="MISSING_ID", message="缺少 outbox_id")
+            return ToolResult(
+                success=False, error="MISSING_ID", message="缺少 outbox_id"
+            )
 
         runtime = await get_runtime()
         item = runtime.notification_service.ack_notification(outbox_id)
         if item is None:
-            return ToolResult(success=False, error="NOT_FOUND", message=f"通知不存在: {outbox_id}")
+            return ToolResult(
+                success=False, error="NOT_FOUND", message=f"通知不存在: {outbox_id}"
+            )
 
         return ToolResult(
             success=True,
@@ -200,10 +261,30 @@ class ConfigureAutomationPolicyTool(BaseTool):
             name=self.name,
             description="配置自动化策略，例如自动写入开关和静默时段。",
             parameters=[
-                ToolParameter(name="auto_write_enabled", type="boolean", description="是否启用自动写入", required=False),
-                ToolParameter(name="quiet_hours_start", type="string", description="静默开始时间 HH:MM", required=False),
-                ToolParameter(name="quiet_hours_end", type="string", description="静默结束时间 HH:MM", required=False),
-                ToolParameter(name="min_confidence_for_silent_apply", type="number", description="静默自动应用置信度阈值", required=False),
+                ToolParameter(
+                    name="auto_write_enabled",
+                    type="boolean",
+                    description="是否启用自动写入",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="quiet_hours_start",
+                    type="string",
+                    description="静默开始时间 HH:MM",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="quiet_hours_end",
+                    type="string",
+                    description="静默结束时间 HH:MM",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="min_confidence_for_silent_apply",
+                    type="number",
+                    description="静默自动应用置信度阈值",
+                    required=False,
+                ),
             ],
             tags=["自动化", "策略"],
         )
@@ -218,7 +299,9 @@ class ConfigureAutomationPolicyTool(BaseTool):
         if kwargs.get("quiet_hours_end") is not None:
             policy.quiet_hours_end = str(kwargs["quiet_hours_end"])
         if kwargs.get("min_confidence_for_silent_apply") is not None:
-            policy.min_confidence_for_silent_apply = float(kwargs["min_confidence_for_silent_apply"])
+            policy.min_confidence_for_silent_apply = float(
+                kwargs["min_confidence_for_silent_apply"]
+            )
 
         policy.updated_at = datetime.now()
         self._repo.update(policy)
@@ -348,7 +431,9 @@ class NotifyOwnerTool(BaseTool):
         try:
             client = FeishuClient()
             await client.send_text_message(chat_id=chat_id, text=message)
-            return ToolResult(success=True, message="已发送飞书通知", data={"sent": True})
+            return ToolResult(
+                success=True, message="已发送飞书通知", data={"sent": True}
+            )
         except Exception as e:
             return ToolResult(
                 success=False,
@@ -426,7 +511,7 @@ class CreateScheduledJobTool(BaseTool):
                 ToolParameter(
                     name="times",
                     type="string",
-                    description="可选：每天多个触发时间，逗号分隔的 HH:MM 列表，例如 \"08:00,14:00,20:00\"。设置后优先于 daily_time。",
+                    description='可选：每天多个触发时间，逗号分隔的 HH:MM 列表，例如 "08:00,14:00,20:00"。设置后优先于 daily_time。',
                     required=False,
                 ),
                 ToolParameter(
@@ -456,7 +541,7 @@ class CreateScheduledJobTool(BaseTool):
                 ToolParameter(
                     name="memory_owner",
                     type="string",
-                    description="可选：记忆 owner 标识，例如 \"feishu:ou_xxx\" 或 \"cli:default\"。不提供时与当前会话的权限对齐（有记忆则复用，无则不开）。",
+                    description='可选：记忆 owner 标识，例如 "feishu:ou_xxx" 或 "cli:default"。不提供时与当前会话的权限对齐（有记忆则复用，无则不开）。',
                     required=False,
                 ),
                 ToolParameter(
@@ -490,7 +575,9 @@ class CreateScheduledJobTool(BaseTool):
         run_at_text = str(run_at_raw or once_at_raw or "").strip()
         if run_at_text:
             try:
-                parsed_run_at = datetime.fromisoformat(run_at_text.replace("Z", "+00:00"))
+                parsed_run_at = datetime.fromisoformat(
+                    run_at_text.replace("Z", "+00:00")
+                )
                 run_at = parsed_run_at
             except Exception:
                 return ToolResult(
@@ -517,7 +604,9 @@ class CreateScheduledJobTool(BaseTool):
             start_time = str(start_time_raw).strip() or None
 
         one_shot = run_at is not None
-        if one_shot and any([interval_seconds_raw, interval_minutes_raw, daily_time, times, start_time]):
+        if one_shot and any(
+            [interval_seconds_raw, interval_minutes_raw, daily_time, times, start_time]
+        ):
             return ToolResult(
                 success=False,
                 error="MIXED_SCHEDULE_MODE",
@@ -547,11 +636,15 @@ class CreateScheduledJobTool(BaseTool):
                 interval_seconds = minutes * 60
 
             # times / daily_time 模式未显式提供间隔时，默认按 24 小时周期。
-            if (times or daily_time) and (interval_seconds is None or interval_seconds <= 0):
+            if (times or daily_time) and (
+                interval_seconds is None or interval_seconds <= 0
+            ):
                 interval_seconds = 24 * 3600
 
             # start_time + interval 语义需要有效的 interval
-            if start_time is not None and (interval_seconds is None or interval_seconds <= 0):
+            if start_time is not None and (
+                interval_seconds is None or interval_seconds <= 0
+            ):
                 return ToolResult(
                     success=False,
                     error="MISSING_INTERVAL_FOR_START_TIME",
@@ -573,8 +666,12 @@ class CreateScheduledJobTool(BaseTool):
         user_id = str(kwargs.get("user_id") or "default")
         enabled = bool(kwargs.get("enabled", True))
         # 未显式传入时，使用调用此工具的 Core 的权限作为默认
-        memory_owner = str(kwargs.get("memory_owner") or "").strip() or self._default_memory_owner
-        core_mode = str(kwargs.get("core_mode") or "").strip() or self._default_core_mode
+        memory_owner = (
+            str(kwargs.get("memory_owner") or "").strip() or self._default_memory_owner
+        )
+        core_mode = (
+            str(kwargs.get("core_mode") or "").strip() or self._default_core_mode
+        )
 
         try:
             cfg = get_config()

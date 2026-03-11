@@ -258,13 +258,17 @@ class GetFreeSlotsTool(BaseTool):
             current_date = start_date + timedelta(days=d)
             sleep_slots.extend(self._create_sleep_slots(current_date))
 
-        free_slots = self._calculate_free_slots(start_dt, end_dt, busy_slots, sleep_slots)
+        free_slots = self._calculate_free_slots(
+            start_dt, end_dt, busy_slots, sleep_slots
+        )
 
         if min_duration is not None:
             if not isinstance(min_duration, int) or min_duration < 1:
                 min_duration = None
             else:
-                free_slots = [s for s in free_slots if s.duration_minutes >= min_duration]
+                free_slots = [
+                    s for s in free_slots if s.duration_minutes >= min_duration
+                ]
 
         total_free_minutes = sum(s.duration_minutes for s in free_slots)
 
@@ -409,7 +413,9 @@ Planner 会：
             tags=["任务", "规划"],
         )
 
-    def _get_tasks_to_plan(self, task_ids: Optional[List[str]], max_tasks: int) -> List[Task]:
+    def _get_tasks_to_plan(
+        self, task_ids: Optional[List[str]], max_tasks: int
+    ) -> List[Task]:
         if task_ids:
             tasks = []
             for tid in task_ids:
@@ -423,7 +429,9 @@ Planner 会：
             max_tasks = 1
         return tasks[:max_tasks]
 
-    def _cancel_existing_planned_blocks(self, start_dt: datetime, end_dt: datetime) -> int:
+    def _cancel_existing_planned_blocks(
+        self, start_dt: datetime, end_dt: datetime
+    ) -> int:
         events = self._event_repository.get_by_date_range(start_dt, end_dt)
         cancelled = 0
         for event in events:
@@ -506,7 +514,9 @@ Planner 会：
             events = [
                 event
                 for event in events
-                if not (event.source == "planner" and event.event_type == "planned_block")
+                if not (
+                    event.source == "planner" and event.event_type == "planned_block"
+                )
             ]
 
         engine = PlannerEngine(self._planning_config)
@@ -521,7 +531,9 @@ Planner 会：
 
         cancelled_count = 0
         if replace_existing_plans and not dry_run:
-            cancelled_count = self._cancel_existing_planned_blocks(query_start, query_end)
+            cancelled_count = self._cancel_existing_planned_blocks(
+                query_start, query_end
+            )
 
         planned_items = []
         planned_tasks = []
@@ -601,8 +613,12 @@ Planner 会：
             "total": len(tasks_to_plan),
             "planned": len(planned_items),
             "unplanned": len(unplanned_items),
-            "window_start": plan_result.window_start.isoformat() if plan_result.window_start else None,
-            "window_end": plan_result.window_end.isoformat() if plan_result.window_end else None,
+            "window_start": plan_result.window_start.isoformat()
+            if plan_result.window_start
+            else None,
+            "window_end": plan_result.window_end.isoformat()
+            if plan_result.window_end
+            else None,
             "dry_run": dry_run,
             "cancelled_previous_plans": cancelled_count,
         }

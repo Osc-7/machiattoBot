@@ -135,7 +135,9 @@ class AutomationCoreGateway:
             seen.add(sid)
         return sorted(seen)
 
-    async def ensure_session(self, session_id: str, *, create_if_missing: bool = True) -> bool:
+    async def ensure_session(
+        self, session_id: str, *, create_if_missing: bool = True
+    ) -> bool:
         """
         确保某个 session 已可用，但不改变当前 active_session_id。
 
@@ -145,12 +147,18 @@ class AutomationCoreGateway:
         session_id = session_id.strip()
         if not session_id:
             raise ValueError("session_id 不能为空")
-        existed_any = session_id in self._sessions or self._session_registry.session_exists(
-            self._owner_id, self._source, session_id
+        existed_any = (
+            session_id in self._sessions
+            or self._session_registry.session_exists(
+                self._owner_id, self._source, session_id
+            )
         )
         if self._kernel_scheduler is not None:
             try:
-                existed_any = existed_any or self._kernel_scheduler.core_pool.has_session(session_id)
+                existed_any = (
+                    existed_any
+                    or self._kernel_scheduler.core_pool.has_session(session_id)
+                )
             except Exception:
                 pass
         if session_id not in self._sessions:
@@ -160,16 +168,23 @@ class AutomationCoreGateway:
             if self._kernel_scheduler is None:
                 await self._create_session(session_id)
             else:
-                self._session_registry.upsert_session(self._owner_id, self._source, session_id)
+                self._session_registry.upsert_session(
+                    self._owner_id, self._source, session_id
+                )
                 self._last_activity[session_id] = datetime.now()
         return not existed_any
 
-    async def switch_session(self, session_id: str, *, create_if_missing: bool = True) -> bool:
+    async def switch_session(
+        self, session_id: str, *, create_if_missing: bool = True
+    ) -> bool:
         session_id = session_id.strip()
         if not session_id:
             raise ValueError("session_id 不能为空")
-        existed_any = session_id in self._sessions or self._session_registry.session_exists(
-            self._owner_id, self._source, session_id
+        existed_any = (
+            session_id in self._sessions
+            or self._session_registry.session_exists(
+                self._owner_id, self._source, session_id
+            )
         )
         created = False
         if session_id not in self._sessions:
@@ -248,6 +263,7 @@ class AutomationCoreGateway:
         if profile is None and (session_id or "").startswith("shuiyuan:"):
             username = session_id.split(":", 1)[1] if ":" in session_id else "default"
             from agent_core.kernel_interface import CoreProfile
+
             profile = CoreProfile.for_shuiyuan(dialog_window_id=username)
             frontend_id = "shuiyuan"
             metadata.setdefault("user_id", username)
@@ -275,7 +291,11 @@ class AutomationCoreGateway:
                 hooks=hooks,
             )
         result = await self._dispatch_run_turn(
-            RunTurnCommand(session_id=command.session_id, input=command.input, metadata=command.metadata),
+            RunTurnCommand(
+                session_id=command.session_id,
+                input=command.input,
+                metadata=command.metadata,
+            ),
             hooks=hooks,
         )
         self.mark_activity(command.session_id)
@@ -294,25 +314,40 @@ class AutomationCoreGateway:
         now = datetime.now()
         last_activity = self._last_activity.get(sid)
         if last_activity is None:
-            registry_ts = self._session_registry.get_updated_at(self._owner_id, self._source, sid)
+            registry_ts = self._session_registry.get_updated_at(
+                self._owner_id, self._source, sid
+            )
             last_activity = registry_ts or now
             self._last_activity[sid] = last_activity
         idle_seconds = (now - last_activity).total_seconds()
         if idle_seconds >= self._policy.idle_timeout_minutes * 60:
             return True
-        if last_activity.date() < now.date() and now.hour >= self._policy.daily_cutoff_hour:
+        if (
+            last_activity.date() < now.date()
+            and now.hour >= self._policy.daily_cutoff_hour
+        ):
             return True
-        if last_activity.date() == now.date() and last_activity.hour < self._policy.daily_cutoff_hour <= now.hour:
+        if (
+            last_activity.date() == now.date()
+            and last_activity.hour < self._policy.daily_cutoff_hour <= now.hour
+        ):
             return True
         return False
 
-    async def expire_session(self, reason: str = "session_expire", *, session_id: Optional[str] = None) -> None:
+    async def expire_session(
+        self, reason: str = "session_expire", *, session_id: Optional[str] = None
+    ) -> None:
         sid = session_id or self._active_session_id
         if self._kernel_scheduler is not None:
             try:
                 await self._kernel_scheduler.core_pool.evict(sid)
             except Exception as exc:
-                logger.warning("evict session failed (session_id=%s, reason=%s): %s", sid, reason, exc)
+                logger.warning(
+                    "evict session failed (session_id=%s, reason=%s): %s",
+                    sid,
+                    reason,
+                    exc,
+                )
             self._session_registry.mark_expired(self._owner_id, self._source, sid)
             self._last_activity[sid] = datetime.now()
             return
@@ -432,7 +467,9 @@ class AutomationCoreGateway:
             return False
 
         existed_in_memory = sid in self._sessions
-        existed_in_registry = self._session_registry.session_exists(self._owner_id, self._source, sid)
+        existed_in_registry = self._session_registry.session_exists(
+            self._owner_id, self._source, sid
+        )
         # 既不在内存也不在注册表中，视为不存在的会话，直接返回失败，避免误报“删除成功”。
         if not existed_in_memory and not existed_in_registry:
             return False
@@ -440,12 +477,18 @@ class AutomationCoreGateway:
         # 确保有一个 CoreSession 用于执行历史删除；对于未加载的冷会话，通过 session_factory 创建临时实例。
         session = self._sessions.get(sid)
         created_temp = False
-        if session is None and existed_in_registry and self._session_factory is not None:
+        if (
+            session is None
+            and existed_in_registry
+            and self._session_factory is not None
+        ):
             created = self._session_factory(sid)
             session = await created if inspect.isawaitable(created) else created
             created_temp = True
 
-        async def _close_session_if_needed(target: CoreSession | None, *, temp: bool) -> None:
+        async def _close_session_if_needed(
+            target: CoreSession | None, *, temp: bool
+        ) -> None:
             if target is None:
                 return
             close = getattr(target, "close", None)
@@ -457,19 +500,32 @@ class AutomationCoreGateway:
                     await maybe
             except Exception as exc:
                 if temp:
-                    logger.warning("close temp session failed during delete (session_id=%s): %s", sid, exc)
+                    logger.warning(
+                        "close temp session failed during delete (session_id=%s): %s",
+                        sid,
+                        exc,
+                    )
                 else:
-                    logger.warning("close session failed during delete (session_id=%s): %s", sid, exc)
+                    logger.warning(
+                        "close session failed during delete (session_id=%s): %s",
+                        sid,
+                        exc,
+                    )
 
         # 没有可用 CoreSession 时，无法保证历史已被删除；直接失败，避免“元数据删除但历史残留”。
         if session is None:
-            logger.warning("delete_session aborted: no core session available (session_id=%s)", sid)
+            logger.warning(
+                "delete_session aborted: no core session available (session_id=%s)", sid
+            )
             return False
 
         # 优先删除 ChatHistoryDB 中该 session 的历史；仅当删除动作成功时继续删除注册表元数据。
         delete_history = getattr(session, "delete_session_history", None)
         if not callable(delete_history):
-            logger.warning("delete_session aborted: delete_session_history is unavailable (session_id=%s)", sid)
+            logger.warning(
+                "delete_session aborted: delete_session_history is unavailable (session_id=%s)",
+                sid,
+            )
             if created_temp:
                 await _close_session_if_needed(session, temp=True)
             return False
@@ -478,7 +534,9 @@ class AutomationCoreGateway:
             if inspect.isawaitable(maybe):
                 await maybe
         except Exception as exc:
-            logger.warning("delete_session_history failed (session_id=%s): %s", sid, exc)
+            logger.warning(
+                "delete_session_history failed (session_id=%s): %s", sid, exc
+            )
             if created_temp:
                 await _close_session_if_needed(session, temp=True)
             return False
@@ -507,7 +565,9 @@ class AutomationCoreGateway:
             try:
                 await session.close()
             except Exception as exc:
-                logger.warning("close owned session failed (session_id=%s): %s", session_id, exc)
+                logger.warning(
+                    "close owned session failed (session_id=%s): %s", session_id, exc
+                )
             finally:
                 self._sessions.pop(session_id, None)
                 self._last_activity.pop(session_id, None)
@@ -585,7 +645,11 @@ class AutomationCoreGateway:
                     await maybe
             self._sessions[session_id] = session
             self._owned_sessions.add(session_id)
-            registry_ts = self._session_registry.get_updated_at(self._owner_id, self._source, session_id)
+            registry_ts = self._session_registry.get_updated_at(
+                self._owner_id, self._source, session_id
+            )
             self._last_activity[session_id] = registry_ts or datetime.now()
-            self._session_registry.upsert_session(self._owner_id, self._source, session_id)
+            self._session_registry.upsert_session(
+                self._owner_id, self._source, session_id
+            )
             return session

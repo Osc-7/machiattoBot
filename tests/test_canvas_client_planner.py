@@ -65,7 +65,9 @@ async def test_get_planner_items_parses_basic_fields():
     cfg = CanvasConfig(api_key="x" * 24, base_url="https://canvas.example/api/v1")
     client = _TestCanvasClient(cfg, stub_data=stub)
 
-    items = await client.get_planner_items(start_date="2026-03-01", end_date="2026-03-07")
+    items = await client.get_planner_items(
+        start_date="2026-03-01", end_date="2026-03-07"
+    )
     assert len(items) == 1
 
     item = items[0]
@@ -89,4 +91,3 @@ async def test_get_planner_items_parses_basic_fields():
     assert d["title"] == "HW1"
     assert d["course_id"] == 42
     assert d["due_at"] is not None
-

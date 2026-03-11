@@ -13,8 +13,12 @@ from agent_core.tools.base import BaseTool, ToolDefinition, ToolParameter, ToolR
 
 def _schema_to_parameters(input_schema: Dict[str, Any]) -> List[ToolParameter]:
     """将 MCP inputSchema 映射为本地 ToolParameter 列表。"""
-    properties = input_schema.get("properties", {}) if isinstance(input_schema, dict) else {}
-    required = set(input_schema.get("required", []) if isinstance(input_schema, dict) else [])
+    properties = (
+        input_schema.get("properties", {}) if isinstance(input_schema, dict) else {}
+    )
+    required = set(
+        input_schema.get("required", []) if isinstance(input_schema, dict) else []
+    )
 
     params: List[ToolParameter] = []
     for name, schema in properties.items():

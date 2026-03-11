@@ -102,7 +102,8 @@ class SessionSummarizer:
 
         # 过滤出 user/assistant 消息，避免把大量 tool_result 全部送入摘要 LLM
         dialogue = [
-            m for m in messages
+            m
+            for m in messages
             if m.get("role") in ("user", "assistant")
             and isinstance(m.get("content"), str)
             and m["content"].strip()
@@ -127,7 +128,11 @@ class SessionSummarizer:
                 system_message="你是一个高效的会话摘要助手，输出详细的中文摘要。",
                 messages=[{"role": "user", "content": prompt}],
             )
-            return response.content.strip() if response.content else self._fallback_summary(stats)
+            return (
+                response.content.strip()
+                if response.content
+                else self._fallback_summary(stats)
+            )
         except Exception as exc:
             logger.warning("SessionSummarizer: LLM call failed: %s", exc)
             return self._fallback_summary(stats)

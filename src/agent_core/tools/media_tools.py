@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, List
 
 from .base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 
@@ -19,7 +19,7 @@ class _AttachMediaParams:
     paths: List[str]
 
     @classmethod
-    def from_kwargs(cls, **kwargs: Any) -> " _AttachMediaParams":
+    def from_kwargs(cls, **kwargs: Any) -> _AttachMediaParams:
         path = kwargs.get("path")
         paths = kwargs.get("paths")
 
@@ -161,8 +161,14 @@ class AttachImageToReplyTool(BaseTool):
                 ),
             ],
             examples=[
-                {"description": "把刚截的登录页截图发给用户看", "params": {"image_path": "pictures/canvas_login.png"}},
-                {"description": "把网络图片登记为回复附图", "params": {"image_url": "https://example.com/diagram.png"}},
+                {
+                    "description": "把刚截的登录页截图发给用户看",
+                    "params": {"image_path": "pictures/canvas_login.png"},
+                },
+                {
+                    "description": "把网络图片登记为回复附图",
+                    "params": {"image_url": "https://example.com/diagram.png"},
+                },
             ],
             usage_notes=[
                 "image_path 与 image_url 必须且只能提供一个。",

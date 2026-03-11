@@ -20,4 +20,3 @@ __all__ = [
     "rank_tasks",
     "PlannerEngine",
 ]
-

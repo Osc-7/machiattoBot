@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 基于飞书官方 Python SDK (lark-oapi) 的长连接事件网关。
 
@@ -17,6 +15,7 @@ from __future__ import annotations
 从 Webhook Request URL 换成飞书的 WebSocket 长连接，无需公网 IP / ngrok。
 """
 
+from __future__ import annotations
 import asyncio
 import logging
 import threading
@@ -28,8 +27,17 @@ from agent_core.config import get_config
 
 from .client import FeishuClient
 from .content_parser import parse_feishu_message
-from .event_models import FeishuMessage, FeishuMessageEvent, FeishuSender, FeishuSenderId
-from .ipc_bridge import AutomationDaemonUnavailable, FeishuIPCBridge, try_handle_slash_command_via_ipc
+from .event_models import (
+    FeishuMessage,
+    FeishuMessageEvent,
+    FeishuSender,
+    FeishuSenderId,
+)
+from .ipc_bridge import (
+    AutomationDaemonUnavailable,
+    FeishuIPCBridge,
+    try_handle_slash_command_via_ipc,
+)
 from .router import _is_duplicate_event  # 复用去重缓存
 from .session_mapping import map_event_to_session
 
@@ -140,10 +148,14 @@ async def _handle_im_message_event_async(data: Any) -> None:
                         text=reply,
                     )
                 except Exception as exc:  # noqa: BLE001
-                    logger.exception("failed to send feishu slash command reply: %s", exc)
+                    logger.exception(
+                        "failed to send feishu slash command reply: %s", exc
+                    )
                 return
         except AutomationDaemonUnavailable as exc:
-            logger.warning("automation daemon unavailable for feishu slash command: %s", exc)
+            logger.warning(
+                "automation daemon unavailable for feishu slash command: %s", exc
+            )
             #  fallthrough to send_message，会再次触发 AutomationDaemonUnavailable
         except Exception as exc:  # noqa: BLE001
             logger.warning("slash command failed, fallback to agent: %s", exc)
@@ -162,7 +174,9 @@ async def _handle_im_message_event_async(data: Any) -> None:
         logger.warning("automation daemon unavailable for feishu ws message: %s", exc)
         return
     except Exception as exc:  # noqa: BLE001
-        logger.exception("failed to process feishu ws message via automation daemon: %s", exc)
+        logger.exception(
+            "failed to process feishu ws message via automation daemon: %s", exc
+        )
         return
 
     # 将 Agent 回复发回飞书
@@ -239,5 +253,3 @@ def run_ws_client() -> None:
     client = build_ws_client()
     logger.info("Starting Feishu long-connection client...")
     client.start()
-
-

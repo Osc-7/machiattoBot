@@ -73,7 +73,9 @@ def mock_openai_response_with_tools():
     tool_call = MagicMock()
     tool_call.id = "call_123"
     tool_call.function.name = "create_event"
-    tool_call.function.arguments = '{"title": "测试事件", "start_time": "2026-02-18 10:00"}'
+    tool_call.function.arguments = (
+        '{"title": "测试事件", "start_time": "2026-02-18 10:00"}'
+    )
 
     response.choices[0].message.tool_calls = [tool_call]
     response.choices[0].finish_reason = "tool_calls"
@@ -170,9 +172,7 @@ class TestLLMClient:
             assert len(call_args.kwargs["messages"]) == 2  # system + user
 
     @pytest.mark.asyncio
-    async def test_chat_with_tools(
-        self, mock_config, mock_openai_response_with_tools
-    ):
+    async def test_chat_with_tools(self, mock_config, mock_openai_response_with_tools):
         """测试带工具的对话"""
         with patch("agent_core.llm.client.AsyncOpenAI") as mock_openai:
             mock_client = AsyncMock()
@@ -467,7 +467,10 @@ class TestLLMClient:
                 extra_body = call_args.kwargs["extra_body"]
                 # 不应该有 search_strategy: agent_max（因为会与工具冲突）
                 if "search_options" in extra_body:
-                    assert extra_body["search_options"].get("search_strategy") != "agent_max"
+                    assert (
+                        extra_body["search_options"].get("search_strategy")
+                        != "agent_max"
+                    )
 
     @pytest.mark.asyncio
     async def test_chat_with_thinking_enabled(self):
@@ -516,7 +519,11 @@ class TestLLMClient:
             assert extra_body["enable_thinking"] is True
             # 如果没有设置 search_options，search_strategy 应该保持默认或配置值
             if "search_options" in extra_body:
-                assert "search_strategy" not in extra_body["search_options"] or extra_body["search_options"].get("search_strategy") != "agent_max"
+                assert (
+                    "search_strategy" not in extra_body["search_options"]
+                    or extra_body["search_options"].get("search_strategy")
+                    != "agent_max"
+                )
 
     @pytest.mark.asyncio
     async def test_chat_with_thinking_enabled_without_search(self):
@@ -567,6 +574,7 @@ class TestLLMClient:
 
 class TestLLMClientIntegration:
     """LLM 客户端集成测试（需要真实 API）"""
+
     @pytest.mark.skip(reason="需要真实 API Key，跳过测试")
     @pytest.mark.asyncio
     async def test_real_chat(self):
@@ -589,4 +597,3 @@ class TestLLMClientIntegration:
         assert isinstance(response.content, str)
         print("真实 LLM 回复:", response.content)
         await client.close()
-        

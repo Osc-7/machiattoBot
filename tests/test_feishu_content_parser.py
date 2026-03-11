@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from agent_core.content import ContentReference
 from frontend.feishu.content_parser import parse_feishu_message
 
 
@@ -63,7 +62,9 @@ def test_parse_post_message_with_image():
 
 def test_parse_post_message_image_only():
     """富文本 post 仅图片无文字"""
-    content = '{"zh_cn":{"title":"","content":[[{"tag":"img","image_key":"img_only"}]]}}'
+    content = (
+        '{"zh_cn":{"title":"","content":[[{"tag":"img","image_key":"img_only"}]]}}'
+    )
     refs, text = parse_feishu_message(
         message_id="om_5",
         message_type="post",

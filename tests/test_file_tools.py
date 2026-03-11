@@ -2,8 +2,6 @@
 文件读写工具测试 - 测试 read_file, write_file, modify_file
 """
 
-import tempfile
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -118,9 +116,7 @@ class TestReadFileTool:
 
     @pytest.mark.asyncio
     async def test_read_file_with_start_line_and_max_lines(self, tmp_path):
-        (tmp_path / "multi.txt").write_text(
-            "a\nb\nc\nd\n", encoding="utf-8"
-        )
+        (tmp_path / "multi.txt").write_text("a\nb\nc\nd\n", encoding="utf-8")
         config = _make_config(allow_read=True, base_dir=str(tmp_path))
         tool = ReadFileTool(config=config)
         result = await tool.execute(path="multi.txt", start_line=2, max_lines=2)
@@ -133,9 +129,7 @@ class TestReadFileTool:
 
     @pytest.mark.asyncio
     async def test_read_file_with_start_line_past_end_returns_empty(self, tmp_path):
-        (tmp_path / "multi.txt").write_text(
-            "x\ny\n", encoding="utf-8"
-        )
+        (tmp_path / "multi.txt").write_text("x\ny\n", encoding="utf-8")
         config = _make_config(allow_read=True, base_dir=str(tmp_path))
         tool = ReadFileTool(config=config)
         result = await tool.execute(path="multi.txt", start_line=10)
@@ -326,9 +320,7 @@ class TestModifyFileTool:
         (tmp_path / "log.txt").write_text("line1\n", encoding="utf-8")
         config = _make_config(allow_modify=True, base_dir=str(tmp_path))
         tool = ModifyFileTool(config=config)
-        result = await tool.execute(
-            path="log.txt", content="line2\n", mode="append"
-        )
+        result = await tool.execute(path="log.txt", content="line2\n", mode="append")
         assert result.success
         assert (tmp_path / "log.txt").read_text() == "line1\nline2\n"
 
@@ -354,9 +346,7 @@ class TestModifyFileTool:
     async def test_modify_file_invalid_mode(self, tmp_path):
         config = _make_config(allow_modify=True, base_dir=str(tmp_path))
         tool = ModifyFileTool(config=config)
-        result = await tool.execute(
-            path="x.txt", content="x", mode="invalid"
-        )
+        result = await tool.execute(path="x.txt", content="x", mode="invalid")
         assert not result.success
         assert result.error == "INVALID_MODE"
 
@@ -365,9 +355,7 @@ class TestModifyFileTool:
         (tmp_path / "f.txt").write_text("x", encoding="utf-8")
         config = _make_config(allow_modify=True, base_dir=str(tmp_path))
         tool = ModifyFileTool(config=config)
-        result = await tool.execute(
-            path="f.txt", mode="search_replace", old_text="x"
-        )
+        result = await tool.execute(path="f.txt", mode="search_replace", old_text="x")
         assert not result.success
         assert result.error == "MISSING_PARAMS"
 
@@ -380,9 +368,7 @@ class TestModifyFileTool:
 class TestFileToolsIntegration:
     @pytest.mark.asyncio
     async def test_read_after_write(self, tmp_path):
-        config = _make_config(
-            allow_read=True, allow_write=True, base_dir=str(tmp_path)
-        )
+        config = _make_config(allow_read=True, allow_write=True, base_dir=str(tmp_path))
         w = WriteFileTool(config=config)
         r = ReadFileTool(config=config)
         await w.execute(path="test.txt", content="hello")

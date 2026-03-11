@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 飞书回调路由。
 
@@ -11,6 +9,7 @@ from __future__ import annotations
 event_id / message_id 级别去重，避免同一条消息被多次处理。
 """
 
+from __future__ import annotations
 import logging
 import time
 from collections import deque
@@ -25,8 +24,13 @@ from .client import FeishuClient
 from .config import get_feishu_config
 from .content_parser import parse_feishu_message
 from .event_models import FeishuChallengeRequest, FeishuEventEnvelope
-from .ipc_bridge import AutomationDaemonUnavailable, FeishuIPCBridge, try_handle_slash_command_via_ipc
+from .ipc_bridge import (
+    AutomationDaemonUnavailable,
+    FeishuIPCBridge,
+    try_handle_slash_command_via_ipc,
+)
 from .session_mapping import map_event_to_session
+
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +89,9 @@ async def handle_feishu_event(request: Request) -> JSONResponse:
     """
     cfg = get_feishu_config()
     if not cfg.enabled:
-        raise HTTPException(status_code=503, detail="Feishu integration is disabled in config.yaml")
+        raise HTTPException(
+            status_code=503, detail="Feishu integration is disabled in config.yaml"
+        )
 
     body: Dict[str, Any] = await request.json()
     event_type = str(body.get("type") or "")
@@ -93,14 +99,22 @@ async def handle_feishu_event(request: Request) -> JSONResponse:
     # URL 验证
     if event_type == "url_verification":
         challenge_req = FeishuChallengeRequest(**body)
-        if cfg.verification_token and challenge_req.token and challenge_req.token != cfg.verification_token:
+        if (
+            cfg.verification_token
+            and challenge_req.token
+            and challenge_req.token != cfg.verification_token
+        ):
             raise HTTPException(status_code=403, detail="invalid verification token")
         return JSONResponse({"challenge": challenge_req.challenge})
 
     # 普通事件（schema 2.0）
     envelope = FeishuEventEnvelope(**body)
     header = envelope.header
-    if cfg.verification_token and header.token and header.token != cfg.verification_token:
+    if (
+        cfg.verification_token
+        and header.token
+        and header.token != cfg.verification_token
+    ):
         raise HTTPException(status_code=403, detail="invalid verification token")
 
     # 去重：优先使用 event_id，退化到 message_id
@@ -154,9 +168,13 @@ async def handle_feishu_event(request: Request) -> JSONResponse:
             if reply is not None:
                 feishu_client = _build_feishu_client()
                 try:
-                    await feishu_client.send_text_message(chat_id=msg.chat_id, text=reply)
+                    await feishu_client.send_text_message(
+                        chat_id=msg.chat_id, text=reply
+                    )
                 except Exception as exc:  # noqa: BLE001
-                    logger.exception("failed to send feishu slash command reply: %s", exc)
+                    logger.exception(
+                        "failed to send feishu slash command reply: %s", exc
+                    )
                 return JSONResponse({"code": 0, "msg": "ok"})
         except AutomationDaemonUnavailable:
             # fallthrough，后续 send_message 会返回 503
@@ -181,7 +199,9 @@ async def handle_feishu_event(request: Request) -> JSONResponse:
             status_code=503,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.exception("failed to process feishu message via automation daemon: %s", exc)
+        logger.exception(
+            "failed to process feishu message via automation daemon: %s", exc
+        )
         return JSONResponse(
             {"code": 1, "msg": "internal error"},
             status_code=500,
@@ -190,13 +210,16 @@ async def handle_feishu_event(request: Request) -> JSONResponse:
     # 将 Agent 回复通过飞书再发回用户
     feishu_client = _build_feishu_client()
     try:
-        await feishu_client.send_text_message(chat_id=msg.chat_id, text=result.output_text)
+        await feishu_client.send_text_message(
+            chat_id=msg.chat_id, text=result.output_text
+        )
         attachments = getattr(result, "attachments", None)
         if attachments:
-            await feishu_client.send_reply_attachments(chat_id=msg.chat_id, attachments=attachments)
+            await feishu_client.send_reply_attachments(
+                chat_id=msg.chat_id, attachments=attachments
+            )
     except Exception as exc:  # noqa: BLE001
         logger.exception("failed to send feishu reply message: %s", exc)
 
     # 按飞书约定返回 200 + code/msg
     return JSONResponse({"code": 0, "msg": "ok"})
-

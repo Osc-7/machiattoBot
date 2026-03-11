@@ -17,6 +17,16 @@ from typing import Any, List, Optional
 from agent_core.config import Config, get_config
 from frontend.shuiyuan_integration.reply import AUTO_REPLY_MARK
 
+from agent_core import ScheduleAgent
+from agent_core.interfaces import AgentRunInput
+from agent_core.tools import (
+    ShuiyuanGetTopicTool,
+    ShuiyuanRetortTool,
+    ShuiyuanSearchTool,
+)
+
+from system.automation import AutomationIPCClient, default_socket_path
+
 
 def is_invocation_valid(
     raw_message: str,
@@ -53,14 +63,20 @@ def is_invocation_valid(
         return False, f"消息需包含 {trigger}"
 
     if owner:
-        mentions = [u.strip().lower() for u in (mentioned_usernames or []) if u and isinstance(u, str)]
+        mentions = [
+            u.strip().lower()
+            for u in (mentioned_usernames or [])
+            if u and isinstance(u, str)
+        ]
         if owner.lower() not in mentions:
             return False, f"需 @ {owner}"
 
     return True, ""
 
 
-def is_invocation_valid_from_raw(raw_message: str, *, config: Optional[Config] = None) -> tuple[bool, str]:
+def is_invocation_valid_from_raw(
+    raw_message: str, *, config: Optional[Config] = None
+) -> tuple[bool, str]:
     """
     从正文解析判断是否满足调用规则：@ 主人 且 消息包含 trigger。
     用于 topic 监控模式（无 user_actions/notifications，直接解析 raw）。
@@ -94,13 +110,6 @@ def is_invocation_valid_from_raw(raw_message: str, *, config: Optional[Config] =
     return True, ""
 
 
-from agent_core import ScheduleAgent
-from agent_core.interfaces import AgentHooks, AgentRunInput
-from agent_core.tools import ShuiyuanGetTopicTool, ShuiyuanRetortTool, ShuiyuanSearchTool
-
-from system.automation import AutomationIPCClient, default_socket_path
-
-
 async def _run_via_daemon(
     username: str,
     topic_id: int,
@@ -111,7 +120,9 @@ async def _run_via_daemon(
 ) -> Optional[str]:
     """通过 daemon IPC 运行，使用 per-user 受限 Core。成功返回 str（可为空），daemon 不可用时返回 None。"""
     try:
-        ipc = AutomationIPCClient(owner_id=username, source="shuiyuan", socket_path=default_socket_path())
+        ipc = AutomationIPCClient(
+            owner_id=username, source="shuiyuan", socket_path=default_socket_path()
+        )
         if not await ipc.ping():
             return None
     except Exception:
@@ -123,6 +134,7 @@ async def _run_via_daemon(
     reply_text = (result.output_text or "").strip()
     if reply_text:
         from .reply import post_reply
+
         success, msg = post_reply(
             username=username,
             topic_id=topic_id,
@@ -133,6 +145,7 @@ async def _run_via_daemon(
         )
         if not success:
             import logging
+
             logging.getLogger("shuiyuan_session").warning("发帖失败: %s", msg)
     return reply_text
 
@@ -178,7 +191,10 @@ async def run_shuiyuan_reply(
             get_shuiyuan_client_from_config,
             record_user_message,
         )
-        from frontend.shuiyuan_integration.reply import post_reply, get_shuiyuan_db_for_user
+        from frontend.shuiyuan_integration.reply import (
+            post_reply,
+            get_shuiyuan_db_for_user,
+        )
     except ImportError as e:
         return f"无法加载水源集成: {e}"
 
@@ -241,7 +257,6 @@ async def run_shuiyuan_reply(
         user_message=user_message,
     )
 
-
     # 优先通过 daemon IPC（per-user 受限 Core），不可用时回退到本地 Agent
     via_daemon = await _run_via_daemon(
         username=username,
@@ -267,33 +282,29 @@ async def run_shuiyuan_reply(
     if extra_tools:
         tools.extend(extra_tools)
 
-    agent_ref = None
-    try:
-        async with ScheduleAgent(
-            config=cfg,
-            tools=tools,
-            max_iterations=cfg.agent.max_iterations,
-            timezone=cfg.time.timezone,
-            user_id=username,
-            source="shuiyuan",
-            session_logger=session_logger,
-        ) as agent:
-            agent_ref = agent
-            # 本地 fallback：与 daemon 路径一样，直接使用前端拼装好的 ctx_user。
-            output = await agent.process_input(ctx_user)
-            reply_text = (output or "").strip()
-            if reply_text:
-                success, msg = post_reply(
-                    username=username,
-                    topic_id=topic_id,
-                    raw=reply_text,
-                    reply_to_post_number=reply_to_post_number,
-                    db=db,
-                    client=client,
-                )
-                if not success:
-                    import logging
-                    logging.getLogger("shuiyuan_session").warning("发帖失败: %s", msg)
-            return reply_text
-    finally:
-        return
+    async with ScheduleAgent(
+        config=cfg,
+        tools=tools,
+        max_iterations=cfg.agent.max_iterations,
+        timezone=cfg.time.timezone,
+        user_id=username,
+        source="shuiyuan",
+        session_logger=session_logger,
+    ) as agent:
+        # 本地 fallback：与 daemon 路径一样，直接使用前端拼装好的 ctx_user。
+        output = await agent.process_input(ctx_user)
+        reply_text = (output or "").strip()
+        if reply_text:
+            success, msg = post_reply(
+                username=username,
+                topic_id=topic_id,
+                raw=reply_text,
+                reply_to_post_number=reply_to_post_number,
+                db=db,
+                client=client,
+            )
+            if not success:
+                import logging
+
+                logging.getLogger("shuiyuan_session").warning("发帖失败: %s", msg)
+        return reply_text

@@ -15,7 +15,11 @@ async def test_run_turn_forwards_callbacks_and_events():
     agent = MagicMock()
 
     async def _process_input(
-        text, content_items=None, on_stream_delta=None, on_reasoning_delta=None, on_trace_event=None
+        text,
+        content_items=None,
+        on_stream_delta=None,
+        on_reasoning_delta=None,
+        on_trace_event=None,
     ):
         assert text == "hello"
         if on_stream_delta:
@@ -105,4 +109,6 @@ async def test_activate_session_passthrough():
     adapter = ScheduleAgentAdapter(agent)
     await adapter.activate_session("cli:shared")
 
-    agent.activate_session.assert_awaited_once_with("cli:shared", replay_messages_limit=None)
+    agent.activate_session.assert_awaited_once_with(
+        "cli:shared", replay_messages_limit=None
+    )

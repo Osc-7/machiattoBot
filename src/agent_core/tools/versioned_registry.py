@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from .base import BaseTool, ToolResult
@@ -114,7 +114,9 @@ class VersionedToolRegistry:
         with self._lock:
             return list(self._tools.keys())
 
-    def get_openai_tools(self, names: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    def get_openai_tools(
+        self, names: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
         """
         获取 OpenAI Function Calling 工具定义。
         """
@@ -153,18 +155,18 @@ class VersionedToolRegistry:
     ) -> List[Dict[str, Any]]:
         """
         按关键字和/或标签搜索工具。
-        
+
         支持：
         - 关键词搜索：匹配 name / description / 参数描述
         - 标签搜索：匹配工具标签
         - 组合搜索：同时使用关键词和标签
-        
+
         Args:
             query: 搜索关键词（可为空）
             limit: 返回数量上限
             exclude_names: 要排除的工具名称列表
             tags: 要匹配的标签列表（可为空）
-        
+
         Returns:
             搜索结果列表，按分数降序排列
         """
@@ -174,19 +176,25 @@ class VersionedToolRegistry:
         exclude = set(exclude_names or [])
         q = (query or "").strip().lower()
         tokens = [t for t in re.split(r"[\s,，。:：;；/\\|]+", q) if t]
-        tag_filter = {str(tag).strip().lower() for tag in (tags or []) if str(tag).strip()}
+        tag_filter = {
+            str(tag).strip().lower() for tag in (tags or []) if str(tag).strip()
+        }
         items: List[ToolSearchItem] = []
 
         for name, tool in tools.items():
             if name in exclude:
                 continue
             definition = tool.get_definition()
-            
+
             # 标签过滤
-            def_tags = {str(tag).strip().lower() for tag in (definition.tags or []) if str(tag).strip()}
+            def_tags = {
+                str(tag).strip().lower()
+                for tag in (definition.tags or [])
+                if str(tag).strip()
+            }
             if tag_filter and not tag_filter.intersection(def_tags):
                 continue
-            
+
             text_parts: List[str] = [name, definition.description]
             params_meta: List[Dict[str, Any]] = []
             for param in definition.parameters:
@@ -202,7 +210,7 @@ class VersionedToolRegistry:
 
             corpus = " ".join(text_parts).lower()
             score = 0.0
-            
+
             # 关键词评分
             if q:
                 if q in corpus:
@@ -210,7 +218,7 @@ class VersionedToolRegistry:
                 score += sum(1.0 for token in tokens if token in corpus)
             else:
                 score = 1.0
-            
+
             # 标签匹配加分
             if tag_filter:
                 matched_tags = tag_filter.intersection(def_tags)
