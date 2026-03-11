@@ -358,8 +358,16 @@ class NotifyOwnerTool(BaseTool):
 
 
 class CreateScheduledJobTool(BaseTool):
-    def __init__(self, base_dir: Optional[str] = None):
+    def __init__(
+        self,
+        base_dir: Optional[str] = None,
+        *,
+        default_memory_owner: Optional[str] = None,
+        default_core_mode: Optional[str] = None,
+    ):
         self._repo = JobDefinitionRepository(base_dir=base_dir)
+        self._default_memory_owner = default_memory_owner
+        self._default_core_mode = default_core_mode
 
     @property
     def name(self) -> str:
@@ -443,6 +451,18 @@ class CreateScheduledJobTool(BaseTool):
                     name="enabled",
                     type="boolean",
                     description="是否启用该任务，默认 true。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="memory_owner",
+                    type="string",
+                    description="可选：记忆 owner 标识，例如 \"feishu:ou_xxx\" 或 \"cli:default\"。不提供时与当前会话的权限对齐（有记忆则复用，无则不开）。",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="core_mode",
+                    type="string",
+                    description="可选：Core 运行模式：full / sub / background。不提供时与当前会话的 core_mode 对齐。",
                     required=False,
                 ),
             ],
@@ -552,6 +572,9 @@ class CreateScheduledJobTool(BaseTool):
         job_type = str(kwargs.get("job_type") or "agent.custom")
         user_id = str(kwargs.get("user_id") or "default")
         enabled = bool(kwargs.get("enabled", True))
+        # 未显式传入时，使用调用此工具的 Core 的权限作为默认
+        memory_owner = str(kwargs.get("memory_owner") or "").strip() or self._default_memory_owner
+        core_mode = str(kwargs.get("core_mode") or "").strip() or self._default_core_mode
 
         try:
             cfg = get_config()
@@ -573,6 +596,8 @@ class CreateScheduledJobTool(BaseTool):
                 **({"daily_time": daily_time} if daily_time is not None else {}),
                 **({"times": times} if times else {}),
                 **({"start_time": start_time} if start_time is not None else {}),
+                **({"memory_owner": memory_owner} if memory_owner is not None else {}),
+                **({"core_mode": core_mode} if core_mode is not None else {}),
             },
         )
 

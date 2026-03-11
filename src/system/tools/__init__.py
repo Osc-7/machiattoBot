@@ -232,7 +232,24 @@ def _build_shuiyuan_tools(config: Config) -> List[BaseTool]:
     return tools
 
 
-def _build_automation_tools(config: Config) -> List[BaseTool]:
+def _build_automation_tools(
+    config: Config,
+    *,
+    profile: Optional[CoreProfile] = None,
+    memory_owner_id: Optional[str] = None,
+    memory_source: Optional[str] = None,
+) -> List[BaseTool]:
+    # 为 CreateScheduledJobTool 注入当前 Core 的权限默认值
+    default_memory_owner: Optional[str] = None
+    default_core_mode: Optional[str] = None
+    if profile is not None:
+        default_core_mode = getattr(profile, "mode", None) or "background"
+        if getattr(profile, "memory_enabled", False):
+            src = getattr(profile, "frontend_id", None) or memory_source or ""
+            uid = getattr(profile, "dialog_window_id", None) or memory_owner_id or "default"
+            if src and uid:
+                default_memory_owner = f"{src}:{uid}"
+
     tools: List[BaseTool] = [
         SyncSourcesTool(),
         GetSyncStatusTool(),
@@ -241,7 +258,10 @@ def _build_automation_tools(config: Config) -> List[BaseTool]:
         AckNotificationTool(),
         ConfigureAutomationPolicyTool(),
         GetAutomationActivityTool(),
-        CreateScheduledJobTool(),
+        CreateScheduledJobTool(
+            default_memory_owner=default_memory_owner,
+            default_core_mode=default_core_mode,
+        ),
         NotifyOwnerTool(config=config),
     ]
     return tools
@@ -295,7 +315,14 @@ def build_tool_registry(
     tools.extend(_build_multimodal_tools(cfg))
     tools.extend(_build_canvas_tools(cfg))
     tools.extend(_build_shuiyuan_tools(cfg))
-    tools.extend(_build_automation_tools(cfg))
+    tools.extend(
+        _build_automation_tools(
+            cfg,
+            profile=profile,
+            memory_owner_id=memory_owner_id,
+            memory_source=memory_source or (profile.frontend_id if profile else None),
+        )
+    )
 
     # 按 CoreProfile 过滤默认可见工具集合
     if profile is not None:
