@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any, List, Optional
 
 from agent_core.config import Config, get_config
+from frontend.shuiyuan_integration.reply import AUTO_REPLY_MARK
 
 
 def is_invocation_valid(
@@ -40,6 +41,10 @@ def is_invocation_valid(
 
     owner = (cfg.shuiyuan.owner_username or "").strip()
     trigger = (cfg.shuiyuan.invocation_trigger or "【玛奇朵】").strip()
+
+    # 若正文中已包含自动回复标记，说明是本 Agent 之前的回复或被引用，直接跳过以避免递归调用。
+    if AUTO_REPLY_MARK in (raw_message or ""):
+        return False, "检测到自动回复标记，跳过以避免递归回复"
 
     if not trigger:
         return True, ""
@@ -71,6 +76,10 @@ def is_invocation_valid_from_raw(raw_message: str, *, config: Optional[Config] =
     trigger = (cfg.shuiyuan.invocation_trigger or "【玛奇朵】").strip()
 
     raw = (raw_message or "").strip()
+
+    # 若正文中已包含自动回复标记，说明是本 Agent 之前的回复或被引用，直接跳过以避免递归调用。
+    if AUTO_REPLY_MARK in raw:
+        return False, "检测到自动回复标记，跳过以避免递归回复"
     if not trigger or trigger not in raw:
         return False, f"消息需包含 {trigger}"
 

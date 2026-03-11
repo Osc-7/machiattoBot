@@ -11,11 +11,41 @@
 from __future__ import annotations
 
 import os
+import random
 from pathlib import Path
 from typing import Any, List, Optional
 
 from .client import ShuiyuanClient, ShuiyuanClientPool
 from .db import ShuiyuanDB, get_shuiyuan_db_path_for_user
+
+
+# 固定标记，用于识别由本集成发出的自动回复，避免递归触发。
+AUTO_REPLY_MARK = "MACHIATTO_SHUIYUAN_AUTO_REPLY"
+
+
+def _generate_random_string(length: int = 20) -> str:
+    chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    return "".join(random.sample(chars, k=min(length, len(chars))))
+
+
+def _attach_hidden_marker(raw: str) -> str:
+    """
+    在回复正文末尾附加一段不可见的 HTML 注释随机串和固定标记。
+
+    - 若正文已包含 AUTO_REPLY_MARK，则不再重复附加（幂等）。
+    - 形如:
+        原文
+
+        <!-- <random> -->
+        <!-- MACHIATTO_SHUIYUAN_AUTO_REPLY -->
+    """
+    text = raw or ""
+    if AUTO_REPLY_MARK in text:
+        return text
+    random_suffix = _generate_random_string(20)
+    marker_comment = f"<!-- {random_suffix} -->\n<!-- {AUTO_REPLY_MARK} -->"
+    text = text.rstrip()
+    return f"{text}\n\n{marker_comment}"
 
 
 def post_reply(
@@ -36,8 +66,10 @@ def post_reply(
     if not db.check_reply_allowed(username):
         return False, "限流：该用户在本分钟内回复次数已达上限，请稍后再试"
 
+    raw_with_marker = _attach_hidden_marker(raw)
+
     result, status_code, err_detail = client.create_post(
-        raw=raw,
+        raw=raw_with_marker,
         topic_id=topic_id,
         reply_to_post_number=reply_to_post_number,
     )
@@ -56,7 +88,7 @@ def post_reply(
 
     db.record_reply(username)
     post_id = result.get("id")
-    db.append_chat(username, topic_id, "assistant", raw, post_id=post_id)
+    db.append_chat(username, topic_id, "assistant", raw_with_marker, post_id=post_id)
 
     return True, f"已回复，post_id={post_id}"
 
@@ -84,7 +116,9 @@ def get_shuiyuan_db_for_user(config: Any, username: str) -> ShuiyuanDB:
     )
 
 
-def get_shuiyuan_client_from_config(config: Any) -> Optional[ShuiyuanClient]:
+def get_shuiyuan_client_from_config(
+    config: Any,
+) -> Optional[ShuiyuanClient | ShuiyuanClientPool]:
     """从 config 构建 ShuiyuanClient 或 ShuiyuanClientPool（支持多 Key 轮询与限流切换）。"""
     cfg = config.shuiyuan
 
