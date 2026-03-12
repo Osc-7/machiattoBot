@@ -1,11 +1,11 @@
-# machiattoBot
+# macchiatoBot
 
 English | [中文](README_zh.md)
 
 
 An LLM-based assistant built with a **Tool-driven + Kernel scheduling** architecture, focused on control, extensibility, and long-running stability.
 
-machiattoBot separates “reasoning” from “execution/permissions/reclamation”:
+macchiatoBot separates “reasoning” from “execution/permissions/reclamation”:
 
 - AgentCore handles dialogue and decision-making
 - Kernel handles tool execution, context compression, and lifecycle management

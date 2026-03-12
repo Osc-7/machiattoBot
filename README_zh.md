@@ -1,11 +1,11 @@
-# machiattoBot
+# macchiatoBot
 
 中文 | [English](README.md)
 
 
 一个基于 LLM 的人工智能助手，采用 **Tool-driven + Kernel 调度** 架构，强调可控、可扩展与长期运行稳定性。
 
-machiattoBot 将 AgentCore 的“推理”与 Kernel 的“执行/权限/回收”分离：
+macchiatoBot 将 AgentCore 的“推理”与 Kernel 的“执行/权限/回收”分离：
 
 - AgentCore 负责对话与决策
 - Kernel 负责工具调用、上下文压缩与生命周期管理
