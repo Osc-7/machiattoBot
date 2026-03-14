@@ -52,7 +52,7 @@ class OutputRouter:
         注册一个 request_id，返回对应的 Future。
         前端 await 这个 Future 即可等待结果。
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         fut: asyncio.Future = loop.create_future()
         self._pending[request_id] = fut
         return fut
@@ -128,8 +128,11 @@ class KernelScheduler:
         self._ttl_task: Optional[asyncio.Task] = None
         self._stopped = asyncio.Event()
         self._active_tasks: set[asyncio.Task] = set()
-        # session_id -> in-flight request count
+        # session_id -> in-flight request count（用于阻止 TTL 驱逐运行中的 session）
         self._inflight_sessions: Dict[str, int] = defaultdict(int)
+        # per-session 串行化锁：防止同一 session 的并发请求竞争 context/turn_id/DB 写入
+        self._session_locks: Dict[str, asyncio.Lock] = {}
+        self._session_locks_meta: asyncio.Lock = asyncio.Lock()
 
     async def start(self) -> None:
         """启动调度循环和 TTL 扫描后台任务。
@@ -191,6 +194,19 @@ class KernelScheduler:
             logger.warning("KernelScheduler: evict_all on stop failed: %s", exc)
         self._router.cancel_all()
         logger.info("KernelScheduler: stopped")
+
+    async def _get_session_lock(self, session_id: str) -> asyncio.Lock:
+        """
+        获取指定 session 的串行化锁，不存在时懒创建。
+
+        同一 session 的并发请求在此排队，确保每次只有一个请求驱动 AgentCore，
+        防止 context / turn_id / ChatHistoryDB 写入竞争。
+        锁对象不主动清理（引用由 dict 持有），session 数量受 max_sessions 约束，内存开销可控。
+        """
+        async with self._session_locks_meta:
+            if session_id not in self._session_locks:
+                self._session_locks[session_id] = asyncio.Lock()
+            return self._session_locks[session_id]
 
     async def submit(
         self,
@@ -281,143 +297,121 @@ class KernelScheduler:
         """
         执行单个请求并将结果路由到对应 Future。
 
-        1. 从 CorePool 获取对应 session 的 AgentCore
-        2. 调用 AgentKernel.run() 驱动 AgentCore
-        3. 通过 OutputRouter 将结果回传给前端
+        1. 标记 in-flight（防止 TTL 驱逐运行中的 session）
+        2. 获取 per-session 锁（同 session 请求串行执行，防止 context 竞争）
+        3. 从 CorePool 获取对应 session 的 AgentCore
+        4. 调用 agent.prepare_turn() 执行前置处理（含 memory recall）
+        5. 调用 AgentKernel.run() 驱动 AgentCore
+        6. 通过 OutputRouter 将结果回传给前端
         """
         session_id = request.session_id
         self._inflight_sessions[session_id] += 1
-        try:
-            # 准备钩子
-            hooks = None
-            if self._hooks_factory:
-                hooks = self._hooks_factory(request)
-            elif isinstance(request.metadata, dict):
-                # 允许调用方通过 request.metadata["_hooks"] 直接透传运行时回调，
-                # 方便在不定制 hooks_factory 的情况下复用 trace/stream 通路。
-                raw_hooks = request.metadata.get("_hooks")
-                if isinstance(raw_hooks, AgentHooks):
-                    hooks = raw_hooks
+        # 同 session 的并发请求在此排队，确保 context/turn_id/DB 写入不竞争
+        session_lock = await self._get_session_lock(session_id)
+        async with session_lock:
+            try:
+                # 准备钩子
+                hooks = None
+                if self._hooks_factory:
+                    hooks = self._hooks_factory(request)
+                elif isinstance(request.metadata, dict):
+                    # 允许调用方通过 request.metadata["_hooks"] 直接透传运行时回调
+                    raw_hooks = request.metadata.get("_hooks")
+                    if isinstance(raw_hooks, AgentHooks):
+                        hooks = raw_hooks
 
-            # 获取 AgentCore（懒加载）
-            # 记忆路径：profile 有非空 frontend_id/dialog_window_id 时优先使用，确保 Cron 等写入对应前端记忆
-            profile = request.profile
-            mem_source = (
-                profile.frontend_id
-                if (profile and (profile.frontend_id or "").strip())
-                else request.metadata.get("source", request.frontend_id)
-            )
-            mem_user_id = (
-                profile.dialog_window_id
-                if (profile and (profile.dialog_window_id or "").strip())
-                else request.metadata.get("user_id", "root")
-            )
-            agent = await self._core_pool.acquire(
-                request.session_id,
-                source=mem_source,
-                user_id=mem_user_id,
-                profile=profile,
-            )
-
-            # 准备本轮输入（注入到 agent 的上下文）
-            await agent._sync_external_session_updates()
-            agent._current_turn_id += 1
-            turn_id = agent._current_turn_id
-
-            # Core 级生命周期日志：记录本轮输入
-            entry: Optional[CoreEntry] = self._core_pool.get_entry(session_id)  # type: ignore[assignment]
-            core_logger = getattr(entry, "logger", None) if entry is not None else None
-            if core_logger is not None:
-                try:
-                    core_logger.on_turn_start(turn_id, request.text)
-                except Exception:
-                    pass
-
-            # 将 core_logger 接入 agent 的 session_logger，记录中间过程
-            if core_logger is not None and agent._session_logger is None:
-                agent._session_logger = core_logger  # type: ignore[assignment]
-
-            content_items = request.metadata.get("content_items")
-            if content_items:
-                logger.info(
-                    "scheduler: injecting %d content_items into LLM context for session=%s (types=%s)",
-                    len(content_items),
-                    session_id,
-                    [str(i.get("type")) for i in content_items[:3]],
+                # 获取 AgentCore（懒加载）
+                # 记忆路径：profile 有非空 frontend_id/dialog_window_id 时优先使用
+                profile = request.profile
+                mem_source = (
+                    profile.frontend_id
+                    if (profile and (profile.frontend_id or "").strip())
+                    else request.metadata.get("source", request.frontend_id)
                 )
-            agent._context.add_user_message(
-                request.text, media_items=content_items or None
-            )
-            agent._outgoing_attachments.clear()
-
-            # session_logger 写入用户消息
-            if agent._session_logger:
-                agent._session_logger.on_user_message(turn_id, request.text)
-            if agent._memory_enabled:
-                msg_id = agent._chat_history_db.write_message(
-                    session_id=agent._session_id,
-                    role="user",
-                    content=request.text,
-                    source=agent._source,
+                mem_user_id = (
+                    profile.dialog_window_id
+                    if (profile and (profile.dialog_window_id or "").strip())
+                    else request.metadata.get("user_id", "root")
                 )
-                agent._last_history_id = max(agent._last_history_id, int(msg_id))
-
-            # 启动工作记忆并行总结（如需）
-            summary_task = None
-            summary_recent_start = None
-            if agent._memory_enabled and agent._working_memory.check_threshold(
-                actual_tokens=agent._last_prompt_tokens
-            ):
-                result = agent._working_memory.start_summarize(
-                    agent._summary_llm_client, actual_tokens=agent._last_prompt_tokens
+                agent = await self._core_pool.acquire(
+                    request.session_id,
+                    source=mem_source,
+                    user_id=mem_user_id,
+                    profile=profile,
                 )
-                if result:
-                    summary_task, summary_recent_start = result
 
-            # 驱动 AgentCore（on_signal: 每次 Return/Tool_call 时刷新 TTL）
-            def _on_signal() -> None:
+                # Core 级生命周期日志接入（在 prepare_turn 之前注入，确保用户消息被记录）
+                entry = self._core_pool.get_entry(session_id)
+                core_logger = getattr(entry, "logger", None) if entry is not None else None
+                if core_logger is not None and agent._session_logger is None:
+                    agent._session_logger = core_logger  # type: ignore[assignment]
+
+                content_items = request.metadata.get("content_items")
+                if content_items:
+                    logger.info(
+                        "scheduler: injecting %d content_items into LLM context for session=%s (types=%s)",
+                        len(content_items),
+                        session_id,
+                        [str(i.get("type")) for i in content_items[:3]],
+                    )
+
+                # 前置处理：同步外部更新、memory recall、写入用户消息
+                # （统一路径，修复了之前 scheduler 缺失 memory recall 的问题）
+                turn_id, summary_task, summary_recent_start = await agent.prepare_turn(
+                    request.text, content_items
+                )
+
+                # Core 级生命周期日志：记录本轮输入（在 prepare_turn 之后可获得 turn_id）
+                if core_logger is not None:
+                    try:
+                        core_logger.on_turn_start(turn_id, request.text)
+                    except Exception:
+                        pass
+
+                # 驱动 AgentCore（on_signal: 每次 Return/Tool_call 时刷新 TTL）
+                def _on_signal() -> None:
+                    self._core_pool.touch(session_id)
+
+                run_result = await self._kernel.run(
+                    agent,
+                    turn_id=turn_id,
+                    hooks=hooks,
+                    on_signal=_on_signal,
+                )
+
+                # 后处理
+                await agent._finalize_turn(run_result, summary_task, summary_recent_start)
+
+                # Core 级生命周期日志：记录本轮输出
+                if core_logger is not None:
+                    try:
+                        core_logger.on_turn_end(
+                            turn_id,
+                            output_text=run_result.output_text,
+                            metadata=run_result.metadata,
+                        )
+                    except Exception:
+                        pass
+
+                # 刷新 TTL（每次请求完成后更新活跃时间）
                 self._core_pool.touch(session_id)
 
-            run_result = await self._kernel.run(
-                agent,
-                turn_id=turn_id,
-                hooks=hooks,
-                on_signal=_on_signal,
-            )
+                # 路由结果
+                await self._router.deliver(request.request_id, run_result)
 
-            # 后处理
-            await agent._finalize_turn(run_result, summary_task, summary_recent_start)
-
-            # Core 级生命周期日志：记录本轮输出
-            if core_logger is not None:
-                try:
-                    core_logger.on_turn_end(
-                        turn_id,
-                        output_text=run_result.output_text,
-                        metadata=run_result.metadata,
-                    )
-                except Exception:
-                    pass
-
-            # 刷新 TTL（每次请求完成后更新活跃时间）
-            self._core_pool.touch(session_id)
-
-            # 路由结果
-            await self._router.deliver(request.request_id, run_result)
-
-        except Exception as exc:
-            logger.exception(
-                "KernelScheduler: error processing request_id=%s: %s",
-                request.request_id[:8],
-                exc,
-            )
-            await self._router.deliver_error(request.request_id, exc)
-        finally:
-            pending = self._inflight_sessions.get(session_id, 0) - 1
-            if pending > 0:
-                self._inflight_sessions[session_id] = pending
-            else:
-                self._inflight_sessions.pop(session_id, None)
+            except Exception as exc:
+                logger.exception(
+                    "KernelScheduler: error processing request_id=%s: %s",
+                    request.request_id[:8],
+                    exc,
+                )
+                await self._router.deliver_error(request.request_id, exc)
+            finally:
+                pending = self._inflight_sessions.get(session_id, 0) - 1
+                if pending > 0:
+                    self._inflight_sessions[session_id] = pending
+                else:
+                    self._inflight_sessions.pop(session_id, None)
 
     @property
     def queue_size(self) -> int:

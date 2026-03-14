@@ -373,6 +373,62 @@ class AgentCore:
         }
         self._usage_calls.clear()
 
+    async def prepare_turn(
+        self,
+        text: str,
+        content_items: Optional[List[Dict[str, Any]]] = None,
+    ) -> Tuple[int, Optional[asyncio.Task], Optional[int]]:
+        """
+        为新一轮处理做准备，返回 (turn_id, summary_task, summary_recent_start)。
+
+        统一了三条执行路径（process_input / KernelScheduler / CoreSessionAdapter）
+        中重复的前置处理逻辑，确保行为一致——特别是 memory recall 在所有路径均生效。
+
+        调用方在 AgentKernel.run() 完成后需调用 _finalize_turn(run_result, summary_task, summary_recent_start)。
+        """
+        await self._sync_external_session_updates()
+        self._current_turn_id += 1
+        turn_id = self._current_turn_id
+
+        # 记忆检索 enrich（之前 KernelScheduler 路径缺失此步骤）
+        if self._memory_enabled and self._recall_policy.should_recall(text):
+            recall_result = await asyncio.to_thread(
+                self._recall_policy.recall,
+                query=text,
+                long_term_memory=self._long_term_memory,
+                content_memory=self._content_memory,
+            )
+            self._last_recall_result = recall_result
+        else:
+            self._last_recall_result = RecallResult()
+
+        self._context.add_user_message(text, media_items=content_items or None)
+        self._outgoing_attachments.clear()
+        if self._session_logger:
+            self._session_logger.on_user_message(turn_id, text)
+        if self._memory_enabled:
+            msg_id = self._require_chat_history_db().write_message(
+                session_id=self._session_id,
+                role="user",
+                content=text,
+                source=self._source,
+            )
+            self._last_history_id = max(self._last_history_id, int(msg_id))
+
+        # 工作记忆并行总结（不阻塞主流程）
+        summary_task: Optional[asyncio.Task] = None
+        summary_recent_start: Optional[int] = None
+        if self._memory_enabled and self._working_memory.check_threshold(
+            actual_tokens=self._last_prompt_tokens
+        ):
+            result = self._working_memory.start_summarize(
+                self._summary_llm_client, actual_tokens=self._last_prompt_tokens
+            )
+            if result:
+                summary_task, summary_recent_start = result
+
+        return turn_id, summary_task, summary_recent_start
+
     async def process_input(
         self,
         user_input: str,
@@ -400,49 +456,10 @@ class AgentCore:
         from agent_core.interfaces import AgentHooks
         from system.kernel import AgentKernel
 
-        await self._sync_external_session_updates()
-        self._current_turn_id += 1
-        turn_id = self._current_turn_id
+        turn_id, summary_task, summary_recent_start = await self.prepare_turn(
+            user_input, content_items
+        )
 
-        # 记忆检索 enrich
-        if self._memory_enabled and self._recall_policy.should_recall(user_input):
-            recall_result = await asyncio.to_thread(
-                self._recall_policy.recall,
-                query=user_input,
-                long_term_memory=self._long_term_memory,
-                content_memory=self._content_memory,
-            )
-            self._last_recall_result = recall_result
-        else:
-            self._last_recall_result = RecallResult()
-
-        # 准备上下文（图片等多模态内容合并进用户消息，当轮首条 LLM 即可看到）
-        self._context.add_user_message(user_input, media_items=content_items or None)
-        self._outgoing_attachments.clear()
-        if self._session_logger:
-            self._session_logger.on_user_message(turn_id, user_input)
-        if self._memory_enabled:
-            msg_id = self._require_chat_history_db().write_message(
-                session_id=self._session_id,
-                role="user",
-                content=user_input,
-                source=self._source,
-            )
-            self._last_history_id = max(self._last_history_id, int(msg_id))
-
-        # 工作记忆并行总结
-        summary_task: Optional[asyncio.Task] = None
-        summary_recent_start: Optional[int] = None
-        if self._memory_enabled and self._working_memory.check_threshold(
-            actual_tokens=self._last_prompt_tokens
-        ):
-            result = self._working_memory.start_summarize(
-                self._summary_llm_client, actual_tokens=self._last_prompt_tokens
-            )
-            if result:
-                summary_task, summary_recent_start = result
-
-        # 通过 AgentKernel 驱动 run_loop()
         hooks = AgentHooks(
             on_assistant_delta=on_stream_delta,
             on_reasoning_delta=on_reasoning_delta,
@@ -451,7 +468,6 @@ class AgentCore:
         kernel = AgentKernel(tool_registry=self._tool_registry)
         run_result = await kernel.run(self, turn_id=turn_id, hooks=hooks)
 
-        # 后处理
         await self._finalize_turn(run_result, summary_task, summary_recent_start)
 
         return run_result.output_text

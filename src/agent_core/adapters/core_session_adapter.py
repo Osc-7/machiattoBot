@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import logging
 from typing import Any, Dict, List, Optional, cast
@@ -135,57 +134,12 @@ class CoreSessionAdapter:
         hooks: AgentHooks,
     ) -> AgentRunResult:
         """新架构路径：通过 AgentKernel 驱动 run_loop()。"""
-        from agent_core.memory import RecallResult
-
-        await self._agent._sync_external_session_updates()
-        self._agent._current_turn_id += 1
-        turn_id = self._agent._current_turn_id
-
         input_text = agent_input.text
 
-        # 记忆检索
-        if self._agent._memory_enabled and self._agent._recall_policy.should_recall(
-            input_text
-        ):
-            recall_result = await asyncio.to_thread(
-                self._agent._recall_policy.recall,
-                query=input_text,
-                long_term_memory=self._agent._long_term_memory,
-                content_memory=self._agent._content_memory,
-            )
-            self._agent._last_recall_result = recall_result
-        else:
-            self._agent._last_recall_result = RecallResult()
-
-        self._agent._context.add_user_message(
-            input_text, media_items=content_items or None
+        # 前置处理：同步外部更新、memory recall、写入用户消息（统一路径）
+        turn_id, summary_task, summary_recent_start = await self._agent.prepare_turn(
+            input_text, content_items
         )
-        self._agent._outgoing_attachments.clear()
-        if self._agent._session_logger:
-            self._agent._session_logger.on_user_message(turn_id, input_text)
-        if self._agent._memory_enabled:
-            msg_id = self._agent._chat_history_db.write_message(
-                session_id=self._agent._session_id,
-                role="user",
-                content=input_text,
-                source=self._agent._source,
-            )
-            self._agent._last_history_id = max(
-                self._agent._last_history_id, int(msg_id)
-            )
-
-        # 工作记忆并行总结
-        summary_task = None
-        summary_recent_start = None
-        if self._agent._memory_enabled and self._agent._working_memory.check_threshold(
-            actual_tokens=self._agent._last_prompt_tokens
-        ):
-            result = self._agent._working_memory.start_summarize(
-                self._agent._summary_llm_client,
-                actual_tokens=self._agent._last_prompt_tokens,
-            )
-            if result:
-                summary_task, summary_recent_start = result
 
         # AgentKernel 驱动 run_loop()（Kernel 只需 ToolRegistry，LLM 由 AgentCore 直接调用）
         kernel = AgentKernel(tool_registry=self._agent._tool_registry)
