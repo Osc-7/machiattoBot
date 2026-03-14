@@ -374,6 +374,7 @@ class AutomationCoreGateway:
         command = ExpireSessionCommand(session_id=sid, reason=reason)
         await self._dispatch_expire(command)
         self._session_registry.mark_expired(self._owner_id, self._source, sid)
+        self._last_activity[sid] = datetime.now()
 
     async def expire_session_if_needed(self, reason: str = "session_expire") -> bool:
         sid = self._active_session_id
@@ -572,6 +573,8 @@ class AutomationCoreGateway:
         return True
 
     async def close(self) -> None:
+        # 只关闭 gateway 自身创建的 session（_owned_sessions）；
+        # 构造函数传入的初始 session 由调用方持有，gateway 不拥有它的生命周期。
         for session_id in list(self._owned_sessions):
             session = self._sessions.get(session_id)
             if session is None:

@@ -188,11 +188,14 @@ class KernelScheduler:
         except Exception as exc:
             logger.warning("KernelScheduler: write kernel_last_shutdown_at failed: %s", exc)
         # Kernel 级停止时，确保回收所有仍在 CorePool 中的会话，避免遗留 active Core。
+        # cancel_all() 必须在 try/finally 中，确保即使 evict_all() 抛出异常也能执行，
+        # 否则所有挂起 Future 将永久悬挂。
         try:
             await self._core_pool.evict_all()
         except Exception as exc:
             logger.warning("KernelScheduler: evict_all on stop failed: %s", exc)
-        self._router.cancel_all()
+        finally:
+            self._router.cancel_all()
         logger.info("KernelScheduler: stopped")
 
     async def _get_session_lock(self, session_id: str) -> asyncio.Lock:
@@ -249,6 +252,8 @@ class KernelScheduler:
             )
             self._active_tasks.add(task)
             task.add_done_callback(self._active_tasks.discard)
+            # task_done() 使 queue.join() 能正确追踪完成状态
+            task.add_done_callback(lambda _: self._queue.task_done())
 
     async def _ttl_loop(self) -> None:
         """
@@ -399,6 +404,14 @@ class KernelScheduler:
                 # 路由结果
                 await self._router.deliver(request.request_id, run_result)
 
+            except asyncio.CancelledError:
+                # CancelledError 继承自 BaseException（Python 3.8+），不被 except Exception 捕获。
+                # 必须显式处理，否则调用方 Future 将永久悬挂直到 stop() 调用 cancel_all()。
+                await self._router.deliver_error(
+                    request.request_id,
+                    asyncio.CancelledError("kernel task cancelled"),
+                )
+                raise
             except Exception as exc:
                 logger.exception(
                     "KernelScheduler: error processing request_id=%s: %s",

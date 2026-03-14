@@ -39,6 +39,7 @@ class CoreLifecycleLogger:
     _file_path: Optional[Path] = field(default=None, repr=False)
     _closed: bool = field(default=False, repr=False)
     _file: Optional[IO[str]] = field(default=None, repr=False)
+    enable_detailed_log: bool = field(default=False, repr=False)
 
     def __post_init__(self) -> None:
         base = Path(self.base_dir or "./logs/sessions")
@@ -112,8 +113,6 @@ class CoreLifecycleLogger:
         self._write(record)
 
     # ---- SessionLogger 鸭子类型接口（供 AgentCore._session_logger 使用）----
-
-    enable_detailed_log: bool = field(default=False, repr=False)
 
     def on_user_message(self, turn_id: int, content: str) -> None:
         self._write(
@@ -283,6 +282,11 @@ class CoreLifecycleLogger:
             except Exception:
                 pass
             self._file = None
+
+    def __del__(self) -> None:
+        """进程崩溃或对象被意外丢弃时的最后防线，确保文件句柄不泄漏。"""
+        if not self._closed:
+            self.close()
 
     @property
     def file_path(self) -> Optional[Path]:

@@ -74,9 +74,10 @@ async def _consume_loop(
         task = queue.pop_pending()
         if task is None:
             try:
-                await asyncio.wait_for(
-                    asyncio.shield(stop_event.wait()), timeout=POLL_INTERVAL_SECONDS
-                )
+                # 不用 asyncio.shield：shield 每次超时会泄漏一个孤儿 Task（wait_for 只取消
+                # 外层 shield，内层 stop_event.wait() Task 继续运行，长期运行累积数万个）。
+                # Event.wait() 协程支持安全取消，直接 wait_for 即可。
+                await asyncio.wait_for(stop_event.wait(), timeout=POLL_INTERVAL_SECONDS)
             except asyncio.TimeoutError:
                 pass
             continue
@@ -372,13 +373,15 @@ async def _main() -> None:
             stop_event.set()
             raise
         finally:
+            # consumer_task.cancel()/gather 必须在 finally 里，
+            # 否则在 CancelledError 路径下会被跳过（两行代码不可达）。
+            consumer_task.cancel()
+            await asyncio.gather(consumer_task, return_exceptions=True)
             await ipc.stop()
             await scheduler.stop()
             await scheduler_runtime.stop()
             await core_pool.evict_all()
             await gateway.close()
-    consumer_task.cancel()
-    await asyncio.gather(consumer_task, return_exceptions=True)
 
     # 旧版 daemon 级 SessionLogger 已关闭，核心会话日志改由 Kernel/CoreLifecycleLogger 管理。
 

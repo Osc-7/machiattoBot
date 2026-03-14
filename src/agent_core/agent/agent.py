@@ -151,6 +151,9 @@ class AgentCore:
         self._usage_calls: List[Tuple[int, int]] = []
         # 上一轮 LLM 的 prompt_tokens，供工作记忆阈值判断
         self._last_prompt_tokens: Optional[int] = None
+        # 最近一次 memory recall 结果（每轮 prepare_turn 更新；__init__ 必须初始化，
+        # 否则 _build_system_prompt 在首次 prepare_turn 前调用时会触发 AttributeError）
+        self._last_recall_result: RecallResult = RecallResult()
         # 当前轮次（每次 process_input 递增）
         self._current_turn_id = 0
         # 会话起始时间
@@ -466,9 +469,13 @@ class AgentCore:
             on_trace_event=on_trace_event,
         )
         kernel = AgentKernel(tool_registry=self._tool_registry)
-        run_result = await kernel.run(self, turn_id=turn_id, hooks=hooks)
-
-        await self._finalize_turn(run_result, summary_task, summary_recent_start)
+        run_result = None
+        try:
+            run_result = await kernel.run(self, turn_id=turn_id, hooks=hooks)
+        finally:
+            # 无论 kernel.run() 是否抛出异常，都执行后处理（写 checkpoint、处理 summary_task）。
+            # 若 run 异常，summary_task 将在 _finalize_turn 内部被捕获并取消。
+            await self._finalize_turn(run_result, summary_task, summary_recent_start)
 
         return run_result.output_text
 
@@ -727,7 +734,7 @@ class AgentCore:
 
     async def _finalize_turn(
         self,
-        run_result: "AgentRunResult",
+        run_result: "Optional[AgentRunResult]",
         summary_task: Optional[asyncio.Task] = None,
         summary_recent_start: Optional[int] = None,
     ) -> None:
@@ -741,8 +748,15 @@ class AgentCore:
         用「kernel 关闭时间戳 - last_active_at」计算 elapsed 判断。
         """
         if summary_task is not None and summary_recent_start is not None:
-            summary_text = await summary_task
-            self._working_memory.apply_summary(summary_text, summary_recent_start)
+            try:
+                summary_text = await summary_task
+                self._working_memory.apply_summary(summary_text, summary_recent_start)
+            except (asyncio.CancelledError, Exception) as _sum_exc:
+                import logging as _log
+                _log.getLogger(__name__).warning(
+                    "AgentCore: summary_task failed, skipping working memory compression: %s",
+                    _sum_exc,
+                )
 
         # 每轮结束后写入检查点（last_active_at = now）；过期判断在 kernel 启动时用关闭时间戳计算
         if self._checkpoint_manager is not None:
@@ -956,6 +970,8 @@ class AgentCore:
         self._session_start_time = datetime.now(dt_timezone.utc).isoformat()
         self._current_turn_id = 0
         self._last_prompt_tokens = None
+        self._last_recall_result = RecallResult()
+        self._pending_multimodal_items.clear()
         self._last_history_id = 0
         self.reset_token_usage()
         self._working_memory = WorkingMemory(
@@ -1007,6 +1023,9 @@ class AgentCore:
         self._current_turn_id = checkpoint.turn_count
         self._last_history_id = checkpoint.last_history_id
         self._token_usage = dict(checkpoint.token_usage)
+        self._last_prompt_tokens = None
+        self._last_recall_result = RecallResult()
+        self._pending_multimodal_items.clear()
 
         self._context.clear()
         for msg in checkpoint.recent_messages:
@@ -1101,10 +1120,18 @@ class AgentCore:
     async def __aenter__(self) -> "AgentCore":
         """异步上下文管理器入口"""
         if self._config.mcp.enabled and not self._mcp_connected:
-            self._config.mcp.servers = self._build_runtime_mcp_servers(
-                self._config.mcp.servers
-            )
-            self._mcp_manager = MCPClientManager(self._config.mcp)
+            runtime_servers = self._build_runtime_mcp_servers(self._config.mcp.servers)
+            # 不写回全局共享 Config 单例（self._config.mcp.servers），
+            # 用 model_copy 创建副本，避免多 AgentCore 并发时服务器列表重复追加。
+            try:
+                runtime_mcp_cfg = self._config.mcp.model_copy(
+                    update={"servers": runtime_servers}
+                )
+            except AttributeError:
+                import copy as _copy_mod
+                runtime_mcp_cfg = _copy_mod.copy(self._config.mcp)
+                runtime_mcp_cfg.servers = runtime_servers
+            self._mcp_manager = MCPClientManager(runtime_mcp_cfg)
             if not self._defer_mcp_connect:
                 await self._mcp_manager.connect()
                 proxy_tools = self._mcp_manager.get_proxy_tools()

@@ -135,7 +135,8 @@ class VersionedToolRegistry:
 
     async def execute(self, tool_name: str, **kwargs) -> ToolResult:
         """
-        执行工具。
+        执行工具。工具内部未捕获的异常将被包装为 ToolResult(success=False)，
+        保证调用方始终收到结构化结果，不因工具 bug 导致整个 kernel 循环崩溃。
         """
         tool = self.get(tool_name)
         if tool is None:
@@ -144,7 +145,18 @@ class VersionedToolRegistry:
                 error="TOOL_NOT_FOUND",
                 message=f"工具 '{tool_name}' 不存在",
             )
-        return await tool.execute(**kwargs)
+        try:
+            return await tool.execute(**kwargs)
+        except Exception as exc:
+            import logging as _log
+            _log.getLogger(__name__).exception(
+                "Tool '%s' raised an unhandled exception", tool_name
+            )
+            return ToolResult(
+                success=False,
+                error="TOOL_EXCEPTION",
+                message=f"工具 '{tool_name}' 执行时发生未捕获异常: {exc}",
+            )
 
     def search(
         self,

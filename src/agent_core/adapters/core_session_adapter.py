@@ -143,10 +143,11 @@ class CoreSessionAdapter:
 
         # AgentKernel 驱动 run_loop()（Kernel 只需 ToolRegistry，LLM 由 AgentCore 直接调用）
         kernel = AgentKernel(tool_registry=self._agent._tool_registry)
-        run_result = await kernel.run(self._agent, turn_id=turn_id, hooks=hooks)
-
-        # 后处理
-        await self._agent._finalize_turn(run_result, summary_task, summary_recent_start)
+        run_result = None
+        try:
+            run_result = await kernel.run(self._agent, turn_id=turn_id, hooks=hooks)
+        finally:
+            await self._agent._finalize_turn(run_result, summary_task, summary_recent_start)
         return run_result
 
     async def _run_via_process_input(

@@ -106,7 +106,9 @@ class SessionRegistry:
         except ValueError:
             return None
         if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            # 转换为本地 naive time（与 core_gateway.py 使用的 datetime.now() 一致），
+            # 避免 UTC vs 本地时区混用导致 idle_seconds 计算错误（非 UTC 区域会误判过期）
+            dt = dt.astimezone().replace(tzinfo=None)
         return dt
 
     def session_exists(self, owner_id: str, source: str, session_id: str) -> bool:

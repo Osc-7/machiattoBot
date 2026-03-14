@@ -111,15 +111,22 @@ class AutomationIPCServer:
             except Exception as exc:
                 logger.warning("automation ipc expire loop failed: %s", exc)
 
+    # 空闲连接超时：客户端建立连接后若超过此时长无数据，服务端关闭连接释放协程。
+    _READ_IDLE_TIMEOUT: float = 1800.0  # 30 分钟
+
     async def _handle_client(
         self,
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
     ) -> None:
-        peer = writer.get_extra_info("peername")
         try:
             while True:
-                raw = await reader.readline()
+                try:
+                    raw = await asyncio.wait_for(
+                        reader.readline(), timeout=self._READ_IDLE_TIMEOUT
+                    )
+                except asyncio.TimeoutError:
+                    break  # 空闲超时，关闭连接
                 if not raw:
                     break
                 req_id = None
@@ -145,8 +152,6 @@ class AutomationIPCServer:
                 await writer.wait_closed()
             except Exception:
                 pass
-            if peer is not None:
-                self._client_active_session.pop(str(peer), None)
 
     async def _handle_run_turn_stream(
         self,

@@ -17,6 +17,7 @@ CorePool — 进程加载器 + 进程表（PCB 池）。
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import time
 from dataclasses import dataclass, field
@@ -133,6 +134,13 @@ class CorePool:
             if not create_if_missing:
                 raise KeyError(f"CorePool: session not found: {session_id}")
 
+            # pool 容量保护：防止无限增长导致 OOM
+            if len(self._pool) >= self._max_sessions:
+                raise RuntimeError(
+                    f"CorePool: max_sessions ({self._max_sessions}) reached; "
+                    "cannot create new session"
+                )
+
             agent, entry_profile, core_logger = await self._load(
                 session_id, source=source, user_id=user_id, profile=profile
             )
@@ -208,7 +216,7 @@ class CorePool:
                 finalize = getattr(agent, "finalize_session", None)
                 if callable(finalize):
                     result = finalize()
-                    if asyncio.isfuture(result) or asyncio.iscoroutine(result):
+                    if inspect.isawaitable(result):
                         await result
             except Exception as exc:
                 logger.warning(
@@ -266,7 +274,7 @@ class CorePool:
             close = getattr(agent, "close", None)
             if callable(close):
                 result = close()
-                if asyncio.isfuture(result) or asyncio.iscoroutine(result):
+                if inspect.isawaitable(result):
                     await result
         except RuntimeError as exc:
             # anyio/mcp 在异步生成器关闭时可能抛出：
@@ -514,114 +522,128 @@ class CorePool:
 
         await agent.__aenter__()
 
-        # 为该 Core 创建独立生命周期日志（按 source/user_id 归档）
-        core_logger: Optional[CoreLifecycleLogger]
+        # __aenter__ 之后若任何初始化步骤抛出异常，必须保证 __aexit__ 被调用，
+        # 否则 MCP 连接、文件句柄等资源将永久泄漏。
         try:
-            log_cfg = getattr(self._config, "logging", None)
-            log_dir = (
-                getattr(log_cfg, "session_log_dir", "./logs/sessions")
-                if log_cfg
-                else "./logs/sessions"
-            )
-            core_logger = CoreLifecycleLogger(
-                base_dir=log_dir,
-                source=source,
-                user_id=user_id,
-                session_id=session_id,
-            )
-            core_logger.on_core_start(profile=profile)
-        except Exception:
-            core_logger = None
-
-        # 将 CoreProfile 注入 agent，供 InternalLoader 过滤工具列表
-        # 和 AgentKernel 进行内核态权限校验
-        agent._core_profile = profile
-
-        # ── 检查点恢复 vs 冷启动 ──────────────────────────────────────────
-        # 过期判断：elapsed = kernel_last_shutdown_at - checkpoint.last_active_at；
-        # 仅当 kernel 曾写入关闭时间戳且 elapsed < TTL 时恢复，否则冷启动或标记过期并删 checkpoint。
-        profile_mode = getattr(profile, "mode", None)
-        use_checkpoint = memory_enabled and profile_mode != "background" and not (
-            session_id or ""
-        ).startswith("cron:")
-
-        restored_from_checkpoint = False
-        initial_ttl_offset: float = 0.0  # 恢复时 entry.last_active_ts = monotonic() - elapsed
-
-        if use_checkpoint:
+            # 为该 Core 创建独立生命周期日志（按 source/user_id 归档）
+            core_logger: Optional[CoreLifecycleLogger]
             try:
-                from agent_core.agent.memory_paths import get_kernel_shutdown_at_path
-
-                mem_cfg = self._config.memory
-                mem_paths = resolve_memory_owner_paths(
-                    mem_cfg, user_id, config=self._config, source=source
+                log_cfg = getattr(self._config, "logging", None)
+                log_dir = (
+                    getattr(log_cfg, "session_log_dir", "./logs/sessions")
+                    if log_cfg
+                    else "./logs/sessions"
                 )
-                ckpt_mgr = CoreCheckpointManager(mem_paths["checkpoint_path"])
-                checkpoint = ckpt_mgr.read()
+                core_logger = CoreLifecycleLogger(
+                    base_dir=log_dir,
+                    source=source,
+                    user_id=user_id,
+                    session_id=session_id,
+                )
+                core_logger.on_core_start(profile=profile)
+            except Exception:
+                core_logger = None
 
-                # expired=True：该 session 已被正常 evict，清理文件并走冷启动
-                if checkpoint is not None and checkpoint.expired:
-                    ckpt_mgr.delete()
-                    checkpoint = None
-                    logger.debug(
-                        "CorePool._load: cleaned up evicted checkpoint (session=%s)", session_id
+            # 将 CoreProfile 注入 agent，供 InternalLoader 过滤工具列表
+            # 和 AgentKernel 进行内核态权限校验
+            agent._core_profile = profile
+
+            # ── 检查点恢复 vs 冷启动 ──────────────────────────────────────────
+            # 过期判断：elapsed = kernel_last_shutdown_at - checkpoint.last_active_at；
+            # 仅当 kernel 曾写入关闭时间戳且 elapsed < TTL 时恢复，否则冷启动或标记过期并删 checkpoint。
+            profile_mode = getattr(profile, "mode", None)
+            use_checkpoint = memory_enabled and profile_mode != "background" and not (
+                session_id or ""
+            ).startswith("cron:")
+
+            restored_from_checkpoint = False
+            initial_ttl_offset: float = 0.0  # 恢复时 entry.last_active_ts = monotonic() - elapsed
+
+            if use_checkpoint:
+                try:
+                    from agent_core.agent.memory_paths import get_kernel_shutdown_at_path
+
+                    mem_cfg = self._config.memory
+                    mem_paths = resolve_memory_owner_paths(
+                        mem_cfg, user_id, config=self._config, source=source
+                    )
+                    ckpt_mgr = CoreCheckpointManager(mem_paths["checkpoint_path"])
+                    checkpoint = ckpt_mgr.read()
+
+                    # expired=True：该 session 已被正常 evict，清理文件并走冷启动
+                    if checkpoint is not None and checkpoint.expired:
+                        ckpt_mgr.delete()
+                        checkpoint = None
+                        logger.debug(
+                            "CorePool._load: cleaned up evicted checkpoint (session=%s)", session_id
+                        )
+
+                    if checkpoint is not None and checkpoint.session_id == session_id:
+                        shutdown_path = get_kernel_shutdown_at_path(mem_cfg)
+                        shutdown_at: Optional[float] = None
+                        if Path(shutdown_path).exists():
+                            try:
+                                shutdown_at = float(
+                                    Path(shutdown_path).read_text(encoding="utf-8").strip()
+                                )
+                            except Exception:
+                                pass
+
+                        if shutdown_at is not None:
+                            session_ttl = float(
+                                getattr(profile, "session_expired_seconds", 1800)
+                            )
+                            # max(0.0, ...) 防御 NTP 时钟回拨（elapsed 为负时视为 0，保留 session）
+                            elapsed = max(0.0, shutdown_at - checkpoint.last_active_at)
+                            if elapsed >= session_ttl:
+                                # 超时：标记过期，冷启动
+                                ckpt_mgr.mark_expired()
+                                logger.debug(
+                                    "CorePool._load: checkpoint expired (session=%s "
+                                    "elapsed=%.0fs >= ttl=%.0fs)",
+                                    session_id, elapsed, session_ttl,
+                                )
+                            else:
+                                restore_fn = getattr(agent, "restore_from_checkpoint", None)
+                                if callable(restore_fn):
+                                    restore_fn(checkpoint)
+                                    restored_from_checkpoint = True
+                                    initial_ttl_offset = elapsed
+                                    logger.info(
+                                        "CorePool._load: restored checkpoint for session=%s "
+                                        "(elapsed=%.0fs, remaining=%.0fs)",
+                                        session_id, elapsed, session_ttl - elapsed,
+                                    )
+                except Exception as exc:
+                    logger.warning(
+                        "CorePool._load: checkpoint restore failed (session=%s), "
+                        "falling back to cold start: %s",
+                        session_id,
+                        exc,
                     )
 
-                if checkpoint is not None and checkpoint.session_id == session_id:
-                    shutdown_path = get_kernel_shutdown_at_path(mem_cfg)
-                    shutdown_at: Optional[float] = None
-                    if Path(shutdown_path).exists():
-                        try:
-                            shutdown_at = float(
-                                Path(shutdown_path).read_text(encoding="utf-8").strip()
-                            )
-                        except Exception:
-                            pass
+            if not restored_from_checkpoint:
+                activate = getattr(agent, "activate_session", None)
+                if callable(activate):
+                    result = activate(session_id)
+                    if inspect.isawaitable(result):
+                        await result
 
-                    if shutdown_at is not None:
-                        session_ttl = float(
-                            getattr(profile, "session_expired_seconds", 1800)
-                        )
-                        # max(0.0, ...) 防御 NTP 时钟回拨（elapsed 为负时视为 0，保留 session）
-                        elapsed = max(0.0, shutdown_at - checkpoint.last_active_at)
-                        if elapsed >= session_ttl:
-                            # 超时：标记过期，冷启动
-                            ckpt_mgr.mark_expired()
-                            logger.debug(
-                                "CorePool._load: checkpoint expired (session=%s "
-                                "elapsed=%.0fs >= ttl=%.0fs)",
-                                session_id, elapsed, session_ttl,
-                            )
-                        else:
-                            restore_fn = getattr(agent, "restore_from_checkpoint", None)
-                            if callable(restore_fn):
-                                restore_fn(checkpoint)
-                                restored_from_checkpoint = True
-                                initial_ttl_offset = elapsed
-                                logger.info(
-                                    "CorePool._load: restored checkpoint for session=%s "
-                                    "(elapsed=%.0fs, remaining=%.0fs)",
-                                    session_id, elapsed, session_ttl - elapsed,
-                                )
-            except Exception as exc:
+            # 将 TTL 偏移量附到返回值，供 CorePool.acquire() 修正 CoreEntry 时间戳
+            agent._checkpoint_ttl_offset = initial_ttl_offset  # type: ignore[attr-defined]
+
+            return agent, profile, core_logger
+
+        except BaseException:
+            # 初始化失败：确保释放 __aenter__ 已获取的资源（MCP 连接等）
+            try:
+                await agent.__aexit__(None, None, None)
+            except Exception as _exit_exc:
                 logger.warning(
-                    "CorePool._load: checkpoint restore failed (session=%s), "
-                    "falling back to cold start: %s",
-                    session_id,
-                    exc,
+                    "CorePool._load: __aexit__ failed during error cleanup (session=%s): %s",
+                    session_id, _exit_exc,
                 )
-
-        if not restored_from_checkpoint:
-            activate = getattr(agent, "activate_session", None)
-            if callable(activate):
-                result = activate(session_id)
-                if asyncio.isfuture(result) or asyncio.iscoroutine(result):
-                    await result
-
-        # 将 TTL 偏移量附到返回值，供 CorePool.acquire() 修正 CoreEntry 时间戳
-        agent._checkpoint_ttl_offset = initial_ttl_offset  # type: ignore[attr-defined]
-
-        return agent, profile, core_logger
+            raise
 
     async def _hot_update_profile(
         self,
