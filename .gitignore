@@ -68,3 +68,4 @@ claude-progress.txt
 claude_code_env.sh
 feature_list.json
 run_automation.sh
+MagicMock/
