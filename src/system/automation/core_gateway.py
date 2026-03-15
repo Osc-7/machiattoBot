@@ -626,9 +626,17 @@ class AutomationCoreGateway:
                 try:
                     maybe = activate(command.session_id, replay_messages_limit=0)
                 except TypeError:
+                    # activate_session 不支持 replay_messages_limit 参数时回退
                     maybe = activate(command.session_id)
                 if inspect.isawaitable(maybe):
-                    await maybe
+                    try:
+                        await maybe
+                    except Exception as exc:
+                        logger.warning(
+                            "activate_session failed (session_id=%s): %s",
+                            command.session_id,
+                            exc,
+                        )
 
     def _active_session(self) -> CoreSession:
         session = self._sessions.get(self._active_session_id)
@@ -657,9 +665,17 @@ class AutomationCoreGateway:
                     # 会话激活默认不重放历史正文，避免把全量 messages 回灌到上下文。
                     maybe = activate(session_id, replay_messages_limit=0)
                 except TypeError:
+                    # activate_session 不支持 replay_messages_limit 参数时回退
                     maybe = activate(session_id)
                 if inspect.isawaitable(maybe):
-                    await maybe
+                    try:
+                        await maybe
+                    except Exception as exc:
+                        logger.warning(
+                            "activate_session failed (session_id=%s): %s",
+                            session_id,
+                            exc,
+                        )
             self._sessions[session_id] = session
             self._owned_sessions.add(session_id)
             registry_ts = self._session_registry.get_updated_at(

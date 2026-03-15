@@ -123,7 +123,7 @@ class SessionRegistry:
             """
             SELECT session_id
             FROM sessions
-            WHERE owner_id=? AND source=?
+            WHERE owner_id=? AND source=? AND is_expired=0
             ORDER BY updated_at DESC
             """,
             (owner_id, source),
@@ -142,4 +142,7 @@ class SessionRegistry:
         self._conn.commit()
 
     def close(self) -> None:
-        self._conn.close()
+        try:
+            self._conn.close()
+        except Exception:
+            pass

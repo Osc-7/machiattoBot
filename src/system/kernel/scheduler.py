@@ -311,8 +311,16 @@ class KernelScheduler:
         """
         session_id = request.session_id
         self._inflight_sessions[session_id] += 1
-        # 同 session 的并发请求在此排队，确保 context/turn_id/DB 写入不竞争
-        session_lock = await self._get_session_lock(session_id)
+        try:
+            # 同 session 的并发请求在此排队，确保 context/turn_id/DB 写入不竞争
+            session_lock = await self._get_session_lock(session_id)
+        except BaseException:
+            pending = self._inflight_sessions.get(session_id, 0) - 1
+            if pending > 0:
+                self._inflight_sessions[session_id] = pending
+            else:
+                self._inflight_sessions.pop(session_id, None)
+            raise
         async with session_lock:
             try:
                 # 准备钩子

@@ -296,8 +296,10 @@ class CorePool:
             logger.warning("CorePool: close failed (session=%s): %s", session_id, exc)
 
         # ── Step 4: 清理 PCB ───────────────────────────────────────────────
+        # 只有在 pool 中没有该 session 的新 entry 时才删锁，防止删掉并发重建的新 session 的锁
         async with self._global_lock:
-            self._locks.pop(session_id, None)
+            if session_id not in self._pool:
+                self._locks.pop(session_id, None)
 
         # Core 生命周期日志：记录 core_end 并关闭文件
         logger_obj = getattr(entry, "logger", None)

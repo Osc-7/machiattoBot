@@ -299,7 +299,11 @@ async def _main() -> None:
                 defer_mcp_connect=True,
             )
             await created_agent.__aenter__()
-            adapter = CoreSessionAdapter(created_agent)
+            try:
+                adapter = CoreSessionAdapter(created_agent)
+            except BaseException:
+                await created_agent.__aexit__(None, None, None)
+                raise
             # 不在 factory 里调用 activate_session，由 gateway._create_session 根据
             # is_expired 状态决定 replay_messages_limit，避免全量历史被错误加载。
             return adapter

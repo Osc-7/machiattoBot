@@ -92,9 +92,7 @@ class AutomationIPCServer:
         interval = max(5, int(self._policy.expire_check_interval_seconds))
         while not self._stopped.is_set():
             try:
-                await asyncio.wait_for(
-                    asyncio.shield(self._stopped.wait()), timeout=interval
-                )
+                await asyncio.wait_for(self._stopped.wait(), timeout=interval)
                 break
             except asyncio.TimeoutError:
                 pass
@@ -402,7 +400,7 @@ class AutomationIPCClient:
         }
         try:
             writer.write((json.dumps(req, ensure_ascii=False) + "\n").encode("utf-8"))
-            await writer.drain()
+            await asyncio.wait_for(writer.drain(), timeout=self._timeout_seconds)
             raw = await asyncio.wait_for(
                 reader.readline(), timeout=self._timeout_seconds
             )
@@ -483,7 +481,7 @@ class AutomationIPCClient:
             },
         }
         writer.write((json.dumps(req, ensure_ascii=False) + "\n").encode("utf-8"))
-        await writer.drain()
+        await asyncio.wait_for(writer.drain(), timeout=self._timeout_seconds)
 
         final_result: Optional[Dict[str, Any]] = None
         try:
