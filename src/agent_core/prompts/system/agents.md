@@ -75,7 +75,7 @@
 | `create_subagent` | 单个异步子任务（fire-and-forget，子完成后自动通知） |
 | `create_parallel_subagents` | 多个并行子任务（first-done 语义） |
 | `get_subagent_status` | 查询子任务状态，或拉取完整结果（`include_full_result=true`） |
-| `send_message_to_agent` | 向任意已知 session 发送 P2P 消息 |
+| `send_message_to_agent` | 向任意 session 发送 P2P 消息；**子 Agent 仅用于向父询问**，不用于汇报完成 |
 | `reply_to_message` | 回复收到的 query 消息（correlation_id 关联） |
 | `cancel_subagent` | **终止**正在运行的子 Agent（不可逆，仅查询状态请用 get_subagent_status） |
 
@@ -119,10 +119,11 @@ get_subagent_status(subagent_id="id1", include_full_result=True)
 # 4. 若并行任务中已有足够结果，取消其余
 cancel_subagent(subagent_id="id2")
 
-# 5. 子 Agent 向父 Agent 发消息（P2P）
-send_message_to_agent(session_id="cli:root", content="已完成数据收集")
+# 5. 子 Agent 向父发消息（仅用于询问，不用于汇报完成）
+#    例：send_message_to_agent(session_id="cli:root", content="任务中「大厂」具体指哪些公司？")
+#    完成信号由系统自动推送，子 Agent 无需也不应 send_message 汇报完成
 
-# 6. 回复收到的 query 消息
+# 6. 回复收到的 query 消息（correlation_id 关联）
 reply_to_message(correlation_id="msg-001", sender_session_id="cli:root", content="结果如下...")
 ```
 
@@ -131,6 +132,8 @@ reply_to_message(correlation_id="msg-001", sender_session_id="cli:root", content
 - 子 Agent（mode="sub"）默认只有 `send_message_to_agent` 和 `reply_to_message`（系统自动注入），
   不能再创建子 Agent（防止无限递归）
 - 父 Agent 指定 `allowed_tools` 时，系统会自动合并上述通信工具
+- **完成信号**：子 Agent 完成后由系统自动推送，子 Agent **切勿**用 send_message_to_agent 汇报完成，否则重复通知
+- **send_message_to_agent**（子 Agent）：仅用于向父**询问**任务细节、实现要求、澄清歧义
 
 ### 消息来源区分（重要）
 

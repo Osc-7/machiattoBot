@@ -143,6 +143,10 @@ class KernelScheduler:
         self._session_locks_meta: asyncio.Lock = asyncio.Lock()
         # per-session 推送队列：存放 inject_turn 产生的 AgentRunResult，供前端轮询
         self._push_queues: Dict[str, asyncio.Queue] = {}
+        # session_id -> 当前正在运行的 _run_and_route Task（用于 cancel_session_tasks）
+        self._session_active_task: Dict[str, asyncio.Task] = {}
+        # 已取消的 session_id，用于拦截仍在队列中尚未 dispatch 的请求
+        self._cancelled_sessions: set[str] = set()
 
     async def start(self) -> None:
         """启动调度循环和 TTL 扫描后台任务。
@@ -267,6 +271,29 @@ class KernelScheduler:
             extra={"request_id": request.request_id, "session_id": request.session_id},
         )
 
+    def cancel_session_tasks(self, session_id: str) -> bool:
+        """取消指定 session 的活跃执行任务并标记为已取消。
+
+        同时处理两种情况：
+        - 请求已在执行 (_session_active_task) -> 直接 cancel Task
+        - 请求仍在队列中等待 dispatch -> 加入 _cancelled_sessions，
+          _run_and_route 开头会检查并跳过
+        """
+        self._cancelled_sessions.add(session_id)
+        task = self._session_active_task.get(session_id)
+        if task and not task.done():
+            task.cancel()
+            logger.info(
+                "KernelScheduler: cancelled active task for session_id=%s",
+                session_id,
+            )
+            return True
+        logger.info(
+            "KernelScheduler: marked session_id=%s as cancelled (no active task)",
+            session_id,
+        )
+        return False
+
     async def _dispatch_loop(self) -> None:
         """
         分发循环主体。
@@ -287,7 +314,14 @@ class KernelScheduler:
                 name=f"kernel-req-{request.request_id[:8]}",
             )
             self._active_tasks.add(task)
-            task.add_done_callback(self._active_tasks.discard)
+            self._session_active_task[request.session_id] = task
+
+            def _cleanup_session(t: asyncio.Task, sid: str = request.session_id) -> None:
+                self._active_tasks.discard(t)
+                if self._session_active_task.get(sid) is t:
+                    self._session_active_task.pop(sid, None)
+
+            task.add_done_callback(_cleanup_session)
             # task_done() 使 queue.join() 能正确追踪完成状态
             task.add_done_callback(lambda _: self._queue.task_done())
 
@@ -346,6 +380,20 @@ class KernelScheduler:
         6. 通过 OutputRouter 将结果回传给前端
         """
         session_id = request.session_id
+        if session_id in self._cancelled_sessions:
+            self._cancelled_sessions.discard(session_id)
+            logger.info(
+                "KernelScheduler: skipping cancelled session request session_id=%s request_id=%s",
+                session_id,
+                request.request_id[:8],
+            )
+            if self._router.has_pending(request.request_id):
+                await self._router.deliver_error(
+                    request.request_id,
+                    asyncio.CancelledError("session cancelled before dispatch"),
+                )
+            return
+
         self._inflight_sessions[session_id] += 1
         try:
             # 同 session 的并发请求在此排队，确保 context/turn_id/DB 写入不竞争

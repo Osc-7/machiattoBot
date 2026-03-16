@@ -198,6 +198,41 @@ class TestSubagentRegistry:
         result = registry.cancel("ghost-id")
         assert result is False
 
+    def test_cancel_propagates_to_scheduler(self):
+        """cancel() 应调用 scheduler.cancel_session_tasks(sub_session_id)。"""
+        registry, mock_scheduler = self._make_registry()
+        mock_scheduler.cancel_session_tasks = MagicMock()
+        info = self._make_info("sub-003")
+        registry.register(info)
+        info.bg_task = MagicMock()
+        info.bg_task.done.return_value = False
+
+        registry.cancel("sub-003")
+
+        mock_scheduler.cancel_session_tasks.assert_called_once_with("sub:sub-003")
+
+    def test_on_complete_ignored_after_cancel(self):
+        """on_complete 在 subagent 已 cancelled 时不注入消息。"""
+        registry, mock_scheduler = self._make_registry()
+        info = self._make_info("sub-001")
+        registry.register(info)
+        info.status = "cancelled"
+
+        registry.on_complete("sub-001", "late result")
+
+        mock_scheduler.inject_turn.assert_not_called()
+
+    def test_on_fail_ignored_after_cancel(self):
+        """on_fail 在 subagent 已 cancelled 时不注入消息。"""
+        registry, mock_scheduler = self._make_registry()
+        info = self._make_info("sub-002")
+        registry.register(info)
+        info.status = "cancelled"
+
+        registry.on_fail("sub-002", "late error")
+
+        mock_scheduler.inject_turn.assert_not_called()
+
     def test_on_complete_unknown_subagent_no_crash(self):
         registry, mock_scheduler = self._make_registry()
         registry.on_complete("ghost-id", "result")
@@ -265,6 +300,31 @@ class TestInjectTurn:
             loop.run_until_complete(_run())
         finally:
             loop.close()
+
+    @pytest.mark.asyncio
+    async def test_cancelled_session_skipped_in_dispatch(self):
+        """队列中的请求在 dispatch 时若 session 已取消，则跳过执行并 deliver_error。"""
+        from system.kernel.scheduler import KernelScheduler
+        from agent_core.kernel_interface import KernelRequest
+
+        mock_kernel = MagicMock()
+        mock_core_pool = MagicMock()
+        scheduler = KernelScheduler(kernel=mock_kernel, core_pool=mock_core_pool)
+        await scheduler.start()
+        try:
+            request = KernelRequest.create(
+                text="hello",
+                session_id="sub:skipme",
+                frontend_id="subagent",
+                priority=-1,
+            )
+            future = await scheduler.submit(request)
+            scheduler.cancel_session_tasks("sub:skipme")
+
+            with pytest.raises(asyncio.CancelledError):
+                await future
+        finally:
+            await scheduler.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +430,39 @@ class TestSendMessageToAgentTool:
         assert agent_msg.message_type == "query"
         assert agent_msg.require_reply is True
         assert "需要回复" in req.text
+
+    @pytest.mark.asyncio
+    async def test_send_message_rejected_when_sender_cancelled(self):
+        """_LazySchedulerSendMessageTool：已取消的 subagent 发送消息应被拒绝。"""
+        from system.tools import build_tool_registry
+        from agent_core.kernel_interface import CoreProfile
+        from system.kernel.subagent_registry import SubagentRegistry, SubagentInfo
+
+        registry = SubagentRegistry()
+        registry.set_scheduler(MagicMock())
+        info = SubagentInfo(
+            subagent_id="abc123",
+            parent_session_id="cli:root",
+            task_description="test",
+            status="cancelled",
+        )
+        registry.register(info)
+        reg = build_tool_registry(
+            profile=CoreProfile(mode="full"),
+            subagent_registry=registry,
+            core_pool=MagicMock(),
+        )
+        tool = reg.get("send_message_to_agent")
+        assert tool is not None
+
+        result = await tool.execute(
+            session_id="cli:root",
+            content="尝试发送",
+            __execution_context__={"session_id": "sub:abc123"},
+        )
+
+        assert result.success is False
+        assert result.error == "SUBAGENT_CANCELLED"
 
 
 class TestReplyToMessageTool:

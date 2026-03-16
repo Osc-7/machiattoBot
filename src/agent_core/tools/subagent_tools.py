@@ -101,11 +101,12 @@ async def _run_subagent_task(
     task_text = task_description
     if context:
         task_text = f"{context}\n\n---\n\n{task_text}"
-    # 在 context 中注入父 session_id，供 subagent 通过 send_message_to_agent / reply_to_message 回调
+    # 在 context 中注入父 session_id 与通信规则
     task_text = (
-        f"[系统信息] 你是子 Agent，subagent_id={subagent_id}，"
-        f"父 session_id={parent_session_id}。"
-        f"完成后可用 send_message_to_agent 或 reply_to_message 向父 session 发送消息。\n\n"
+        f"[系统信息] 你是子 Agent，subagent_id={subagent_id}，父 session_id={parent_session_id}。\n\n"
+        f"**完成信号**：任务完成后，将结果作为最终回复返回即可，系统会**自动**向父 Agent 推送完成通知，"
+        f"**切勿**用 send_message_to_agent 汇报完成，否则会导致重复通知。\n\n"
+        f"**send_message_to_agent** 仅用于：需要向父 Agent **询问**任务细节、实现要求、澄清歧义时。\n\n"
         + task_text
     )
 
@@ -529,7 +530,9 @@ class SendMessageToAgentTool(BaseTool):
                 "消息立即投递（inject_turn），目标 session 会被唤醒处理消息。\n"
                 "发送方不等待回复，立即返回 message_id。\n"
                 "若 require_reply=True，目标 Agent 应使用 reply_to_message 回复。\n\n"
-                "可用于：父 → 子的指令、子 → 父的汇报、兄弟 Agent 间的协调。"
+                "**子 Agent 注意**：完成结果由系统自动推送，本工具**仅用于向父询问**任务细节、实现要求、澄清歧义，"
+                "**切勿**用于汇报完成，否则会导致重复通知。\n\n"
+                "主 Agent 可用于：向子下发指令、兄弟 Agent 间协调。"
             ),
             parameters=[
                 ToolParameter(
@@ -559,10 +562,10 @@ class SendMessageToAgentTool(BaseTool):
             ],
             examples=[
                 {
-                    "description": "子 Agent 向父 Agent 汇报进度",
+                    "description": "子 Agent 向父询问任务细节（不用于汇报完成）",
                     "params": {
                         "session_id": "cli:root",
-                        "content": "已完成数据收集阶段，共获取 42 条记录",
+                        "content": "任务描述中「大厂」具体指哪些公司？是否需要包含外企？",
                     },
                 },
                 {
@@ -579,9 +582,17 @@ class SendMessageToAgentTool(BaseTool):
                 "若需等待回复，在 content 中说明期望，并设置 require_reply=True",
                 "目标 session 必须已存在（在 CorePool 中或可从 checkpoint 恢复）",
                 "子 Agent 可从 __execution_context__.session_id 获取自身 session_id",
+                "子 Agent：完成信号由系统推送，本工具仅用于向父询问，不用于汇报完成",
             ],
             tags=["multi-agent", "p2p", "messaging"],
         )
+
+    def _check_sender_cancelled(self, sender_session_id: str) -> Optional[ToolResult]:
+        """若发送者是已取消的 subagent 则返回拒绝结果；否则返回 None。
+
+        子类（如 _LazySchedulerSendMessageTool）可 override 以接入 SubagentRegistry。
+        """
+        return None
 
     async def execute(self, **kwargs: Any) -> ToolResult:
         target_session_id = (kwargs.get("session_id") or "").strip()
@@ -599,6 +610,11 @@ class SendMessageToAgentTool(BaseTool):
 
         exec_ctx: Dict[str, Any] = kwargs.get("__execution_context__") or {}
         sender_session_id: str = exec_ctx.get("session_id", "unknown")
+
+        # 纵深防御：子类可 override _check_sender_cancelled 拒绝已取消的 subagent 发消息
+        reject = self._check_sender_cancelled(sender_session_id)
+        if reject is not None:
+            return reject
 
         from agent_core.kernel_interface.action import AgentMessage, KernelRequest
 

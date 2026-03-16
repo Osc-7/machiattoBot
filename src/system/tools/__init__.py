@@ -388,6 +388,21 @@ class _LazySchedulerSendMessageTool(SendMessageToAgentTool):
             raise RuntimeError("KernelScheduler not yet bound to SubagentRegistry")
         return s
 
+    def _check_sender_cancelled(self, sender_session_id: str):
+        """拒绝已取消的 subagent 发送消息（纵深防御）。"""
+        if not sender_session_id.startswith("sub:"):
+            return None
+        subagent_id = sender_session_id[4:]
+        info = self._registry.get(subagent_id)
+        if info is not None and info.status == "cancelled":
+            from agent_core.tools.base import ToolResult
+            return ToolResult(
+                success=False,
+                message="子 Agent 已被取消，无法发送消息",
+                error="SUBAGENT_CANCELLED",
+            )
+        return None
+
 
 class _LazySchedulerReplyToMessageTool(ReplyToMessageTool):
     """reply_to_message：通过 registry 懒加载 scheduler。"""

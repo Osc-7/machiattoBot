@@ -116,6 +116,13 @@ class SubagentRegistry:
             )
             return
 
+        if info.status == "cancelled":
+            logger.info(
+                "SubagentRegistry.on_complete: ignoring — subagent already cancelled subagent_id=%s",
+                subagent_id,
+            )
+            return
+
         info.status = "completed"
         info.result = result
         info.completed_at = time.time()
@@ -152,6 +159,13 @@ class SubagentRegistry:
         if info is None:
             logger.warning(
                 "SubagentRegistry.on_fail: unknown subagent_id=%s", subagent_id
+            )
+            return
+
+        if info.status == "cancelled":
+            logger.info(
+                "SubagentRegistry.on_fail: ignoring — subagent already cancelled subagent_id=%s",
+                subagent_id,
             )
             return
 
@@ -218,6 +232,10 @@ class SubagentRegistry:
                 info.parent_session_id,
                 extra={"subagent_id": subagent_id, "parent_session_id": info.parent_session_id, "status": "cancelled"},
             )
+
+        sub_session_id = f"sub:{subagent_id}"
+        if self._scheduler is not None:
+            self._scheduler.cancel_session_tasks(sub_session_id)
 
         info.status = "cancelled"
         info.completed_at = time.time()
