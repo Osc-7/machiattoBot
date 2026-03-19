@@ -25,6 +25,9 @@ USER_ACTIONS_FILTER_MENTIONS = 7
 # notifications notification_type: 1 = mentioned（含自 @）
 NOTIFICATION_TYPE_MENTIONED = (1, "1", "mentioned")
 
+# 并发回复上限：不同用户可并行处理，受此限制避免 429 和 daemon 过载
+MAX_CONCURRENT_REPLIES = 6
+
 logger = logging.getLogger("shuiyuan_connector")
 
 
@@ -305,35 +308,55 @@ async def _poll_topic_watch(
 
     from .session import run_shuiyuan_reply
 
+    sem = asyncio.Semaphore(MAX_CONCURRENT_REPLIES)
     had_mention = False
-    for topic_id, post_number, post_id, post in items:
+
+    async def _run_one(
+        topic_id: int,
+        post_number: int,
+        post_id: int,
+        post: dict,
+    ) -> bool:
         if not topic_id or not post_id:
-            continue
-        await asyncio.sleep(1.0)  # 降低 429 风险
-        raw = (post.get("raw") or post.get("cooked") or "").strip()
-        username = (post.get("username") or "").strip()
-        logger.info(
-            "触发水源回复 topic=%s post=%s user=%s", topic_id, post_number, username
-        )
-        thread_posts = posts_by_topic.get(topic_id) if posts_by_topic else None
-        try:
-            result = await run_shuiyuan_reply(
-                username=username,
-                topic_id=int(topic_id),
-                user_message=raw,
-                reply_to_post_number=int(post_number) if post_number else None,
-                reply_to_post_id=int(post_id) if post_id else None,
-                config=config,
-                thread_posts=thread_posts,
+            return False
+        async with sem:
+            await asyncio.sleep(1.0)  # 降低 429 风险
+            raw = (post.get("raw") or post.get("cooked") or "").strip()
+            username = (post.get("username") or "").strip()
+            logger.info(
+                "触发水源回复 topic=%s post=%s user=%s", topic_id, post_number, username
             )
-            # 只要有一次满足规则并调用了回复，就视为本轮有「活动」
-            had_mention = True
-            if result:
-                logger.info("水源回复完成")
-            else:
+            thread_posts = posts_by_topic.get(topic_id) if posts_by_topic else None
+            try:
+                result = await run_shuiyuan_reply(
+                    username=username,
+                    topic_id=int(topic_id),
+                    user_message=raw,
+                    reply_to_post_number=int(post_number) if post_number else None,
+                    reply_to_post_id=int(post_id) if post_id else None,
+                    config=config,
+                    thread_posts=thread_posts,
+                )
+                if result:
+                    logger.info("水源回复完成")
+                    return True
                 logger.warning("水源回复返回空")
-        except Exception as e:
-            logger.exception("水源回复失败: %s", e)
+                return True  # 仍视为有活动
+            except Exception as e:
+                logger.exception("水源回复失败: %s", e)
+                return True  # 异常也视为有活动（已尝试处理）
+
+    tasks = [
+        _run_one(int(topic_id), int(post_number), int(post_id), post)
+        for topic_id, post_number, post_id, post in items
+        if topic_id and post_id
+    ]
+    if tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        had_mention = True  # 本轮有提及需要处理
+        for r in results:
+            if isinstance(r, Exception):
+                logger.exception("并发回复任务异常: %s", r)
 
     return stream_map, had_mention
 
@@ -382,50 +405,69 @@ async def _poll_once(
 
     from .session import is_invocation_valid_from_raw, run_shuiyuan_reply
 
-    for topic_id, post_number, post_id in new_items:
+    sem = asyncio.Semaphore(MAX_CONCURRENT_REPLIES)
+
+    async def _run_one(topic_id: int, post_number: int, post_id: int) -> None:
         if not topic_id or not post_id:
-            continue
+            return
+        async with sem:
+            await asyncio.sleep(0.6)
+            try:
+                post = await asyncio.to_thread(
+                    client.get_post_by_id, topic_id, int(post_id)
+                )
+            except Exception as e:
+                logger.warning(
+                    "获取帖子失败 topic=%s post_id=%s: %s", topic_id, post_id, e
+                )
+                return
 
-        await asyncio.sleep(0.6)
-        try:
-            post = client.get_post_by_id(topic_id, int(post_id))
-        except Exception as e:
-            logger.warning("获取帖子失败 topic=%s post_id=%s: %s", topic_id, post_id, e)
-            continue
+            if not post:
+                logger.warning(
+                    "无法获取帖子 topic=%s post_id=%s", topic_id, post_id
+                )
+                return
 
-        if not post:
-            logger.warning("无法获取帖子 topic=%s post_id=%s", topic_id, post_id)
-            continue
+            raw = (post.get("raw") or post.get("cooked") or "").strip()
+            username = (post.get("username") or "").strip()
 
-        raw = (post.get("raw") or post.get("cooked") or "").strip()
-        username = (post.get("username") or "").strip()
+            ok, reason = is_invocation_valid_from_raw(raw, config=config)
+            if not ok:
+                logger.debug("跳过不满足规则 post_id=%s: %s", post_id, reason)
+                return
 
-        # 使用正文解析规则判断是否满足调用条件（@主人 + trigger），
-        # 兼容「别人 @ 你」和「自己 @ 自己」两种情况。
-
-        ok, reason = is_invocation_valid_from_raw(raw, config=config)
-        if not ok:
-            logger.debug("跳过不满足规则 post_id=%s: %s", post_id, reason)
-            continue
-
-        logger.info(
-            "触发水源回复 topic=%s post=%s user=%s", topic_id, post_number, username
-        )
-        try:
-            result = await run_shuiyuan_reply(
-                username=username,
-                topic_id=int(topic_id),
-                user_message=raw,
-                reply_to_post_number=int(post_number) if post_number else None,
-                reply_to_post_id=int(post_id) if post_id else None,
-                config=config,
+            logger.info(
+                "触发水源回复 topic=%s post=%s user=%s",
+                topic_id,
+                post_number,
+                username,
             )
-            if result:
-                logger.info("水源回复完成")
-            else:
-                logger.warning("水源回复返回空")
-        except Exception as e:
-            logger.exception("水源回复失败: %s", e)
+            try:
+                result = await run_shuiyuan_reply(
+                    username=username,
+                    topic_id=int(topic_id),
+                    user_message=raw,
+                    reply_to_post_number=int(post_number) if post_number else None,
+                    reply_to_post_id=int(post_id) if post_id else None,
+                    config=config,
+                )
+                if result:
+                    logger.info("水源回复完成")
+                else:
+                    logger.warning("水源回复返回空")
+            except Exception as e:
+                logger.exception("水源回复失败: %s", e)
+
+    tasks = [
+        _run_one(int(topic_id), int(post_number), int(post_id))
+        for topic_id, post_number, post_id in new_items
+        if topic_id and post_id
+    ]
+    if tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in results:
+            if isinstance(r, Exception):
+                logger.exception("并发回复任务异常: %s", r)
 
     return new_stream
 

@@ -238,7 +238,7 @@ class TestSessionManager:
 
         created_agents = []
 
-        def fake_create_agent():
+        def fake_create_agent(session_id="", **kwargs):
             ag = self._make_mock_agent("done")
             created_agents.append(ag)
             return ag
@@ -265,7 +265,7 @@ class TestSessionManager:
 
         created_agents = []
 
-        def fake_create_agent():
+        def fake_create_agent(session_id="", **kwargs):
             ag = self._make_mock_agent("pong")
             created_agents.append(ag)
             return ag
@@ -288,7 +288,7 @@ class TestSessionManager:
         manager = SessionManager(tools_factory=lambda: [])
         created_agents = []
 
-        def fake_create_agent():
+        def fake_create_agent(session_id="", **kwargs):
             ag = self._make_mock_agent()
             created_agents.append(ag)
             return ag
@@ -308,7 +308,7 @@ class TestSessionManager:
         manager = SessionManager(tools_factory=lambda: [])
         agents = []
 
-        def fake_create_agent():
+        def fake_create_agent(session_id="", **kwargs):
             ag = self._make_mock_agent()
             agents.append(ag)
             return ag

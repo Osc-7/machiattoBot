@@ -390,6 +390,8 @@ class KernelScheduler:
             agent = None
             summary_task = None
             summary_recent_start = None
+            turn_id = 0
+            run_result = None
             try:
                 # 准备钩子
                 hooks = None
@@ -444,7 +446,9 @@ class KernelScheduler:
                 # Core 级生命周期日志：记录本轮输入（在 prepare_turn 之后可获得 turn_id）
                 if core_logger is not None:
                     try:
-                        core_logger.on_turn_start(turn_id, request.text)
+                        core_logger.on_turn_start(
+                            turn_id, request.text, request_id=request.request_id
+                        )
                     except Exception:
                         pass
 
@@ -462,13 +466,14 @@ class KernelScheduler:
                 # 后处理
                 await agent._finalize_turn(run_result, summary_task, summary_recent_start)
 
-                # Core 级生命周期日志：记录本轮输出
+                # Core 级生命周期日志：记录本轮输出（正常路径）
                 if core_logger is not None:
                     try:
                         core_logger.on_turn_end(
                             turn_id,
                             output_text=run_result.output_text,
                             metadata=run_result.metadata,
+                            request_id=request.request_id,
                         )
                     except Exception:
                         pass
@@ -488,6 +493,19 @@ class KernelScheduler:
                         await agent._finalize_turn(None, summary_task, summary_recent_start)
                     except Exception:
                         pass
+                # 异常/取消路径：记录 turn_end，保证每轮都有结束记录
+                entry = self._core_pool.get_entry(session_id)
+                core_logger = getattr(entry, "logger", None) if entry is not None else None
+                if core_logger is not None:
+                    try:
+                        core_logger.on_turn_end(
+                            turn_id,
+                            output_text="",
+                            metadata={"cancelled": True, "reason": "kernel task cancelled"},
+                            request_id=request.request_id,
+                        )
+                    except Exception:
+                        pass
                 await self._out_bus.publish_error(
                     request.request_id,
                     asyncio.CancelledError("kernel task cancelled"),
@@ -498,6 +516,20 @@ class KernelScheduler:
                 if agent is not None:
                     try:
                         await agent._finalize_turn(None, summary_task, summary_recent_start)
+                    except Exception:
+                        pass
+                # 异常路径：记录 turn_end，保证每轮都有结束记录
+                entry = self._core_pool.get_entry(session_id)
+                core_logger = getattr(entry, "logger", None) if entry is not None else None
+                if core_logger is not None:
+                    try:
+                        err_output = f"[后台任务处理出错] {exc}"
+                        core_logger.on_turn_end(
+                            turn_id,
+                            output_text=err_output,
+                            metadata={"error": str(exc), "error_type": type(exc).__name__},
+                            request_id=request.request_id,
+                        )
                     except Exception:
                         pass
                 logger.exception(

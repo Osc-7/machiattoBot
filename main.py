@@ -31,21 +31,24 @@ def _load_config() -> Config:
         sys.exit(1)
 
 
-def _parse_args(argv: List[str]) -> List[str]:
+def _parse_args(argv: List[str]) -> tuple[List[str], bool]:
     """
     解析命令行参数。
 
     Returns:
-        remaining_args: [script_name, ...] 形式，其中 script_name 后为可选的单条命令。
+        remaining_args: [script_name, ...] 形式
+        use_kernel_shell: 若首参为 shell/terminal 则为 True，表示进入 Kernel 系统控制台
     """
     parser = argparse.ArgumentParser(description="Schedule Agent CLI")
     parser.add_argument(
         "command",
         nargs="*",
-        help="单条要执行的命令（不传则进入交互模式）",
+        help="shell=系统控制台 | 单条命令（不传则进入对话交互）",
     )
     parsed, unknown = parser.parse_known_args(argv[1:] if len(argv) > 1 else [])
-    return [argv[0]] + (getattr(parsed, "command", []) or []) + unknown
+    rest = getattr(parsed, "command", []) or []
+    use_shell = len(rest) >= 1 and rest[0].lower() in ("shell", "terminal")
+    return [argv[0]] + rest + unknown, use_shell
 
 
 async def run_single_command(agent: Any, command: str) -> str:
@@ -54,8 +57,12 @@ async def run_single_command(agent: Any, command: str) -> str:
     return result.output_text
 
 
-async def _dispatch(agent: Any, args: List[str]) -> None:
-    """根据命令行参数决定执行单条命令还是进入交互循环。"""
+async def _dispatch(agent: Any, args: List[str], use_kernel_shell: bool = False) -> None:
+    """根据命令行参数决定：系统控制台 Shell / 单条命令 / 对话交互。"""
+    if use_kernel_shell:
+        from system.kernel.shell import run_kernel_shell
+        await run_kernel_shell(agent)
+        return
     if args and len(args) > 1:
         command = " ".join(args[1:])
         response = await run_single_command(agent, command)
@@ -69,7 +76,7 @@ async def main_async(args: Optional[List[str]] = None):
     raw_args = args if args is not None else sys.argv
     if not raw_args:
         raw_args = ["main.py"]
-    remaining = _parse_args(raw_args)
+    remaining, use_kernel_shell = _parse_args(raw_args)
 
     _load_config()
 
@@ -91,7 +98,7 @@ async def main_async(args: Optional[List[str]] = None):
 
     await ipc_client.connect()
     try:
-        await _dispatch(ipc_client, remaining)
+        await _dispatch(ipc_client, remaining, use_kernel_shell=use_kernel_shell)
     finally:
         await ipc_client.close()
 

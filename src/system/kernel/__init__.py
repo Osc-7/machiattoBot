@@ -28,6 +28,12 @@ from agent_core.kernel_interface import (
 from .core_pool import CoreEntry, CorePool
 from .kernel import AgentKernel
 from .scheduler import KernelScheduler
+from .terminal import (
+    CoreInfo,
+    KernelTerminal,
+    SessionDetail,
+    SystemStatus,
+)
 from .output_bus import OutputBus
 from .subagent_registry import SubagentInfo, SubagentRegistry
 from .summarizer import SessionSummarizer
@@ -50,9 +56,13 @@ __all__ = [
     # Kernel 核心组件
     "AgentKernel",
     "CoreEntry",
+    "CoreInfo",
     "CorePool",
     "KernelScheduler",
+    "KernelTerminal",
     "OutputBus",
+    "SessionDetail",
+    "SystemStatus",
     "SessionSummarizer",
     "SubagentInfo",
     "SubagentRegistry",

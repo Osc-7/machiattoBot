@@ -32,9 +32,9 @@ class MemorySearchLongTermTool(BaseTool):
     def get_definition(self) -> ToolDefinition:
         return ToolDefinition(
             name=self.name,
-            description="""在长期记忆（提炼出的经验、决策、教训、约束等）中检索。
+            description="""在长期记忆中检索（提炼出的经验、决策、教训、最近话题摘要 recent_topic 等）。
 
-当自动注入的 context 不足，需要补充「历史经验」「之前决策」「教训」时使用。
+当需要「历史经验」「之前决策」「教训」或「之前讨论过的主题/话题」（如课程、作业、项目）时使用。
 短期会话和 MEMORY.md 已自动注入，无需检索。""",
             parameters=[
                 ToolParameter(
@@ -96,6 +96,7 @@ class MemorySearchContentTool(BaseTool):
             description="""在内容记忆中检索（笔记、会议记录、讲义、文档等）。
 
 当需要查找「笔记」「文档」「会议记录」「讲义内容」时使用。
+注意：之前聊过的话题摘要（recent_topic）不在此，应使用 memory_search_long_term。
 短期会话和 MEMORY.md 已自动注入，无需检索。""",
             parameters=[
                 ToolParameter(
@@ -134,7 +135,7 @@ class MemorySearchContentTool(BaseTool):
             return ToolResult(
                 success=True,
                 data={"results": []},
-                message="未找到相关内容记忆",
+                message="未找到相关内容记忆。若在找「之前聊过的话题/讨论过的主题」，可尝试 memory_search_long_term。",
             )
         return ToolResult(
             success=True,

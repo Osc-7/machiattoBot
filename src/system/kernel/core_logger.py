@@ -41,6 +41,7 @@ class CoreLifecycleLogger:
     _file: Optional[IO[str]] = field(default=None, repr=False)
     enable_detailed_log: bool = field(default=False, repr=False)
     max_system_prompt_log_len: int = field(default=0, repr=False)
+    _current_request_id: str = field(default="", repr=False)
 
     def __post_init__(self) -> None:
         base = Path(self.base_dir or "./logs/sessions")
@@ -66,6 +67,8 @@ class CoreLifecycleLogger:
     def _write(self, record: Dict[str, Any]) -> None:
         if self._closed or self._file is None:
             return
+        if self._current_request_id and "request_id" not in record:
+            record = {**record, "request_id": self._current_request_id}
         try:
             line = json.dumps(record, ensure_ascii=False) + "\n"
             self._file.write(line)
@@ -88,7 +91,11 @@ class CoreLifecycleLogger:
             }
         )
 
-    def on_turn_start(self, turn_id: int, text: str) -> None:
+    def on_turn_start(
+        self, turn_id: int, text: str, *, request_id: str = ""
+    ) -> None:
+        if request_id:
+            self._current_request_id = request_id
         self._write(
             {
                 "event": "turn_start",
@@ -96,11 +103,17 @@ class CoreLifecycleLogger:
                 "session_id": self.session_id,
                 "turn_id": turn_id,
                 "input": text,
+                **({"request_id": request_id} if request_id else {}),
             }
         )
 
     def on_turn_end(
-        self, turn_id: int, *, output_text: str, metadata: Dict[str, Any] | None = None
+        self,
+        turn_id: int,
+        *,
+        output_text: str,
+        metadata: Dict[str, Any] | None = None,
+        request_id: str = "",
     ) -> None:
         record: Dict[str, Any] = {
             "event": "turn_end",
@@ -109,6 +122,8 @@ class CoreLifecycleLogger:
             "turn_id": turn_id,
             "output": output_text,
         }
+        if request_id:
+            record["request_id"] = request_id
         if metadata:
             record["metadata"] = metadata
         self._write(record)

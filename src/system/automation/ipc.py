@@ -7,9 +7,12 @@ import inspect
 import json
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
+if TYPE_CHECKING:
+    from system.kernel.terminal import KernelTerminal
 
 from agent_core.interfaces import (
     AgentHooks,
@@ -47,12 +50,14 @@ class AutomationIPCServer:
         source: str = "cli",
         socket_path: Optional[str] = None,
         policy: Optional[IPCServerPolicy] = None,
+        terminal: Optional["KernelTerminal"] = None,
     ) -> None:
         self._gateway = gateway
         self._owner_id = owner_id.strip() or "root"
         self._source = source.strip() or "cli"
         self._socket_path = socket_path or default_socket_path()
         self._policy = policy or IPCServerPolicy()
+        self._terminal = terminal
         self._server: Optional[asyncio.base_events.Server] = None
         self._expire_task: Optional[asyncio.Task[Any]] = None
         self._stopped = asyncio.Event()
@@ -359,6 +364,66 @@ class AutomationIPCServer:
                 "turn_count": turn_count,
             }
 
+        # ── KernelTerminal 系统控制台 RPC ─────────────────────────────────
+        if method.startswith("terminal_"):
+            if self._terminal is None:
+                raise ValueError("KernelTerminal not available")
+            t = self._terminal
+        else:
+            t = None
+        if t is not None:
+            if method == "terminal_ps":
+                return {"cores": [asdict(c) for c in t.ps()]}
+
+            if method == "terminal_top":
+                return asdict(t.top())
+
+            if method == "terminal_queue":
+                return t.queue()
+
+            if method == "terminal_inspect":
+                session_id = str(params.get("session_id") or "").strip()
+                if not session_id:
+                    raise ValueError("session_id 不能为空")
+                return asdict(t.inspect(session_id))
+
+            if method == "terminal_kill":
+                session_id = str(params.get("session_id") or "").strip()
+                if not session_id:
+                    raise ValueError("session_id 不能为空")
+                await t.kill(session_id)
+                return {"ok": True}
+
+            if method == "terminal_cancel":
+                session_id = str(params.get("session_id") or "").strip()
+                if not session_id:
+                    raise ValueError("session_id 不能为空")
+                cancelled = await t.cancel(session_id)
+                return {"cancelled": cancelled}
+
+            if method == "terminal_spawn":
+                session_id = str(params.get("session_id") or "").strip()
+                if not session_id:
+                    raise ValueError("session_id 不能为空")
+                source = str(params.get("source") or "system").strip() or "system"
+                user_id = str(params.get("user_id") or "root").strip() or "root"
+                core_info = await t.spawn(session_id, source=source, user_id=user_id)
+                return asdict(core_info)
+
+            if method == "terminal_attach":
+                session_id = str(params.get("session_id") or "").strip()
+                text = str(params.get("text") or "")
+                if not session_id:
+                    raise ValueError("session_id 不能为空")
+                result = await t.attach(session_id, text)
+                return {
+                    "output_text": result.output_text,
+                    "metadata": getattr(result, "metadata", {}),
+                    "attachments": getattr(result, "attachments", []),
+                }
+
+            raise ValueError(f"unknown terminal method: {method}")
+
         raise ValueError(f"unknown method: {method}")
 
 
@@ -577,4 +642,60 @@ class AutomationIPCClient:
             output_text=str(data.get("output_text") or ""),
             metadata=meta_dict,
             attachments=attachments,
+        )
+
+    # ── KernelTerminal 系统控制台（需 daemon 已注入 terminal）───────────────
+
+    async def terminal_ps(self) -> list:
+        """列出所有活跃 Core。返回 [CoreInfo 的 dict, ...]。"""
+        data = await self._request("terminal_ps", {})
+        cores = data.get("cores")
+        return cores if isinstance(cores, list) else []
+
+    async def terminal_top(self) -> Dict[str, Any]:
+        """系统概览：active_cores, max_cores, queue_depth, inflight_tasks, uptime_seconds。"""
+        data = await self._request("terminal_top", {})
+        return data if isinstance(data, dict) else {}
+
+    async def terminal_queue(self) -> Dict[str, Any]:
+        """队列状态：queue_size, inflight_sessions, cancelled_sessions, active_task_count。"""
+        data = await self._request("terminal_queue", {})
+        return data if isinstance(data, dict) else {}
+
+    async def terminal_inspect(self, session_id: str) -> Dict[str, Any]:
+        """查看指定 session 的详细信息。"""
+        return await self._request("terminal_inspect", {"session_id": session_id})
+
+    async def terminal_kill(self, session_id: str) -> None:
+        """终结指定 Core。"""
+        await self._request("terminal_kill", {"session_id": session_id})
+
+    async def terminal_cancel(self, session_id: str) -> bool:
+        """取消该 session 正在运行的任务，不销毁 Core。返回是否取消了任务。"""
+        data = await self._request("terminal_cancel", {"session_id": session_id})
+        return bool(data.get("cancelled", False))
+
+    async def terminal_spawn(
+        self,
+        session_id: str,
+        *,
+        source: str = "system",
+        user_id: str = "root",
+    ) -> Dict[str, Any]:
+        """创建新 Core。返回 CoreInfo 的 dict。"""
+        return await self._request(
+            "terminal_spawn",
+            {"session_id": session_id, "source": source, "user_id": user_id},
+        )
+
+    async def terminal_attach(self, session_id: str, text: str) -> AgentRunResult:
+        """以系统身份向指定 session 发一条消息，等待 Agent 回复。"""
+        data = await self._request(
+            "terminal_attach",
+            {"session_id": session_id, "text": text},
+        )
+        return AgentRunResult(
+            output_text=str(data.get("output_text") or ""),
+            metadata=data.get("metadata") or {},
+            attachments=data.get("attachments") or [],
         )

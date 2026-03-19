@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from agent_core.config import Config, get_config
 from agent_core.adapters import CoreSessionAdapter
@@ -21,6 +21,14 @@ from agent_core.tools import BaseTool
 from .agent_task import ContextPolicy
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_session_id(session_id: str) -> Tuple[str, str]:
+    """从 session_id 解析 source 和 user_id。如 cron:daily_memory_sync -> (cron, daily_memory_sync)。"""
+    if ":" in session_id:
+        parts = session_id.split(":", 1)
+        return (parts[0].strip() or "schedule", parts[1].strip() or "root")
+    return ("schedule", session_id.strip() or "root")
 
 
 # Lazy import to avoid circular dependency issues at module load time.
@@ -77,9 +85,19 @@ class SessionManager:
 
     async def close_session(self, session_id: str) -> None:
         """关闭并移除指定的 persistent session。"""
-        agent = self._sessions.pop(session_id, None)
-        if agent is not None:
-            await agent.close()
+        session = self._sessions.pop(session_id, None)
+        if session is not None:
+            raw = getattr(session, "raw_agent", None)
+            if raw is not None and hasattr(raw, "_session_logger"):
+                sl = getattr(raw, "_session_logger", None)
+                if sl is not None and hasattr(sl, "on_core_end"):
+                    try:
+                        maybe = sl.on_core_end(stats=None)
+                        if inspect.isawaitable(maybe):
+                            await maybe
+                    except Exception:
+                        pass
+            await session.close()
             logger.debug("Closed persistent session: %s", session_id)
 
     async def close_all(self) -> None:
@@ -96,19 +114,60 @@ class SessionManager:
     # 内部实现
     # ------------------------------------------------------------------
 
-    def _create_agent(self):
+    def _create_agent(
+        self,
+        session_id: str,
+        *,
+        session_logger: Optional[Any] = None,
+    ):
         AgentCore = _import_schedule_agent()
         tools = self._tools_factory() if self._tools_factory else []
+        source, user_id = _parse_session_id(session_id)
         agent = AgentCore(
             config=self._config,
             tools=tools,
             max_iterations=self._config.agent.max_iterations,
             timezone=self._config.time.timezone,
+            session_logger=session_logger,
+            user_id=user_id,
+            source=source,
         )
         return agent
 
-    def _create_session(self) -> CoreSession:
-        return CoreSessionAdapter(self._create_agent())
+    def _create_session_logger(self, session_id: str) -> Optional[Any]:
+        """为 SessionManager 路径创建 CoreLifecycleLogger，补齐定时任务等 trace。"""
+        log_cfg = getattr(self._config, "logging", None)
+        if not log_cfg or not getattr(log_cfg, "enable_session_log", True):
+            return None
+        try:
+            from system.kernel.core_logger import CoreLifecycleLogger
+
+            log_dir = getattr(log_cfg, "session_log_dir", "./logs/sessions")
+            enable_detailed = getattr(log_cfg, "enable_detailed_log", False)
+            max_sp_len = getattr(log_cfg, "max_system_prompt_log_len", 2000)
+            source, user_id = _parse_session_id(session_id)
+            logger_obj = CoreLifecycleLogger(
+                base_dir=log_dir,
+                source=source,
+                user_id=user_id,
+                session_id=session_id,
+                enable_detailed_log=enable_detailed,
+                max_system_prompt_log_len=max_sp_len,
+            )
+            logger_obj.on_core_start(profile=None)
+            return logger_obj
+        except Exception as exc:
+            logger.warning(
+                "SessionManager: CoreLifecycleLogger creation failed for session=%s: %s",
+                session_id,
+                exc,
+            )
+            return None
+
+    def _create_session(self, session_id: str) -> CoreSession:
+        session_logger = self._create_session_logger(session_id)
+        agent = self._create_agent(session_id, session_logger=session_logger)
+        return CoreSessionAdapter(agent)
 
     async def _run_ephemeral(
         self,
@@ -116,7 +175,7 @@ class SessionManager:
         on_trace_event: Optional[Callable[[Dict[str, Any]], Any]] = None,
     ) -> str:
         """每次新建 Agent，执行完立即关闭。不持久化任何对话记忆。"""
-        session = self._create_session()
+        session = self._create_session(command.session_id)
         try:
             activate = getattr(session, "activate_session", None)
             if callable(activate):
@@ -129,6 +188,17 @@ class SessionManager:
             )
             return run_result.output_text
         finally:
+            # 关闭 session 时确保 core_logger 写入 core_end
+            raw = getattr(session, "raw_agent", None)
+            if raw is not None and hasattr(raw, "_session_logger"):
+                sl = getattr(raw, "_session_logger", None)
+                if sl is not None and hasattr(sl, "on_core_end"):
+                    try:
+                        maybe = sl.on_core_end(stats=None)
+                        if inspect.isawaitable(maybe):
+                            await maybe
+                    except Exception:
+                        pass
             await session.close()
 
     async def _run_persistent(
@@ -139,7 +209,7 @@ class SessionManager:
         """复用同一 Agent 实例，保持对话上下文。启动时会自动加载 LongTermMemory（由 Agent 内部处理）。"""
         session_id = command.session_id
         if session_id not in self._sessions:
-            session = self._create_session()
+            session = self._create_session(session_id)
             activate = getattr(session, "activate_session", None)
             if callable(activate):
                 maybe = activate(session_id)

@@ -80,6 +80,7 @@ class CoreSessionAdapter:
         # 包装 hooks，在流式回调中同时派发 CoreEvent
         wrapped_hooks = self._wrap_hooks_with_events(hooks)
 
+        run_result = None
         try:
             run_result = await self._run_via_kernel(
                 agent_input, content_items, wrapped_hooks
@@ -108,6 +109,26 @@ class CoreSessionAdapter:
                 CoreEvent(name="agent_error", payload={"error": str(exc)}),
             )
             raise
+        finally:
+            # SessionManager 路径：记录 turn_end（Scheduler 路径在 scheduler 内调用）
+            sl = getattr(self._agent, "_session_logger", None)
+            if sl is not None and hasattr(sl, "on_turn_end"):
+                try:
+                    turn_id = getattr(self._agent, "_current_turn_id", 0)
+                    output = run_result.output_text if run_result else ""
+                    meta = dict(run_result.metadata) if run_result and run_result.metadata else {}
+                    if run_result is None:
+                        meta["error"] = "run failed before result"
+                    maybe = sl.on_turn_end(
+                        turn_id,
+                        output_text=output,
+                        metadata=meta if meta else None,
+                        request_id="",
+                    )
+                    if inspect.isawaitable(maybe):
+                        await maybe
+                except Exception:
+                    pass
 
     async def _run_via_kernel(
         self,
@@ -122,6 +143,16 @@ class CoreSessionAdapter:
         turn_id, summary_task, summary_recent_start = await self._agent.prepare_turn(
             input_text, content_items
         )
+
+        # SessionManager 路径：记录 turn_start（Scheduler 路径在 scheduler 内调用）
+        sl = getattr(self._agent, "_session_logger", None)
+        if sl is not None and hasattr(sl, "on_turn_start"):
+            try:
+                maybe = sl.on_turn_start(turn_id, input_text, request_id="")
+                if inspect.isawaitable(maybe):
+                    await maybe
+            except Exception:
+                pass
 
         # AgentKernel 驱动 run_loop()（Kernel 只需 ToolRegistry，LLM 由 AgentCore 直接调用）
         kernel = AgentKernel(tool_registry=self._agent._tool_registry)

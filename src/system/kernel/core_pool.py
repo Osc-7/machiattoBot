@@ -560,7 +560,12 @@ class CorePool:
                     max_system_prompt_log_len=max_sp_len,  # -1 表示不截断
                 )
                 core_logger.on_core_start(profile=profile)
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "CorePool: CoreLifecycleLogger creation failed for session=%s: %s",
+                    session_id,
+                    exc,
+                )
                 core_logger = None
 
             # 将 CoreProfile 注入 agent，供 InternalLoader 过滤工具列表

@@ -39,6 +39,7 @@ from system.kernel import (
     CoreProfile,
     KernelRequest,
     KernelScheduler,
+    KernelTerminal,
     SessionSummarizer,
     SubagentRegistry,
 )
@@ -275,6 +276,10 @@ async def _main() -> None:
     # 后绑定 scheduler：工具装配在 CorePool._load() 时已引用 registry，
     # 此时 scheduler 已初始化，可以安全绑定。
     sub_registry.set_scheduler(scheduler_runtime)
+    kernel_terminal = KernelTerminal(
+        scheduler=scheduler_runtime,
+        core_pool=core_pool,
+    )
     stop_event = asyncio.Event()
     consumer_task = asyncio.create_task(
         _consume_loop(queue, scheduler_runtime, stop_event),
@@ -336,6 +341,7 @@ async def _main() -> None:
             source=source,
             socket_path=default_socket_path(),
             policy=IPCServerPolicy(expire_check_interval_seconds=60),
+            terminal=kernel_terminal,
         )
 
         await scheduler_runtime.start()
