@@ -312,9 +312,8 @@ class CreateSubagentTool(BaseTool):
                 ToolParameter(
                     name="max_iterations",
                     type="integer",
-                    description="子 Agent 最大迭代次数（默认 8）",
+                    description="子 Agent 最大迭代次数（默认从 config.yaml 的 agent.subagent_max_iterations 读取，配置未设置时默认 50）",
                     required=False,
-                    default=8,
                 ),
             ],
             examples=[
@@ -345,6 +344,8 @@ class CreateSubagentTool(BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
+        from agent_core.config import get_config
+
         task = kwargs.get("task", "").strip()
         if not task:
             return ToolResult(
@@ -355,7 +356,18 @@ class CreateSubagentTool(BaseTool):
 
         allowed_tools: Optional[List[str]] = kwargs.get("allowed_tools")
         context: Optional[str] = kwargs.get("context")
-        max_iterations: int = int(kwargs.get("max_iterations") or 8)
+        
+        # max_iterations：优先使用传入值，否则从配置读取，最后兜底 50
+        max_iterations_param = kwargs.get("max_iterations")
+        if max_iterations_param is not None:
+            max_iterations = int(max_iterations_param)
+        else:
+            config = get_config()
+            max_iterations = getattr(
+                getattr(config, "agent", None),
+                "subagent_max_iterations",
+                50  # 兜底值
+            )
 
         # 从 __execution_context__ 读取父 session_id
         exec_ctx: Dict[str, Any] = kwargs.get("__execution_context__") or {}
@@ -458,7 +470,7 @@ class CreateParallelSubagentsTool(BaseTool):
                         "  - task (string, 必填): 任务描述\n"
                         "  - allowed_tools (array, 可选): 工具列表；系统会自动加入 send_message_to_agent、reply_to_message\n"
                         "  - context (string, 可选): 背景信息\n"
-                        "  - max_iterations (integer, 可选): 最大迭代次数，默认 8"
+                        "  - max_iterations (integer, 可选): 最大迭代次数（默认从 config.yaml 的 agent.subagent_max_iterations 读取，配置未设置时默认 50）"
                     ),
                     required=True,
                 ),
@@ -485,6 +497,7 @@ class CreateParallelSubagentsTool(BaseTool):
         )
 
     async def execute(self, **kwargs: Any) -> ToolResult:
+        from agent_core.config import get_config
         import json as _json
         tasks_raw = kwargs.get("tasks")
         # LLM 有时会把 tasks 序列化成 JSON 字符串，尝试解析
@@ -514,6 +527,14 @@ class CreateParallelSubagentsTool(BaseTool):
                 error="MISSING_PARENT_SESSION",
             )
 
+        # 从配置读取默认 max_iterations
+        config = get_config()
+        default_max_iterations = getattr(
+            getattr(config, "agent", None),
+            "subagent_max_iterations",
+            50  # 兜底值
+        )
+
         from system.kernel.subagent_registry import SubagentInfo
 
         subagent_ids = []
@@ -528,7 +549,13 @@ class CreateParallelSubagentsTool(BaseTool):
             sub_session_id = f"sub:{subagent_id}"
             allowed_tools = item.get("allowed_tools")
             context = item.get("context")
-            max_iterations = int(item.get("max_iterations") or 8)
+            
+            # max_iterations：优先使用传入值，否则从配置读取
+            max_iterations_param = item.get("max_iterations")
+            if max_iterations_param is not None:
+                max_iterations = int(max_iterations_param)
+            else:
+                max_iterations = default_max_iterations
 
             info = SubagentInfo(
                 subagent_id=subagent_id,

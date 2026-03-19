@@ -170,7 +170,7 @@ class CoreLifecycleLogger:
                 try:
                     args = json.loads(args) if args else {}
                 except (json.JSONDecodeError, TypeError):
-                    pass
+                    args = {"_raw_preview": args[:500] + ("...(截断)" if len(args) > 500 else "")}
             tool_calls.append(
                 {
                     "id": getattr(tc, "id", ""),
@@ -208,7 +208,7 @@ class CoreLifecycleLogger:
             try:
                 args = json.loads(args) if args else {}
             except (json.JSONDecodeError, TypeError):
-                args = {"_raw": args}
+                args = {"_raw_preview": args[:500] + ("...(截断)" if len(args) > 500 else "")}
         self._write(
             {
                 "event": "tool_call",

@@ -872,15 +872,22 @@ class AgentCore:
         """
         tool_calls = []
         for tc in response.tool_calls:
+            if isinstance(tc.arguments, str):
+                # 确保 arguments 是合法 JSON 字符串，否则 API 会拒绝（400）
+                try:
+                    json.loads(tc.arguments)
+                    args_str = tc.arguments
+                except (json.JSONDecodeError, ValueError):
+                    args_str = json.dumps({}, ensure_ascii=False)
+            else:
+                args_str = json.dumps(tc.arguments, ensure_ascii=False)
             tool_calls.append(
                 {
                     "id": tc.id,
                     "type": "function",
                     "function": {
                         "name": tc.name,
-                        "arguments": tc.arguments
-                        if isinstance(tc.arguments, str)
-                        else json.dumps(tc.arguments, ensure_ascii=False),
+                        "arguments": args_str,
                     },
                 }
             )
@@ -914,15 +921,18 @@ class AgentCore:
                 message=f"工具 '{tool_call.name}' 当前不在可见工作集中",
             )
 
-        # 解析参数
+        # 解析参数（流式解析失败时 arguments 可能为原始 JSON 字符串）
         if isinstance(tool_call.arguments, str):
             try:
                 kwargs = json.loads(tool_call.arguments)
             except json.JSONDecodeError:
+                raw_preview = tool_call.arguments
+                if len(raw_preview) > 500:
+                    raw_preview = raw_preview[:500] + "...(已截断)"
                 return ToolResult(
                     success=False,
                     error="INVALID_ARGUMENTS",
-                    message=f"工具参数格式错误: {tool_call.arguments}",
+                    message=f"工具参数格式错误（可能为流式输出截断导致 JSON 不完整）: {raw_preview}",
                 )
         else:
             kwargs = tool_call.arguments

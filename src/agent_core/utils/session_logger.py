@@ -127,7 +127,7 @@ class SessionLogger:
                 try:
                     args = json.loads(args) if args else {}
                 except json.JSONDecodeError:
-                    pass
+                    args = {"_raw_preview": args[:500] + ("...(截断)" if len(args) > 500 else "")}
             tool_calls.append(
                 {
                     "id": tc.id,
@@ -164,7 +164,8 @@ class SessionLogger:
             try:
                 args = json.loads(args) if args else {}
             except json.JSONDecodeError:
-                args = {"_raw": args}
+                # 解析失败时仅记录预览，避免超长原始 JSON 刷屏
+                args = {"_raw_preview": args[:500] + ("...(截断)" if len(args) > 500 else "")}
         self._write_record(
             {
                 "event": "tool_call",

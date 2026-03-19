@@ -300,11 +300,16 @@ class CorePool:
             if session_id not in self._pool:
                 self._locks.pop(session_id, None)
 
-        # Core 生命周期日志：记录 core_end 并关闭文件
+        # Core 生命周期日志：仅当 session 真正结束（非 daemon 暂停）时记录 core_end
+        # shutdown=True：daemon 停止，session 视为暂停，checkpoint 会保留供恢复，不写 core_end
+        # shutdown=False：TTL 过期或主动关闭，session 已结束，写 core_end
         logger_obj = getattr(entry, "logger", None)
         if logger_obj is not None:
             try:
-                logger_obj.on_core_end(stats=core_stats)
+                if shutdown:
+                    logger_obj.close()
+                else:
+                    logger_obj.on_core_end(stats=core_stats)
             except Exception:
                 pass
 

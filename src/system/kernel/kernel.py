@@ -130,16 +130,28 @@ class AgentKernel:
                 # 优先使用 agent 自身的 per-session registry（已过 CoreProfile 过滤），
                 # 避免 call_tool 通过全局 registry 绕过权限限制。
                 agent_registry = getattr(agent, "_tool_registry", None) or self._tools
-                parsed_args = self._parse_arguments(action.arguments)
-                # 注入执行上下文：补全 AgentCore._execute_tool_call() 原本做的注入，
-                # 让 command_tools / file_tools 等能感知 tool_mode 和 source。
-                parsed_args["__execution_context__"] = {
-                    "tool_mode": getattr(agent, "_effective_tool_mode", "kernel"),
-                    "source": getattr(agent, "_source", ""),
-                    "user_id": getattr(agent, "_user_id", ""),
-                    "session_id": getattr(agent, "_session_id", ""),
-                }
-                result = await agent_registry.execute(action.tool_name, **parsed_args)
+                parsed_args, parse_err = self._parse_arguments(action.arguments)
+                if parse_err is not None:
+                    from agent_core.tools.base import ToolResult as _ToolResult
+
+                    result = _ToolResult(
+                        success=False,
+                        error="INVALID_ARGUMENTS",
+                        message=parse_err,
+                        data=None,
+                    )
+                else:
+                    # 注入执行上下文：补全 AgentCore._execute_tool_call() 原本做的注入，
+                    # 让 command_tools / file_tools 等能感知 tool_mode 和 source。
+                    parsed_args["__execution_context__"] = {
+                        "tool_mode": getattr(agent, "_effective_tool_mode", "kernel"),
+                        "source": getattr(agent, "_source", ""),
+                        "user_id": getattr(agent, "_user_id", ""),
+                        "session_id": getattr(agent, "_session_id", ""),
+                    }
+                    result = await agent_registry.execute(
+                        action.tool_name, **parsed_args
+                    )
                 action = await gen.asend(
                     ToolResultEvent(
                         tool_call_id=action.tool_call_id,
@@ -311,14 +323,19 @@ class AgentKernel:
             return ""
 
     @staticmethod
-    def _parse_arguments(arguments: Any) -> Dict[str, Any]:
-        """将工具参数统一解析为 dict。"""
+    def _parse_arguments(arguments: Any) -> tuple[Dict[str, Any], Optional[str]]:
+        """将工具参数统一解析为 dict。返回 (parsed_dict, None) 或 ({}, error_message)。"""
         if isinstance(arguments, dict):
-            return arguments
+            return arguments, None
         if isinstance(arguments, str):
+            if not arguments.strip():
+                return {}, "工具参数为空字符串"
             try:
                 parsed = json.loads(arguments)
-                return parsed if isinstance(parsed, dict) else {}
-            except (json.JSONDecodeError, ValueError):
-                return {}
-        return {}
+                if not isinstance(parsed, dict):
+                    return {}, "工具参数必须是 JSON 对象"
+                return parsed, None
+            except (json.JSONDecodeError, ValueError) as e:
+                preview = arguments[:500] + ("...(截断)" if len(arguments) > 500 else "")
+                return {}, f"工具参数 JSON 解析失败（可能为流式输出截断）: {preview}"
+        return {}, "工具参数类型无效"

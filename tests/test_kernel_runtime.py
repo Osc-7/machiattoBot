@@ -15,6 +15,31 @@ from agent_core.tools import VersionedToolRegistry
 from system.kernel import AgentKernel, CoreEntry, CorePool, KernelScheduler
 
 
+def test_kernel_parse_arguments_success_and_failure() -> None:
+    """流式解析失败时不应静默得到空 dict，应返回明确错误信息。"""
+    # 正常 dict
+    parsed, err = AgentKernel._parse_arguments({"path": "a.md", "content": "x"})
+    assert err is None
+    assert parsed == {"path": "a.md", "content": "x"}
+
+    # 正常 JSON 字符串
+    parsed, err = AgentKernel._parse_arguments('{"path": "b.md"}')
+    assert err is None
+    assert parsed == {"path": "b.md"}
+
+    # 空字符串
+    parsed, err = AgentKernel._parse_arguments("")
+    assert err is not None
+    assert "空" in err
+    assert parsed == {}
+
+    # 无效 JSON（模拟流式截断）
+    parsed, err = AgentKernel._parse_arguments('{"path": "')
+    assert err is not None
+    assert "解析" in err or "截断" in err
+    assert parsed == {}
+
+
 @pytest.mark.asyncio
 async def test_priority_queue_inject_before_user_request() -> None:
     """验证 PriorityQueue 调度顺序：priority=-1（inject）应先于 priority=0（用户请求）被处理。"""

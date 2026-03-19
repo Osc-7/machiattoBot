@@ -387,6 +387,9 @@ class KernelScheduler:
                 self._inflight_sessions.pop(session_id, None)
             raise
         async with session_lock:
+            agent = None
+            summary_task = None
+            summary_recent_start = None
             try:
                 # 准备钩子
                 hooks = None
@@ -479,12 +482,24 @@ class KernelScheduler:
                 await self._out_bus.publish(session_id, request.request_id, run_result)
 
             except asyncio.CancelledError:
+                # 取消时也写 checkpoint，保证 daemon 重启后可恢复
+                if agent is not None:
+                    try:
+                        await agent._finalize_turn(None, summary_task, summary_recent_start)
+                    except Exception:
+                        pass
                 await self._out_bus.publish_error(
                     request.request_id,
                     asyncio.CancelledError("kernel task cancelled"),
                 )
                 raise
             except Exception as exc:
+                # 异常时也写 checkpoint，保证 daemon 重启后可从未完成状态恢复
+                if agent is not None:
+                    try:
+                        await agent._finalize_turn(None, summary_task, summary_recent_start)
+                    except Exception:
+                        pass
                 logger.exception(
                     "KernelScheduler: error processing request_id=%s: %s",
                     request.request_id[:8],

@@ -414,7 +414,7 @@ class WriteFileTool(BaseTool):
             return ToolResult(
                 success=False,
                 error="MISSING_PATH",
-                message="缺少必需参数: path",
+                message="缺少必需参数: path。若为流式输出，可能是参数被截断导致，请重试并确保传入 path 与 content。",
             )
         if content is None:
             return ToolResult(

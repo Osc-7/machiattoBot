@@ -5,16 +5,19 @@ LLM 客户端封装
 百炼说明：https://bailian.console.aliyun.com/ 支持 qwen-3.5-plus 等多轮工具调用。
 """
 
-import json
 import inspect
+import json
+import logging
+import re
+import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from openai import AsyncOpenAI  # type: ignore
 
 from agent_core.config import Config, get_config
-import re
-import uuid
+
+logger = logging.getLogger(__name__)
 
 # Qwen 深度思考模式会将推理内容放在 content 中（有时与回复混合），用 ` <think>...</think>` 包裹。
 # 参见 https://www.alibabacloud.com/help/zh/model-studio/deep-thinking
@@ -183,8 +186,8 @@ class ToolCall:
     name: str
     """工具名称"""
 
-    arguments: Dict[str, Any]
-    """工具参数"""
+    arguments: Union[Dict[str, Any], str]
+    """工具参数。通常为 dict；流式解析失败时可能为原始 JSON 字符串，由执行层尝试解析或返回错误。"""
 
 
 @dataclass
@@ -526,13 +529,36 @@ class LLMClient:
         for idx in sorted(tool_calls_map.keys()):
             tc = tool_calls_map[idx]
             if tc["id"] and tc["name"]:
+                raw = tc["arguments"] or ""
+                if not raw:
+                    logger.warning(
+                        "流式 tool_call 的 arguments 为空 name=%s id=%s",
+                        tc["name"],
+                        tc["id"],
+                    )
+                    tool_calls_list.append(
+                        ToolCall(id=tc["id"], name=tc["name"], arguments={})
+                    )
+                    continue
                 try:
-                    args = json.loads(tc["arguments"]) if tc["arguments"] else {}
-                except json.JSONDecodeError:
-                    args = {}
-                tool_calls_list.append(
-                    ToolCall(id=tc["id"], name=tc["name"], arguments=args)
-                )
+                    args = json.loads(raw)
+                except json.JSONDecodeError as e:
+                    # 不静默吞掉：传原始字符串给执行层，由其返回明确错误，避免工具以空参数执行
+                    logger.warning(
+                        "流式 tool_call arguments JSON 解析失败 name=%s id=%s len=%s err=%s preview=%s",
+                        tc["name"],
+                        tc["id"],
+                        len(raw),
+                        e,
+                        raw[:300] if len(raw) > 300 else raw,
+                    )
+                    tool_calls_list.append(
+                        ToolCall(id=tc["id"], name=tc["name"], arguments=raw)
+                    )
+                else:
+                    tool_calls_list.append(
+                        ToolCall(id=tc["id"], name=tc["name"], arguments=args)
+                    )
 
         usage = TokenUsage.from_usage(last_usage) if last_usage else None
 
