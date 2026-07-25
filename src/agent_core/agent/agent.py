@@ -1833,6 +1833,20 @@ class AgentCore:
         if inspect.isawaitable(maybe):
             await maybe
 
+    def _remote_workspace_checkpoint_dict(self) -> Optional[Dict[str, Any]]:
+        sid = (self._session_id or "").strip()
+        if not sid:
+            return None
+        try:
+            from agent_core.remote.workspace_state import (
+                get_remote_workspace_state,
+                remote_workspace_to_checkpoint_dict,
+            )
+
+            return remote_workspace_to_checkpoint_dict(get_remote_workspace_state(sid))
+        except Exception:
+            return None
+
     async def _finalize_turn(
         self,
         run_result: "Optional[AgentRunResult]",
@@ -1879,6 +1893,7 @@ class AgentCore:
                         compression_round=self._working_memory.compression_round,
                         core_profile=core_profile_to_checkpoint_dict(profile),
                         active_goals=self._goal_store.to_checkpoint_data(),
+                        remote_workspace=self._remote_workspace_checkpoint_dict(),
                     )
                 )
             except Exception as exc:
@@ -1922,6 +1937,7 @@ class AgentCore:
                     compression_round=self._working_memory.compression_round,
                     core_profile=core_profile_to_checkpoint_dict(profile),
                     active_goals=self._goal_store.to_checkpoint_data(),
+                    remote_workspace=self._remote_workspace_checkpoint_dict(),
                 )
             )
         except Exception as exc:
@@ -2414,6 +2430,16 @@ class AgentCore:
         self._goal_store.load_from_checkpoint(
             getattr(checkpoint, "active_goals", None)
         )
+        try:
+            from agent_core.remote.workspace_state import (
+                restore_remote_workspace_from_checkpoint,
+            )
+
+            restore_remote_workspace_from_checkpoint(
+                getattr(checkpoint, "remote_workspace", None)
+            )
+        except Exception:
+            pass
 
     async def _sync_external_session_updates(self) -> None:
         """同步其他终端在同一 session 里新增的 user/assistant 消息。"""
