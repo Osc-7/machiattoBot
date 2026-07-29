@@ -621,7 +621,8 @@ class DashboardBackend:
         self, username: str = "", timeout_seconds: float | None = None
     ) -> AutomationIPCClient:
         owner_id = username.strip() or "root"
-        source = "web" if username.strip() else "dashboard"
+        # Memory paths and session IDs use the web: prefix; keep IPC source aligned.
+        source = "web"
         kwargs: Dict[str, Any] = {
             "source": source,
             "owner_id": owner_id,
@@ -736,9 +737,7 @@ class DashboardBackend:
                     "token_usage": usage,
                     "turn_count": turn_count,
                 }
-            result = await client.run_turn(
-                AgentRunInput(text=text, metadata={"source": "dashboard"})
-            )
+            result = await client.run_turn(AgentRunInput(text=text))
             usage = await client.get_token_usage()
             turn_count = await client.get_turn_count()
             return {
@@ -841,7 +840,7 @@ class DashboardBackend:
             async def _runner() -> None:
                 try:
                     holder["result"] = await client.run_turn(
-                        AgentRunInput(text=text, metadata={"source": "dashboard"}),
+                        AgentRunInput(text=text),
                         hooks=hooks,
                     )
                 except Exception as exc:  # noqa: BLE001
