@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "macchiato-remote"
-version = "0.3.0"
+version = "0.3.1"
 description = "Lightweight macchiatoBot remote worker (expose local workspace to cloud agent)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,10 +13,13 @@ authors = [{ name = "macchiatoBot contributors" }]
 dependencies = [
     "pydantic>=2.0",
     "websockets>=12.0",
+    "mcp>=1.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
-mcp = ["mcp>=1.0", "pyyaml>=6.0"]
+# 0.3.1 起 MCP SDK 已在主依赖中；保留 extra 以免旧安装命令失败
+mcp = []
 
 [project.scripts]
 macchiato-remote = "macchiato_remote.cli:main"

@@ -69,7 +69,9 @@ After `/remote-use`, the daemon can attach MCP servers declared with
 `location: remote`. Processes run on the worker; the agent calls them like normal
 tools.
 
-1. Install MCP extras on the worker: `uv tool install 'macchiato-remote[mcp]==0.3.0'`
+1. Worker `macchiato-remote>=0.3.1` already includes the MCP SDK
+   (`uv tool install macchiato-remote`). The `[mcp]` extra is a no-op kept for
+   older install commands.
 2. Write `{workspace}/.macchiato/mcp.yaml` (an empty template is created on open):
 
 ```yaml

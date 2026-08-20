@@ -12,7 +12,7 @@ macchiato-remote --version
 指定版本：
 
 ```bash
-uv tool install macchiato-remote==0.3.0
+uv tool install macchiato-remote==0.3.1
 ```
 
 PyPI: https://pypi.org/project/macchiato-remote/

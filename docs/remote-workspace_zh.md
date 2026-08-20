@@ -60,7 +60,7 @@ uv tool install -e packages/macchiato-remote
 
 远程工作区激活后，daemon 可以把声明为 `location: remote` 的 MCP 挂到当前会话；**进程在 worker 机器上启动**，agent 仍像普通工具一样调用。
 
-1. Worker 安装 MCP 能力：`uv tool install 'macchiato-remote[mcp]==0.3.0'`
+1. Worker `macchiato-remote>=0.3.1` 已自带 MCP SDK（`uv tool install macchiato-remote`）。`[mcp]` extra 仍可用，但不再需要。
 2. 在授权工作区写 `{workspace}/.macchiato/mcp.yaml`（`open_workspace` 会生成空模板）：
 
 ```yaml
