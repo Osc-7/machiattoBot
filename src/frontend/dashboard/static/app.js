@@ -1049,6 +1049,7 @@ const KERNEL_COMMANDS = [
   { cmd: "jobs", desc: "Automation cron jobs" },
   { cmd: "cron", desc: "Alias of jobs" },
   { cmd: "tasks", desc: "Recent agent tasks (tasks [limit])" },
+  { cmd: "usage-stats", desc: "Daily per-model tokens (usage-stats [7d|30d|today])" },
   { cmd: "inspect ", desc: "inspect <session_id>" },
   { cmd: "sessions", desc: "List session IDs" },
   { cmd: "models", desc: "List configured models" },

@@ -155,7 +155,7 @@ def _welcome_banner(term: _Term) -> None:
         f"{term.bold}{term.cyan}  Kernel control shell{term.reset}"
         f" {term.dim}(KernelTerminal){term.reset}"
     )
-    print(f"{term.dim}  Commands:{term.reset} ps | top | queue | cron | tasks | user … | inspect | kill | …")
+    print(f"{term.dim}  Commands:{term.reset} ps | top | queue | cron | tasks | usage-stats | user … | inspect | kill | …")
     print(f"{term.dim}  Type{term.reset} help {term.dim}for usage ·{term.reset} quit {term.dim}/{term.reset} exit {term.dim}/{term.reset} q {term.dim}to leave.{term.reset}")
     _hr(term, "─", _SECTION_W)
     print()
@@ -313,6 +313,8 @@ async def run_kernel_shell(client: AutomationIPCClient) -> None:
                 print("      Persistent AgentTask queue (SQLite): pending, running, and last N")
                 print("      finished tasks with timestamps and durations.")
                 print("      Different from cron: tasks are actual enqueue/run records.")
+                print(f"{term.dim}  usage-stats [7d|30d|today] [--provider KEY] [--from YYYY-MM-DD] [--to YYYY-MM-DD]{term.reset}")
+                print("      Daily per-model token usage (chart-friendly). Default range: 7d.")
                 print(f"{term.dim}  inspect <session_id>{term.reset}")
                 print("      Dump one core's detail dict.")
                 print(f"{term.dim}  kill <session_id>{term.reset}     Tear down a core.")
@@ -498,6 +500,52 @@ async def run_kernel_shell(client: AutomationIPCClient) -> None:
                 if not items:
                     print(f"{term.dim}  (no recent tasks){term.reset}")
                     print()
+                continue
+
+            if cmd in ("usage-stats", "usage_stats"):
+                range_s = "7d"
+                provider_key = None
+                from_day = None
+                to_day = None
+                i = 0
+                while i < len(args):
+                    a = args[i]
+                    if a in ("7d", "30d", "today", "1d", "week", "month"):
+                        range_s = a
+                        i += 1
+                    elif a == "--provider" and i + 1 < len(args):
+                        provider_key = args[i + 1]
+                        i += 2
+                    elif a == "--from" and i + 1 < len(args):
+                        from_day = args[i + 1]
+                        i += 2
+                    elif a == "--to" and i + 1 < len(args):
+                        to_day = args[i + 1]
+                        i += 2
+                    else:
+                        print(
+                            "  usage-stats: unknown arg. "
+                            "Usage: usage-stats [7d|30d|today] [--provider KEY] "
+                            "[--from YYYY-MM-DD] [--to YYYY-MM-DD]"
+                        )
+                        i = -1
+                        break
+                if i < 0:
+                    continue
+                data = await client.terminal_usage_stats(
+                    range=range_s,
+                    from_day=from_day,
+                    to_day=to_day,
+                    provider_key=provider_key,
+                )
+                if not data.get("available"):
+                    print(f"{term.dim}  ({data.get('message', 'unavailable')}){term.reset}")
+                    continue
+                from system.automation.usage_stats_db import format_usage_stats_text
+
+                _header(term, "USAGE STATS")
+                print(format_usage_stats_text(data))
+                print()
                 continue
 
             if cmd == "inspect":

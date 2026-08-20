@@ -136,6 +136,7 @@ Diagnostics
   jobs                       List automation jobs.
   cron                       Alias of jobs (scheduled automations).
   tasks [limit]              Recent agent tasks (default 25).
+  usage-stats [7d|30d|today] Daily per-model token usage (default 7d).
   inspect <session_id>       Detailed core inspection.
 
 Sessions / Models
@@ -289,6 +290,12 @@ def _format_console_tasks(data: Dict[str, Any]) -> str:
             lines.append(f"  error          {item['error']}")
         lines.append("")
     return "\n".join(lines).rstrip()
+
+
+def _format_console_usage_stats(data: Dict[str, Any]) -> str:
+    from system.automation.usage_stats_db import format_usage_stats_text
+
+    return format_usage_stats_text(data if isinstance(data, dict) else {})
 
 
 def _format_console_inspect(data: Dict[str, Any]) -> str:
@@ -1062,6 +1069,40 @@ class DashboardBackend:
                         "ok": True,
                         "kind": "text",
                         "output": _format_console_tasks(data),
+                        "data": data,
+                    }
+                if verb in ("usage-stats", "usage_stats"):
+                    range_s = "7d"
+                    provider_key: str | None = None
+                    from_day: str | None = None
+                    to_day: str | None = None
+                    i = 0
+                    while i < len(args):
+                        a = args[i]
+                        if a in ("7d", "30d", "today", "1d", "week", "month"):
+                            range_s = a
+                            i += 1
+                        elif a == "--provider" and i + 1 < len(args):
+                            provider_key = args[i + 1]
+                            i += 2
+                        elif a == "--from" and i + 1 < len(args):
+                            from_day = args[i + 1]
+                            i += 2
+                        elif a == "--to" and i + 1 < len(args):
+                            to_day = args[i + 1]
+                            i += 2
+                        else:
+                            i += 1
+                    data = await client.terminal_usage_stats(
+                        range=range_s,
+                        from_day=from_day,
+                        to_day=to_day,
+                        provider_key=provider_key,
+                    )
+                    return {
+                        "ok": True,
+                        "kind": "text",
+                        "output": _format_console_usage_stats(data),
                         "data": data,
                     }
                 if verb == "inspect":

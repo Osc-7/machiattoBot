@@ -45,7 +45,9 @@ from system.automation import (
     IPCServerPolicy,
     SessionCutPolicy,
     SessionRegistry,
+    UsageStatsDB,
     default_socket_path,
+    set_usage_stats_db,
 )
 from system.automation.agent_task import TaskStatus
 from system.automation.config_sync import sync_job_definitions_from_config
@@ -699,6 +701,9 @@ async def _main() -> None:
     if recovered:
         logger.info("Recovered %d stale running tasks", recovered)
 
+    usage_stats_db = UsageStatsDB()
+    set_usage_stats_db(usage_stats_db)
+
     job_def_repo = JobDefinitionRepository()
     job_run_repo = JobRunRepository()
     sync_job_definitions_from_config(config=cfg, job_def_repo=job_def_repo)
@@ -725,6 +730,7 @@ async def _main() -> None:
         core_pool=core_pool,
         automation_scheduler=scheduler,
         agent_task_queue=queue,
+        usage_stats_db=usage_stats_db,
     )
     stop_event = asyncio.Event()
     consumer_task = asyncio.create_task(

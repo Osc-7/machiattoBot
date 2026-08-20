@@ -311,6 +311,14 @@ def test_terminal_agent_task_queue_with_queue() -> None:
     q.list_recent.assert_called_once_with(limit=10)
 
 
+def test_terminal_usage_stats_unavailable() -> None:
+    pool = _make_mock_pool()
+    sched = _make_mock_scheduler()
+    terminal = KernelTerminal(scheduler=sched, core_pool=pool)
+    out = terminal.usage_stats()
+    assert out.get("available") is False
+
+
 @pytest.mark.asyncio
 async def test_terminal_kill() -> None:
     pool = _make_mock_pool(pool_entries={"cli:root": (_make_mock_agent(), _make_mock_profile())})

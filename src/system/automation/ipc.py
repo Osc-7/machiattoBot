@@ -821,6 +821,25 @@ class AutomationIPCServer:
                     limit_i = 25
                 return t.agent_task_queue_status(limit=limit_i)
 
+            if method == "terminal_usage_stats":
+                range_s = params.get("range")
+                from_day = params.get("from_day")
+                to_day = params.get("to_day")
+                provider_key = params.get("provider_key")
+                return t.usage_stats(
+                    range=(str(range_s).strip() if range_s is not None else "7d") or "7d",
+                    from_day=(
+                        str(from_day).strip() if from_day is not None else None
+                    )
+                    or None,
+                    to_day=(str(to_day).strip() if to_day is not None else None)
+                    or None,
+                    provider_key=(
+                        str(provider_key).strip() if provider_key is not None else None
+                    )
+                    or None,
+                )
+
             if method == "terminal_inspect":
                 session_id = str(params.get("session_id") or "").strip()
                 if not session_id:
@@ -1395,6 +1414,25 @@ class AutomationIPCClient:
     async def terminal_agent_tasks(self, *, limit: int = 25) -> Dict[str, Any]:
         """AgentTask 持久化队列：pending/running 计数与最近任务列表。"""
         data = await self._request("terminal_agent_tasks", {"limit": int(limit)})
+        return data if isinstance(data, dict) else {}
+
+    async def terminal_usage_stats(
+        self,
+        *,
+        range: str = "7d",
+        from_day: Optional[str] = None,
+        to_day: Optional[str] = None,
+        provider_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """按日 / 按模型聚合的 token 用量（图表友好结构）。"""
+        params: Dict[str, Any] = {"range": range}
+        if from_day:
+            params["from_day"] = from_day
+        if to_day:
+            params["to_day"] = to_day
+        if provider_key:
+            params["provider_key"] = provider_key
+        data = await self._request("terminal_usage_stats", params)
         return data if isinstance(data, dict) else {}
 
     async def terminal_inspect(self, session_id: str) -> Dict[str, Any]:

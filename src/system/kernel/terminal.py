@@ -26,6 +26,7 @@ KernelTerminal — Kernel 系统管理控制台。
     result = await client.terminal_attach("cli:root", "系统通知：即将重启")
     cron = await client.terminal_automation_jobs()  # 正在被追踪的定时 Job 协程
     tasks = await client.terminal_agent_tasks()     # AgentTask 队列快照
+    usage = await client.terminal_usage_stats(range="7d")  # 按日/模型 token 用量
     users = await client.terminal_list_users(frontend="cli")
     await client.terminal_create_user("alice", frontend="cli", warm_spawn=False)
 
@@ -42,6 +43,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 if TYPE_CHECKING:
     from system.automation.scheduler import AutomationScheduler
     from system.automation.task_queue import AgentTaskQueue
+    from system.automation.usage_stats_db import UsageStatsDB
 
     from .core_pool import CorePool
     from .scheduler import KernelScheduler
@@ -126,12 +128,14 @@ class KernelTerminal:
         boot_time: Optional[float] = None,
         automation_scheduler: Optional["AutomationScheduler"] = None,
         agent_task_queue: Optional["AgentTaskQueue"] = None,
+        usage_stats_db: Optional["UsageStatsDB"] = None,
     ) -> None:
         self._scheduler = scheduler
         self._pool = core_pool
         self._boot_time = boot_time if boot_time is not None else time.monotonic()
         self._automation_scheduler = automation_scheduler
         self._agent_task_queue = agent_task_queue
+        self._usage_stats_db = usage_stats_db
 
     # ── 查询类：只读，不改变系统状态 ────────────────────────────
 
@@ -385,6 +389,35 @@ class KernelTerminal:
             "running_count": q.running_count(),
             "recent_tasks": items,
         }
+
+    def usage_stats(
+        self,
+        *,
+        range: Optional[str] = "7d",
+        from_day: Optional[str] = None,
+        to_day: Optional[str] = None,
+        provider_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        查询按日 / 按模型聚合的 token 用量（图表友好结构）。
+
+        仅在注入 ``usage_stats_db`` 时可用。默认近 7 天（含今天）。
+        """
+        if self._usage_stats_db is None:
+            return {
+                "available": False,
+                "message": "未注入 UsageStatsDB",
+            }
+        try:
+            data = self._usage_stats_db.query(
+                range=range,
+                from_day=from_day,
+                to_day=to_day,
+                provider_key=provider_key,
+            )
+        except ValueError as exc:
+            return {"available": False, "message": str(exc)}
+        return {"available": True, **data}
 
     # ── 系统调用：改变系统状态 ────────────────────────────────
 

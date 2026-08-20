@@ -26,6 +26,12 @@ from .services import (
     SyncIngestionService,
 )
 from .task_queue import AgentTaskQueue
+from .usage_stats_db import (
+    UsageStatsDB,
+    format_usage_stats_text,
+    get_usage_stats_db,
+    set_usage_stats_db,
+)
 from .types import (
     AutomationPolicy,
     Digest,
@@ -43,6 +49,10 @@ __all__ = [
     # Queue-driven architecture (new)
     "AgentTask",
     "AgentTaskQueue",
+    "UsageStatsDB",
+    "format_usage_stats_text",
+    "get_usage_stats_db",
+    "set_usage_stats_db",
     "ContextPolicy",
     "TaskStatus",
     "make_cron_task",

@@ -19,9 +19,12 @@ from .automation import (
     SessionCutPolicy,
     SessionManager,
     SessionRegistry,
+    UsageStatsDB,
     default_socket_path,
     get_runtime,
+    get_usage_stats_db,
     reset_runtime,
+    set_usage_stats_db,
 )
 from .kernel import (
     AgentKernel,
@@ -39,6 +42,7 @@ __all__ = [
     "OutputBus",
     "AgentTask",
     "AgentTaskQueue",
+    "UsageStatsDB",
     "AutomationCoreGateway",
     "AutomationIPCClient",
     "AutomationIPCServer",
@@ -50,5 +54,7 @@ __all__ = [
     "SessionRegistry",
     "default_socket_path",
     "get_runtime",
+    "get_usage_stats_db",
     "reset_runtime",
+    "set_usage_stats_db",
 ]

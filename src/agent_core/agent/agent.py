@@ -1079,6 +1079,36 @@ class AgentCore:
         except Exception:
             return int(self._working_memory.get_current_tokens())
 
+    def _record_usage_stats(
+        self,
+        *,
+        prompt_tokens: int,
+        completion_tokens: int,
+        cache_hit_tokens: int = 0,
+        cache_miss_tokens: int = 0,
+    ) -> None:
+        """Persist one LLM call into the process-wide daily usage DB (soft-fail)."""
+        try:
+            from system.automation.usage_stats_db import get_usage_stats_db
+
+            db = get_usage_stats_db()
+            if db is None:
+                return
+            db.record(
+                provider_key=str(self._llm_client.active_provider_name or "unknown"),
+                api_model=str(self._llm_client.model or "unknown"),
+                prompt_tokens=int(prompt_tokens),
+                completion_tokens=int(completion_tokens),
+                cache_hit_tokens=int(cache_hit_tokens),
+                cache_miss_tokens=int(cache_miss_tokens),
+            )
+        except Exception as exc:  # noqa: BLE001 — never break the agent loop
+            logger.warning(
+                "usage_stats record failed session=%s: %s",
+                getattr(self, "_session_id", None),
+                exc,
+            )
+
     def get_token_usage(self) -> dict:
         """
         获取本会话累计的 token 用量。
@@ -1444,6 +1474,16 @@ class AgentCore:
                             )
                         )
                         self._last_prompt_tokens = pt
+                        self._record_usage_stats(
+                            prompt_tokens=pt,
+                            completion_tokens=ct,
+                            cache_hit_tokens=int(
+                                response.usage.prompt_cache_hit_tokens or 0
+                            ),
+                            cache_miss_tokens=int(
+                                response.usage.prompt_cache_miss_tokens or 0
+                            ),
+                        )
 
                     if self._should_synthesize_empty_tool_reasoning(response):
                         response.reasoning_content = ""
