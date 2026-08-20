@@ -19,7 +19,7 @@
 - **load_skill**：加载技能完整 **SKILL.md**（与系统提示里 **Available Skills** 索引对应）。查找顺序：当前工作区 `.macchiato/skills` → `.agents/skills`（同名前者优先）。隔离模式下 `.agents/skills` 与 bash 的 `~/.agents/skills` 为同一树；**远程模式下索引与 load_skill 都读远程工作区这两处**，不是云服务器本机。`npx skills add -g` 安装到 `.agents/skills`。
 - **attach_image_to_reply**：当需要**把截图或图片随回复发给用户看**时使用。参数二选一：image_path（本地路径）或 image_url；调用后该图会随你的文字回复一起发送到对话（如飞书会收到图片消息）。与 attach_media 区别：attach_media 是给你下一轮分析用的，用户看不到；attach_image_to_reply 是发给用户看的。
 - **attach_file_to_reply**：当需要**把文件随回复发给用户看**时使用。参数二选一：file_path（本地路径）或 file_url；调用后该文件会随你的文字回复一起发送到对话（如飞书会收到文件消息）。
-- **goal_create** / **goal_update** / **goal_complete** / **goal_list**：会话内 Agent 工作目标与步骤进度（复杂多步骤任务）；与用户待办 add_task 不同，见 runtime_goals。用户也可 **`/goal <instruction>`** 直接创建并开始执行。
+- **goal_create** / **goal_update** / **goal_complete** / **goal_cancel** / **goal_list**：会话内 Agent 工作目标与步骤进度（复杂多步骤任务）；与用户待办 add_task 不同，见 runtime_goals。用户也可 **`/goal <instruction>`** 直接创建并开始执行。活跃 goal 会 pin 会话：过时或已换题的目标必须 `goal_cancel` / `goal_complete`，不要长期挂着。
 
 ## 工作流程
 

@@ -11,6 +11,7 @@ from agent_core.agent.checkpoint import CoreCheckpoint, CoreCheckpointManager
 from agent_core.goals.store import GoalStore
 from agent_core.goals.types import GoalStatus, GoalStepStatus
 from system.tools.goal_tools import (
+    GoalCancelTool,
     GoalCompleteTool,
     GoalCreateTool,
     GoalListTool,
@@ -136,8 +137,25 @@ class TestGoalStore:
         prompt = store.build_goal_check_prompt()
         assert "[目标检查]" in prompt
         assert "goal_complete" in prompt
+        assert "goal_cancel" in prompt
+        assert "pin" in prompt
         assert goal.id in prompt
         assert "调研" in prompt
+
+    def test_to_prompt_string_warns_about_pin(self, store: GoalStore) -> None:
+        store.create_goal(title="旧实验", steps=["盯着"])
+        prompt = store.to_prompt_string()
+        assert "pin" in prompt
+        assert "goal_cancel" in prompt
+        assert "旧实验" in prompt
+
+    def test_cancel_goal_clears_active(self, store: GoalStore) -> None:
+        goal = store.create_goal(title="过时任务", steps=["一步"])
+        store.cancel_goal(goal.id)
+        assert store.has_active_goals() is False
+        cancelled = store.get_goal(goal.id)
+        assert cancelled is not None
+        assert cancelled.status == GoalStatus.CANCELLED
 
 
 class TestGoalTools:
@@ -204,8 +222,20 @@ class TestGoalTools:
             "goal_create",
             "goal_update",
             "goal_complete",
+            "goal_cancel",
             "goal_list",
         }
+
+    @pytest.mark.asyncio
+    async def test_goal_cancel(self, store: GoalStore) -> None:
+        created = await GoalCreateTool(store).execute(title="过时实验")
+        goal_id = created.data["goal"]["id"]
+        result = await GoalCancelTool(store).execute(
+            goal_id=goal_id, notes="用户已换题"
+        )
+        assert result.success is True
+        assert store.has_active_goals() is False
+        assert "用户已换题" in (result.message or "")
 
 
 class TestGoalCheckpoint:
@@ -264,6 +294,56 @@ class TestGoalCheckpoint:
         loaded = CoreCheckpointManager(str(ckpt_path)).read()
         assert loaded is not None
         assert loaded.active_goals == []
+
+    def test_expired_checkpoint_retains_goals_for_salvage(self, tmp_path: Path) -> None:
+        """TTL evict 标记 expired 后仍保留 active_goals，供冷启动救出。"""
+        ckpt_path = tmp_path / "checkpoint.json"
+        mgr = CoreCheckpointManager(str(ckpt_path))
+        goals = [
+            {
+                "id": "goal-salvage1",
+                "title": "收割",
+                "description": None,
+                "status": "active",
+                "steps": [
+                    {
+                        "id": "step-1",
+                        "description": "等 stats",
+                        "status": "in_progress",
+                        "notes": None,
+                    }
+                ],
+                "created_at": "2026-06-29T00:00:00+00:00",
+                "updated_at": "2026-06-29T00:00:00+00:00",
+            }
+        ]
+        mgr.write(
+            CoreCheckpoint(
+                session_id="sess-1",
+                owner_id="root",
+                source="cli",
+                running_summary=None,
+                recent_messages=[],
+                last_active_at=1.0,
+                remaining_ttl_seconds=1800.0,
+                turn_count=1,
+                last_history_id=0,
+                token_usage={},
+                active_goals=goals,
+            )
+        )
+        mgr.mark_expired()
+        loaded = mgr.read()
+        assert loaded is not None
+        assert loaded.expired is True
+        assert loaded.active_goals == goals
+
+        from agent_core.goals import GoalStore
+
+        store = GoalStore()
+        store.load_from_checkpoint(loaded.active_goals)
+        assert store.has_active_goals() is True
+        assert store.get_goal("goal-salvage1") is not None
 
 
 class TestGoalAutoContinue:

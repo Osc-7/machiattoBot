@@ -140,10 +140,11 @@ class GoalStore:
             "[目标检查] 你刚才准备结束本轮。请先对照当前 Agent 目标自检：",
             "",
             "- **已全部达成**：先调用 goal_complete 标记完成，再向用户给出最终答复。",
-            "- **尚未达成**：不要结束；用 goal_update 更新步骤状态，并继续调用工具推进。",
-            "- **因 blocked 需等待用户/外部**：先将对应步骤标为 blocked（notes 写明原因），再结束本轮；系统不会注入目标检查。",
+            "- **仍是当前工作且尚未达成**：不要结束；用 goal_update 更新步骤状态，并继续调用工具推进。",
+            "- **已过时 / 用户已换题 / 实验已停或无法继续**：调用 goal_cancel（notes 写原因），不要为过期目标续跑。",
+            "- **因 blocked 且很快能恢复**：先将对应步骤标为 blocked（notes 写明原因），再结束本轮；系统不会注入目标检查。",
             "",
-            "不要口头声称完成却未调用 goal_complete。当前活跃目标：",
+            "活跃 goal 会 pin 会话、阻止空闲回收。不要口头声称完成却未调用 goal_complete；也不要留下已无关的活跃目标。当前活跃目标：",
         ]
         for goal in active:
             lines.append(f"- {goal.id}: {goal.title}")
@@ -164,7 +165,10 @@ class GoalStore:
         active = self.list_goals(include_completed=False)
         if not active:
             return ""
-        lines: List[str] = []
+        lines: List[str] = [
+            f"未关闭目标 {len(active)} 条（会 pin 本会话 Core）。已完成用 goal_complete，已过时/已换题用 goal_cancel。",
+            "",
+        ]
         for goal in active:
             lines.append(f"## 目标 {goal.id}: {goal.title}")
             if goal.description:

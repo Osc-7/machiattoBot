@@ -21,6 +21,7 @@ def build_goal_tools(store: GoalStore) -> List[BaseTool]:
         GoalCreateTool(store),
         GoalUpdateTool(store),
         GoalCompleteTool(store),
+        GoalCancelTool(store),
         GoalListTool(store),
     ]
 
@@ -94,6 +95,7 @@ class GoalCreateTool(BaseTool):
             usage_notes=[
                 "复杂任务开始时先 goal_create，再逐步推进",
                 "与用户待办 add_task 无关，勿混淆",
+                "过时或已换题的目标用 goal_cancel，不要长期保持 active",
             ],
             tags=["目标", "计划", "多步骤"],
         )
@@ -341,7 +343,78 @@ class GoalCompleteTool(BaseTool):
         )
 
 
+class GoalCancelTool(BaseTool):
+    """取消整个目标（过时 / 已换题 / 无法继续）。"""
+
+    def __init__(self, store: GoalStore) -> None:
+        self._store = store
+
+    @property
+    def name(self) -> str:
+        return "goal_cancel"
+
+    def get_definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name=self.name,
+            description="""取消一个尚未完成的 Agent 工作目标。
+
+用于目标已过时、用户已换题、实验已停或无法继续。取消后不再 pin 会话。
+不要用本工具标记正常完成（那是 goal_complete）。""",
+            parameters=[
+                ToolParameter(
+                    name="goal_id",
+                    type="string",
+                    description="要取消的目标 ID",
+                    required=True,
+                ),
+                ToolParameter(
+                    name="notes",
+                    type="string",
+                    description="取消原因（可选）",
+                    required=False,
+                ),
+            ],
+            examples=[
+                {
+                    "description": "用户已换题，取消旧实验监控",
+                    "params": {
+                        "goal_id": "goal-abc12345",
+                        "notes": "用户已转向其他实验，本目标不再推进",
+                    },
+                },
+            ],
+            usage_notes=[
+                "过时/无法继续用 cancel；做完用 complete",
+                "留下无关的 active goal 会 pin Core、阻止空闲回收",
+            ],
+            tags=["目标", "计划", "取消"],
+        )
+
+    async def execute(self, **kwargs) -> ToolResult:
+        goal_id = str(kwargs.get("goal_id", "")).strip()
+        if not goal_id:
+            return ToolResult(
+                success=False,
+                error="MISSING_GOAL_ID",
+                message="请提供 goal_id",
+            )
+        notes = str(kwargs.get("notes") or "").strip()
+        try:
+            goal = self._store.cancel_goal(goal_id)
+        except KeyError as exc:
+            return ToolResult(success=False, error="NOT_FOUND", message=str(exc))
+        msg = f"已取消目标 {goal.id}: {goal.title}"
+        if notes:
+            msg = f"{msg}（{notes}）"
+        return ToolResult(
+            success=True,
+            data={"goal": goal.to_dict(), "notes": notes or None},
+            message=msg,
+        )
+
+
 class GoalListTool(BaseTool):
+
     """列出当前会话的目标。"""
 
     def __init__(self, store: GoalStore) -> None:

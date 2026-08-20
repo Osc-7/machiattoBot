@@ -130,6 +130,64 @@ async def test_evict_normal_does_not_call_flush_checkpoint() -> None:
     agent.flush_checkpoint_for_shutdown.assert_not_called()
 
 
+def test_scan_expired_pins_session_with_active_goals() -> None:
+    """有活跃 goal 的 session 即使 idle 超时也不应进入 TTL 驱逐列表。"""
+    from agent_core.goals import GoalStore
+
+    pool = CorePool()
+    profile = CoreProfile.default_full(
+        frontend_id="cli",
+        dialog_window_id="root",
+        session_expired_seconds=1,
+    )
+    store = GoalStore()
+    store.create_goal(title="长跑实验", steps=["等结果"])
+    agent = SimpleNamespace(_goal_store=store)
+    entry = CoreEntry(agent=agent, profile=profile)
+    entry.last_active_ts = time.monotonic() - 10
+    pool._pool["cli:root"] = entry
+
+    assert pool.scan_expired() == []
+    assert not entry.is_expired()  # touch() 刷新了活跃时间
+
+
+def test_scan_expired_pins_session_with_deferred_wake(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """已登记未来 schedule_wake 的 session 同样 pin，避免唤醒时丢上下文。"""
+    pool = CorePool()
+    profile = CoreProfile.default_full(
+        frontend_id="cli",
+        dialog_window_id="root",
+        session_expired_seconds=1,
+    )
+    agent = SimpleNamespace(_goal_store=None)
+    entry = CoreEntry(agent=agent, profile=profile)
+    entry.last_active_ts = time.monotonic() - 10
+    pool._pool["cli:wake"] = entry
+
+    monkeypatch.setattr(
+        "agent_core.tools.agent_wake.session_has_deferred_agent_wake",
+        lambda sid: sid == "cli:wake",
+    )
+    assert pool.scan_expired() == []
+
+
+def test_scan_expired_evicts_when_no_goals_or_wake() -> None:
+    pool = CorePool()
+    profile = CoreProfile.default_full(
+        frontend_id="cli",
+        dialog_window_id="root",
+        session_expired_seconds=1,
+    )
+    agent = SimpleNamespace(_goal_store=None)
+    entry = CoreEntry(agent=agent, profile=profile)
+    entry.last_active_ts = time.monotonic() - 10
+    pool._pool["cli:idle"] = entry
+
+    assert pool.scan_expired() == ["cli:idle"]
+
+
 @pytest.mark.asyncio
 async def test_evict_ttl_preserves_active_remote_workspace(
     monkeypatch: pytest.MonkeyPatch,
