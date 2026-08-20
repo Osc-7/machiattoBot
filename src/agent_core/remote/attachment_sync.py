@@ -2,19 +2,16 @@
 
 from __future__ import annotations
 
-import base64
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from macchiato_remote.protocol import REMOTE_BLOB_MAX_BYTES
+from macchiato_remote.protocol import REMOTE_BLOB_STREAM_MAX_BYTES
 from macchiato_remote.runtime.macchiato_dir import INBOX_REL
 
 logger = logging.getLogger(__name__)
 
-_UPGRADE_HINT = (
-    "附件未同步到远程工作区：请升级 macchiato-remote≥0.2.10（需 file_blob_write）"
-)
+_UPGRADE_HINT = "附件未同步到远程工作区：请升级 macchiato-remote≥0.3.0（需 blob_stream 或 file_blob_write）"
 _SYNC_HINT = "已同步到远程工作区"
 
 
@@ -67,12 +64,8 @@ def worker_supports_file_blob_write(
     protocol_version: Optional[int],
     capabilities: Optional[List[str]],
 ) -> bool:
-    if protocol_version is not None and int(protocol_version) < 4:
-        # Still allow if capability is present (forward-compat).
-        caps = set(capabilities or [])
-        return "file_blob_write" in caps
     caps = set(capabilities or [])
-    return "file_blob_write" in caps
+    return "file_blob_write" in caps or "blob_stream" in caps
 
 
 async def sync_content_items_to_remote_inbox(
@@ -80,7 +73,7 @@ async def sync_content_items_to_remote_inbox(
     session_id: str,
     content_items: Optional[List[Dict[str, Any]]],
     user_text: str = "",
-    max_bytes: int = REMOTE_BLOB_MAX_BYTES,
+    max_bytes: int = REMOTE_BLOB_STREAM_MAX_BYTES,
 ) -> Tuple[List[Dict[str, Any]], str, List[str]]:
     """
     When a remote workspace is active, copy local attachment files to
@@ -122,9 +115,7 @@ async def sync_content_items_to_remote_inbox(
         proto_i = int(proto) if proto is not None else None
     except (TypeError, ValueError):
         proto_i = None
-    if not worker_supports_file_blob_write(
-        protocol_version=proto_i, capabilities=caps
-    ):
+    if not worker_supports_file_blob_write(protocol_version=proto_i, capabilities=caps):
         notices.append(_UPGRADE_HINT)
         return items, text, notices
 
@@ -149,26 +140,22 @@ async def sync_content_items_to_remote_inbox(
             notices.append(f"附件跳过（无法读取）: {path_obj.name}: {exc}")
             continue
         if size > max_bytes:
-            notices.append(
-                f"附件过大未同步到远程（>{max_bytes} bytes）: {path_obj.name}"
-            )
-            continue
+            from macchiato_remote.protocol import format_byte_size
 
-        try:
-            raw = path_obj.read_bytes()
-        except OSError as exc:
-            notices.append(f"附件跳过（读取失败）: {path_obj.name}: {exc}")
+            notices.append(
+                f"附件过大未同步到远程（{format_byte_size(size)}，"
+                f"上限 {format_byte_size(max_bytes)}）: {path_obj.name}"
+            )
             continue
 
         preferred = str(item.get("name") or "").strip() or path_obj.name
         remote_rel = _unique_inbox_rel(preferred, used_names)
-        b64 = base64.b64encode(raw).decode("ascii")
         try:
-            result = await registry.file_blob_write(
+            result = await registry.blob_push_from_path(
                 login=state.login,
                 session_id=sid,
-                path=remote_rel,
-                content_base64=b64,
+                src_path=path_obj,
+                dest_path=remote_rel,
                 mode="overwrite",
                 max_bytes=max_bytes,
             )

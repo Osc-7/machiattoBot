@@ -15,24 +15,26 @@ from agent_core.remote.attachment_sync import (
     sync_content_items_to_remote_inbox,
     worker_supports_file_blob_write,
 )
+from agent_core.remote.worker_registry import BlobPushOutcome
 from agent_core.remote.workspace_state import (
     activate_remote_workspace,
     clear_remote_workspace_state,
 )
 from macchiato_remote.protocol import (
     REMOTE_BLOB_MAX_BYTES,
+    REMOTE_BLOB_STREAM_MAX_BYTES,
     REMOTE_PROTOCOL_VERSION,
-    RemoteFileBlobWriteResult,
 )
 from macchiato_remote.runtime.files import write_workspace_blob
 from macchiato_remote.runtime.macchiato_dir import INBOX_REL, ensure_macchiato_layout
 
 
-def test_protocol_v4_declares_file_blob_write():
+def test_protocol_v5_declares_blob_stream():
     from macchiato_remote.protocol import REMOTE_WORKER_CAPABILITIES
 
-    assert REMOTE_PROTOCOL_VERSION == 4
+    assert REMOTE_PROTOCOL_VERSION == 5
     assert "file_blob_write" in REMOTE_WORKER_CAPABILITIES
+    assert "blob_stream" in REMOTE_WORKER_CAPABILITIES
 
 
 def test_write_workspace_blob_roundtrip(tmp_path: Path):
@@ -80,7 +82,7 @@ def test_worker_supports_file_blob_write_cap():
     )
     # Capability present wins even on older protocol_version field.
     assert worker_supports_file_blob_write(
-        protocol_version=3, capabilities=["file_blob_write"]
+        protocol_version=5, capabilities=["blob_stream"]
     )
 
 
@@ -125,22 +127,21 @@ async def test_sync_mirrors_to_inbox_and_rewrites_text(tmp_path: Path):
 
     written: Dict[str, Any] = {}
 
-    async def _blob_write(**kwargs):
+    async def _blob_push(**kwargs):
         written.update(kwargs)
-        return RemoteFileBlobWriteResult(
-            request_id="r1",
-            path=kwargs["path"],
-            bytes_written=len(base64.b64decode(kwargs["content_base64"])),
+        return BlobPushOutcome(
+            path=kwargs["dest_path"],
+            bytes_written=local.stat().st_size,
         )
 
     mock_conn = MagicMock()
     mock_conn.hello_meta = {
-        "protocol_version": 4,
-        "capabilities": ["file_blob_write"],
+        "protocol_version": 5,
+        "capabilities": ["blob_stream"],
     }
     mock_registry = MagicMock()
     mock_registry.get = AsyncMock(return_value=mock_conn)
-    mock_registry.file_blob_write = AsyncMock(side_effect=_blob_write)
+    mock_registry.blob_push_from_path = AsyncMock(side_effect=_blob_push)
 
     items = [
         {
@@ -164,7 +165,8 @@ async def test_sync_mirrors_to_inbox_and_rewrites_text(tmp_path: Path):
             user_text=f"请看 {local}",
         )
 
-    assert written["path"] == f"{INBOX_REL}/note.pdf"
+    assert written["dest_path"] == f"{INBOX_REL}/note.pdf"
+    assert Path(written["src_path"]) == local
     assert out_items[0]["path"] == str(local)
     assert out_items[0]["remote_path"] == f"{INBOX_REL}/note.pdf"
     assert f"{INBOX_REL}/note.pdf" in out_items[1]["text"]
@@ -193,7 +195,7 @@ async def test_sync_skips_when_worker_missing_cap(tmp_path: Path):
     }
     mock_registry = MagicMock()
     mock_registry.get = AsyncMock(return_value=mock_conn)
-    mock_registry.file_blob_write = AsyncMock()
+    mock_registry.blob_push_from_path = AsyncMock()
 
     with patch(
         "agent_core.remote.worker_registry.get_remote_worker_registry",
@@ -204,9 +206,9 @@ async def test_sync_skips_when_worker_missing_cap(tmp_path: Path):
             content_items=[{"type": "media_ref", "path": str(local), "name": "a.bin"}],
         )
 
-    mock_registry.file_blob_write.assert_not_called()
+    mock_registry.blob_push_from_path.assert_not_called()
     assert "remote_path" not in out_items[0]
-    assert any("0.2.10" in n for n in notices)
+    assert any("0.3.0" in n for n in notices)
     assert "升级" in format_attachment_sync_notices(notices)
     clear_remote_workspace_state()
 
@@ -230,7 +232,7 @@ async def test_sync_skips_oversize_file(tmp_path: Path):
     }
     mock_registry = MagicMock()
     mock_registry.get = AsyncMock(return_value=mock_conn)
-    mock_registry.file_blob_write = AsyncMock()
+    mock_registry.blob_push_from_path = AsyncMock()
 
     with patch(
         "agent_core.remote.worker_registry.get_remote_worker_registry",
@@ -238,18 +240,21 @@ async def test_sync_skips_oversize_file(tmp_path: Path):
     ):
         out_items, _text, notices = await sync_content_items_to_remote_inbox(
             session_id=sid,
-            content_items=[{"type": "user_file", "path": str(local), "name": "huge.bin"}],
+            content_items=[
+                {"type": "user_file", "path": str(local), "name": "huge.bin"}
+            ],
             max_bytes=16,
         )
 
-    mock_registry.file_blob_write.assert_not_called()
+    mock_registry.blob_push_from_path.assert_not_called()
     assert "remote_path" not in out_items[0]
     assert any("过大" in n for n in notices)
     # sanity: default cap still large
-    assert REMOTE_BLOB_MAX_BYTES >= 20 * 1024 * 1024
+    assert REMOTE_BLOB_MAX_BYTES >= 100 * 1024 * 1024
+    assert REMOTE_BLOB_STREAM_MAX_BYTES >= 1024 * 1024 * 1024
     from macchiato_remote.protocol import REMOTE_WS_MAX_SIZE
 
     # websockets 默认 1MiB；WS 上限需覆盖 base64(~4/3) + JSON 开销。
     assert REMOTE_WS_MAX_SIZE > REMOTE_BLOB_MAX_BYTES * 4 // 3
-    assert REMOTE_WS_MAX_SIZE > 2**20
+    assert REMOTE_WS_MAX_SIZE > 16 * 1024 * 1024  # uvicorn 默认 16MiB
     clear_remote_workspace_state()

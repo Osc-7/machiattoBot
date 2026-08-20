@@ -3,13 +3,24 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from macchiato_remote.protocol import (
+    REMOTE_BLOB_CHUNK_BYTES,
+    REMOTE_BLOB_IDLE_TIMEOUT_SECONDS,
     REMOTE_BLOB_MAX_BYTES,
+    REMOTE_BLOB_STREAM_MAX_BYTES,
+    REMOTE_BLOB_TRANSFER_TIMEOUT_SECONDS,
     REMOTE_WORKSPACE_MOUNT,
+    RemoteBlobPullRequest,
+    RemoteBlobPushBeginRequest,
+    RemoteBlobPushEndRequest,
     RemoteCommandRequest,
     RemoteCommandResult,
     RemoteFileBlobReadRequest,
@@ -27,9 +38,165 @@ from macchiato_remote.protocol import (
     RemoteWorkspaceCloseResult,
     RemoteWorkspaceOpenRequest,
     RemoteWorkspaceOpenResult,
+    encode_file_too_large,
+    normalize_blob_request_id,
+    pack_blob_chunk,
+    unpack_blob_chunk,
 )
 
 SendJson = Callable[[Dict[str, Any]], Awaitable[None]]
+SendBytes = Callable[[bytes], Awaitable[None]]
+
+
+@dataclass
+class BlobPullOutcome:
+    dest_path: Optional[str] = None
+    file_name: str = ""
+    mime_type: str = "application/octet-stream"
+    bytes_read: int = 0
+    sha256: str = ""
+    error: Optional[str] = None
+    truncated: bool = False
+
+
+@dataclass
+class BlobPushOutcome:
+    path: str = ""
+    bytes_written: int = 0
+    error: Optional[str] = None
+
+
+class _PullSession:
+    def __init__(self, *, request_id: str, dest_path: Path) -> None:
+        self.request_id = request_id
+        self.dest_path = dest_path
+        self.tmp_path = dest_path.with_name(dest_path.name + f".{request_id[:8]}.part")
+        self.hasher = hashlib.sha256()
+        self.next_seq = 0
+        self.written = 0
+        self.expected_size: Optional[int] = None
+        self.file_name = dest_path.name
+        self.mime_type = "application/octet-stream"
+        self.handle: Any = None
+        self.last_activity = time.monotonic()
+        loop = asyncio.get_running_loop()
+        self.done: asyncio.Future[BlobPullOutcome] = loop.create_future()
+        self._watchdog: Optional[asyncio.Task[None]] = None
+
+    def touch(self) -> None:
+        self.last_activity = time.monotonic()
+
+    def start_watchdog(self) -> None:
+        self._watchdog = asyncio.create_task(self._idle_watch())
+
+    async def _idle_watch(self) -> None:
+        timeout = float(REMOTE_BLOB_IDLE_TIMEOUT_SECONDS)
+        while not self.done.done():
+            await asyncio.sleep(min(5.0, timeout / 2))
+            if self.done.done():
+                return
+            if time.monotonic() - self.last_activity > timeout:
+                self.fail(TimeoutError("blob stream idle timeout"))
+                return
+
+    def fail(self, exc: BaseException) -> None:
+        self._close_tmp(unlink=True)
+        if not self.done.done():
+            if isinstance(exc, Exception):
+                self.done.set_result(
+                    BlobPullOutcome(file_name=self.file_name, error=str(exc))
+                )
+            else:
+                self.done.set_exception(exc)
+        if self._watchdog is not None:
+            self._watchdog.cancel()
+
+    def _close_tmp(self, *, unlink: bool) -> None:
+        try:
+            if self.handle is not None:
+                self.handle.close()
+        except Exception:
+            pass
+        self.handle = None
+        if unlink:
+            try:
+                self.tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    def on_begin(self, payload: Dict[str, Any]) -> None:
+        self.touch()
+        err = payload.get("error")
+        if err:
+            self.fail(RuntimeError(str(err)))
+            return
+        self.expected_size = int(payload.get("size") or 0)
+        self.file_name = str(payload.get("file_name") or self.file_name)
+        self.mime_type = str(payload.get("mime_type") or self.mime_type)
+        try:
+            self.dest_path.parent.mkdir(parents=True, exist_ok=True)
+            self.handle = self.tmp_path.open("wb")
+        except OSError as exc:
+            self.fail(exc)
+
+    def on_chunk(self, seq: int, payload: bytes) -> None:
+        self.touch()
+        if self.handle is None:
+            self.fail(RuntimeError("BLOB_BEGIN_MISSING"))
+            return
+        if seq != self.next_seq:
+            self.fail(RuntimeError(f"BLOB_SEQ_GAP: expected {self.next_seq} got {seq}"))
+            return
+        self.handle.write(payload)
+        self.hasher.update(payload)
+        self.written += len(payload)
+        self.next_seq += 1
+
+    def on_end(self, payload: Dict[str, Any]) -> None:
+        self.touch()
+        err = payload.get("error")
+        if err:
+            self.fail(RuntimeError(str(err)))
+            return
+        if self.handle is None and self.expected_size not in (None, 0):
+            self.fail(RuntimeError("BLOB_BEGIN_MISSING"))
+            return
+        try:
+            if self.handle is not None:
+                self.handle.close()
+                self.handle = None
+        except Exception:
+            pass
+        actual = self.hasher.hexdigest()
+        expected = str(payload.get("sha256") or "").strip().lower()
+        total = int(payload.get("total_bytes") or self.written)
+        if expected and actual != expected:
+            self.fail(RuntimeError(f"BLOB_SHA256_MISMATCH: {actual} != {expected}"))
+            return
+        if self.expected_size is not None and self.written != self.expected_size:
+            self.fail(
+                RuntimeError(
+                    f"BLOB_SIZE_MISMATCH: {self.written} != {self.expected_size}"
+                )
+            )
+            return
+        try:
+            self.tmp_path.replace(self.dest_path)
+        except OSError as exc:
+            self.fail(exc)
+            return
+        if not self.done.done():
+            self.done.set_result(
+                BlobPullOutcome(
+                    dest_path=str(self.dest_path),
+                    file_name=str(payload.get("file_name") or self.file_name),
+                    mime_type=str(payload.get("mime_type") or self.mime_type),
+                    bytes_read=total,
+                    sha256=actual,
+                )
+            )
+        if self._watchdog is not None:
+            self._watchdog.cancel()
 
 
 @dataclass
@@ -38,7 +205,9 @@ class RemoteWorkerConnection:
 
     login: str
     send_json: SendJson
+    send_bytes: Optional[SendBytes] = None
     pending: Dict[str, asyncio.Future[Dict[str, Any]]] = field(default_factory=dict)
+    stream_sessions: Dict[str, _PullSession] = field(default_factory=dict)
     hello_meta: Dict[str, Any] = field(default_factory=dict)
 
     async def request(
@@ -68,15 +237,41 @@ class RemoteWorkerConnection:
         ).strip()
         if not request_id:
             return
+        padded = normalize_blob_request_id(request_id)
+        session = self.stream_sessions.get(request_id) or self.stream_sessions.get(
+            padded
+        )
+        msg_type = str(message.get("type") or "")
+        if session is not None and msg_type in {"blob_begin", "blob_end"}:
+            if msg_type == "blob_begin":
+                session.on_begin(payload)
+            else:
+                session.on_end(payload)
+            return
         fut = self.pending.get(request_id)
         if fut is not None and not fut.done():
             fut.set_result(payload)
+
+    def handle_binary(self, frame: bytes) -> None:
+        try:
+            request_id, seq, payload = unpack_blob_chunk(frame)
+        except ValueError:
+            return
+        session = self.stream_sessions.get(request_id) or self.stream_sessions.get(
+            normalize_blob_request_id(request_id)
+        )
+        if session is None:
+            return
+        session.on_chunk(seq, payload)
 
     def fail_pending(self, exc: BaseException) -> None:
         for fut in list(self.pending.values()):
             if not fut.done():
                 fut.set_exception(exc)
         self.pending.clear()
+        for session in list(self.stream_sessions.values()):
+            session.fail(exc)
+        self.stream_sessions.clear()
 
 
 class RemoteWorkerRegistry:
@@ -261,7 +456,7 @@ class RemoteWorkerRegistry:
         session_id: str,
         path: str,
         max_bytes: int = REMOTE_BLOB_MAX_BYTES,
-        timeout_seconds: float = 120.0,
+        timeout_seconds: float = REMOTE_BLOB_TRANSFER_TIMEOUT_SECONDS,
     ) -> RemoteFileBlobReadResult:
         conn = await self.require(login)
         req = RemoteFileBlobReadRequest(
@@ -295,7 +490,7 @@ class RemoteWorkerRegistry:
         content_base64: str,
         mode: str = "overwrite",
         max_bytes: int = REMOTE_BLOB_MAX_BYTES,
-        timeout_seconds: float = 120.0,
+        timeout_seconds: float = REMOTE_BLOB_TRANSFER_TIMEOUT_SECONDS,
     ) -> RemoteFileBlobWriteResult:
         conn = await self.require(login)
         if not self.worker_supports_file_blob_write(login):
@@ -318,6 +513,277 @@ class RemoteWorkerRegistry:
             timeout_seconds=timeout_seconds,
         )
         return RemoteFileBlobWriteResult.model_validate(payload)
+
+    def worker_supports_blob_stream(self, login: str) -> bool:
+        key = (login or "").strip()
+        conn = self._connections.get(key)
+        if conn is None:
+            return False
+        caps = set(conn.hello_meta.get("capabilities") or [])
+        return "blob_stream" in caps
+
+    async def blob_pull_to_path(
+        self,
+        *,
+        login: str,
+        session_id: str,
+        path: str,
+        dest_path: str | Path,
+        max_bytes: Optional[int] = None,
+    ) -> BlobPullOutcome:
+        dest = Path(dest_path)
+        if self.worker_supports_blob_stream(login):
+            return await self._blob_pull_stream(
+                login=login,
+                session_id=session_id,
+                path=path,
+                dest=dest,
+                max_bytes=max_bytes,
+            )
+        return await self._blob_pull_base64(
+            login=login,
+            session_id=session_id,
+            path=path,
+            dest=dest,
+            max_bytes=max_bytes,
+        )
+
+    async def _blob_pull_stream(
+        self,
+        *,
+        login: str,
+        session_id: str,
+        path: str,
+        dest: Path,
+        max_bytes: Optional[int],
+    ) -> BlobPullOutcome:
+        conn = await self.require(login)
+        limit = min(
+            max(1, int(max_bytes or REMOTE_BLOB_STREAM_MAX_BYTES)),
+            int(REMOTE_BLOB_STREAM_MAX_BYTES),
+        )
+        request_id = uuid.uuid4().hex
+        session = _PullSession(request_id=request_id, dest_path=dest)
+        conn.stream_sessions[request_id] = session
+        conn.stream_sessions[normalize_blob_request_id(request_id)] = session
+        session.start_watchdog()
+        req = RemoteBlobPullRequest(
+            request_id=request_id,
+            session_id=session_id,
+            path=path,
+            max_bytes=limit,
+        )
+        try:
+            await conn.send_json({"type": "blob_pull", "request": req.model_dump()})
+            return await session.done
+        except Exception as exc:  # noqa: BLE001
+            session.fail(exc if isinstance(exc, BaseException) else RuntimeError(exc))
+            if session.done.done():
+                return session.done.result()
+            return BlobPullOutcome(error=str(exc))
+        finally:
+            conn.stream_sessions.pop(request_id, None)
+            conn.stream_sessions.pop(normalize_blob_request_id(request_id), None)
+            if session._watchdog is not None:
+                session._watchdog.cancel()
+
+    async def _blob_pull_base64(
+        self,
+        *,
+        login: str,
+        session_id: str,
+        path: str,
+        dest: Path,
+        max_bytes: Optional[int],
+    ) -> BlobPullOutcome:
+        limit = min(
+            max(1, int(max_bytes or REMOTE_BLOB_MAX_BYTES)),
+            int(REMOTE_BLOB_MAX_BYTES),
+        )
+        result = await self.file_blob_read(
+            login=login,
+            session_id=session_id,
+            path=path,
+            max_bytes=limit,
+        )
+        if result.error:
+            return BlobPullOutcome(
+                file_name=result.file_name,
+                mime_type=result.mime_type,
+                bytes_read=result.bytes_read,
+                error=result.error,
+                truncated=bool(result.truncated),
+            )
+        if result.truncated:
+            return BlobPullOutcome(
+                file_name=result.file_name,
+                mime_type=result.mime_type,
+                bytes_read=result.bytes_read,
+                error=encode_file_too_large(result.bytes_read or limit, limit),
+                truncated=True,
+            )
+        try:
+            raw = base64.b64decode(result.content_base64 or "", validate=False)
+        except Exception as exc:  # noqa: BLE001
+            return BlobPullOutcome(error=f"INVALID_BASE64: {exc}")
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(raw)
+        except OSError as exc:
+            return BlobPullOutcome(error=str(exc))
+        return BlobPullOutcome(
+            dest_path=str(dest),
+            file_name=result.file_name or dest.name,
+            mime_type=result.mime_type or "application/octet-stream",
+            bytes_read=len(raw),
+        )
+
+    async def blob_push_from_path(
+        self,
+        *,
+        login: str,
+        session_id: str,
+        src_path: str | Path,
+        dest_path: str,
+        mode: str = "overwrite",
+        max_bytes: Optional[int] = None,
+    ) -> BlobPushOutcome:
+        src = Path(src_path)
+        if self.worker_supports_blob_stream(login):
+            return await self._blob_push_stream(
+                login=login,
+                session_id=session_id,
+                src=src,
+                dest_path=dest_path,
+                mode=mode,
+                max_bytes=max_bytes,
+            )
+        return await self._blob_push_base64(
+            login=login,
+            session_id=session_id,
+            src=src,
+            dest_path=dest_path,
+            mode=mode,
+            max_bytes=max_bytes,
+        )
+
+    async def _blob_push_stream(
+        self,
+        *,
+        login: str,
+        session_id: str,
+        src: Path,
+        dest_path: str,
+        mode: str,
+        max_bytes: Optional[int],
+    ) -> BlobPushOutcome:
+        conn = await self.require(login)
+        if conn.send_bytes is None:
+            return await self._blob_push_base64(
+                login=login,
+                session_id=session_id,
+                src=src,
+                dest_path=dest_path,
+                mode=mode,
+                max_bytes=max_bytes,
+            )
+        try:
+            size = src.stat().st_size
+        except OSError as exc:
+            return BlobPushOutcome(path=dest_path, error=str(exc))
+        limit = min(
+            max(1, int(max_bytes or REMOTE_BLOB_STREAM_MAX_BYTES)),
+            int(REMOTE_BLOB_STREAM_MAX_BYTES),
+        )
+        if size > limit:
+            return BlobPushOutcome(
+                path=dest_path, error=encode_file_too_large(size, limit)
+            )
+        request_id = uuid.uuid4().hex
+        begin = RemoteBlobPushBeginRequest(
+            request_id=request_id,
+            session_id=session_id,
+            path=dest_path,
+            size=size,
+            mode="append" if mode == "append" else "overwrite",
+            max_bytes=limit,
+            file_name=src.name,
+        )
+        ready = await conn.request(
+            "blob_push_begin",
+            begin.model_dump(),
+            timeout_seconds=float(REMOTE_BLOB_IDLE_TIMEOUT_SECONDS),
+        )
+        if ready.get("error"):
+            return BlobPushOutcome(path=dest_path, error=str(ready.get("error")))
+        hasher = hashlib.sha256()
+        seq = 0
+        try:
+            with src.open("rb") as handle:
+                while True:
+                    chunk = handle.read(REMOTE_BLOB_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    hasher.update(chunk)
+                    await conn.send_bytes(pack_blob_chunk(request_id, seq, chunk))
+                    seq += 1
+        except OSError as exc:
+            return BlobPushOutcome(path=dest_path, error=str(exc))
+        end = RemoteBlobPushEndRequest(
+            request_id=request_id,
+            sha256=hasher.hexdigest(),
+            total_bytes=size,
+        )
+        result = await conn.request(
+            "blob_push_end",
+            end.model_dump(),
+            timeout_seconds=float(REMOTE_BLOB_IDLE_TIMEOUT_SECONDS),
+        )
+        return BlobPushOutcome(
+            path=str(result.get("path") or dest_path),
+            bytes_written=int(result.get("bytes_written") or 0),
+            error=result.get("error"),
+        )
+
+    async def _blob_push_base64(
+        self,
+        *,
+        login: str,
+        session_id: str,
+        src: Path,
+        dest_path: str,
+        mode: str,
+        max_bytes: Optional[int],
+    ) -> BlobPushOutcome:
+        limit = min(
+            max(1, int(max_bytes or REMOTE_BLOB_MAX_BYTES)),
+            int(REMOTE_BLOB_MAX_BYTES),
+        )
+        try:
+            size = src.stat().st_size
+        except OSError as exc:
+            return BlobPushOutcome(path=dest_path, error=str(exc))
+        if size > limit:
+            return BlobPushOutcome(
+                path=dest_path, error=encode_file_too_large(size, limit)
+            )
+        try:
+            raw = src.read_bytes()
+        except OSError as exc:
+            return BlobPushOutcome(path=dest_path, error=str(exc))
+        result = await self.file_blob_write(
+            login=login,
+            session_id=session_id,
+            path=dest_path,
+            content_base64=base64.b64encode(raw).decode("ascii"),
+            mode=mode,
+            max_bytes=limit,
+        )
+        return BlobPushOutcome(
+            path=result.path,
+            bytes_written=result.bytes_written,
+            error=result.error,
+        )
 
     async def reset_remote_shell(
         self,

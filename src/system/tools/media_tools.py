@@ -8,12 +8,19 @@
 from __future__ import annotations
 
 import base64
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, List, Optional
 
 from agent_core.config import Config, get_config
 from agent_core.tools.base import BaseTool, ToolDefinition, ToolParameter, ToolResult
+from agent_core.utils.media import (
+    _remote_media_cache_dir,
+    looks_like_remote_worker_disconnect,
+    remote_blob_too_large_message,
+    remote_worker_disconnect_message,
+)
+from macchiato_remote.protocol import parse_file_too_large
 
 
 @dataclass
@@ -53,10 +60,17 @@ async def _read_remote_attachment_blob(
     path_str: str,
     exec_ctx: dict,
     max_bytes: int,
-) -> tuple[Optional[dict[str, Any]], Optional[str]]:
+    kind: str = "文件",
+) -> tuple[Optional[dict[str, Any]], Optional[str], Optional[str]]:
+    from macchiato_remote.protocol import (
+        REMOTE_BLOB_STREAM_MAX_BYTES,
+        REMOTE_BLOB_TRANSFER_TIMEOUT_SECONDS,
+    )
+
     sid = str((exec_ctx or {}).get("session_id") or "").strip()
     if not sid:
-        return None, "缺少远程会话 session_id"
+        return None, "缺少远程会话 session_id", "READ_FAILED"
+    capped = min(max(1, int(max_bytes)), int(REMOTE_BLOB_STREAM_MAX_BYTES))
     try:
         from agent_core.remote.pathmap import normalize_remote_workspace_relative_path
         from agent_core.remote.worker_registry import get_remote_worker_registry
@@ -64,36 +78,66 @@ async def _read_remote_attachment_blob(
 
         state = get_remote_workspace_state(sid)
         if state is None:
-            return None, "远程会话未激活"
+            return None, "远程会话未激活", "READ_FAILED"
         rel, verr = normalize_remote_workspace_relative_path(path_str)
         if verr or rel is None:
-            return None, verr or "无效远程路径"
-        blob = await get_remote_worker_registry().file_blob_read(
+            return None, verr or "无效远程路径", "READ_FAILED"
+        dest = _remote_media_cache_dir(sid) / (
+            f"attach-{Path(rel).name or 'attachment.bin'}"
+        )
+        outcome = await get_remote_worker_registry().blob_pull_to_path(
             login=state.login,
             session_id=sid,
             path=rel,
-            max_bytes=max_bytes,
+            dest_path=dest,
+            max_bytes=capped,
         )
     except Exception as exc:
+        if isinstance(exc, TimeoutError):
+            secs = int(REMOTE_BLOB_TRANSFER_TIMEOUT_SECONDS)
+            return (
+                None,
+                f"远程读取{kind}超时（等待 remote blob 传输超过 {secs}s）",
+                "READ_FAILED",
+            )
+        if looks_like_remote_worker_disconnect(exc):
+            return None, remote_worker_disconnect_message(kind=kind), "READ_FAILED"
         exc_name = exc.__class__.__name__
         msg = str(exc).strip()
-        if isinstance(exc, TimeoutError):
-            return None, "远程读取附件超时（等待 remote file_blob_read 响应超过 120s）"
         if msg:
-            return None, f"远程读取附件失败: {exc_name}: {msg}"
-        return None, f"远程读取附件失败: {exc_name}"
-    if blob.error:
-        return None, blob.error
-    if not blob.content_base64:
-        return None, "远程附件为空"
+            return None, f"远程读取{kind}失败: {exc_name}: {msg}", "READ_FAILED"
+        return None, f"远程读取{kind}失败: {exc_name}", "READ_FAILED"
+
+    err = outcome.error
+    parsed = parse_file_too_large(err)
+    if parsed is not None:
+        actual, limit = parsed
+        return (
+            None,
+            remote_blob_too_large_message(
+                actual_bytes=actual, limit_bytes=limit, kind=kind
+            ),
+            "TOO_LARGE",
+        )
+    if err:
+        return None, str(err), "READ_FAILED"
+    if bool(getattr(outcome, "truncated", False)):
+        return (
+            None,
+            remote_blob_too_large_message(limit_bytes=capped, kind=kind),
+            "TOO_LARGE",
+        )
+    dest_path = str(outcome.dest_path or "").strip()
+    if not dest_path:
+        return None, f"远程{kind}为空", "READ_FAILED"
     return (
         {
-            "content_base64": blob.content_base64,
-            "file_name": blob.file_name,
-            "mime_type": blob.mime_type,
-            "bytes_read": blob.bytes_read,
-            "truncated": blob.truncated,
+            "path": dest_path,
+            "file_name": outcome.file_name or Path(dest_path).name,
+            "mime_type": outcome.mime_type or "application/octet-stream",
+            "bytes_read": outcome.bytes_read,
         },
+        None,
         None,
     )
 
@@ -189,12 +233,12 @@ class AttachMediaTool(BaseTool):
             description="""将本地图片/视频挂载为下一轮对话的多模态输入。
 
 当你在推理中发现「需要查看某张截图/某个视频片段」时，使用本工具：
-- 提供位于工作区（通常是 user_file/ 目录）中的媒体路径
+- 提供位于工作区（通常是 user_file/ 目录）中的媒体路径；**远程工作区同样支持相对路径**（会自动从 worker 拉取到 daemon 再挂载）
 - 工具不会直接调用多模态模型，只会在 metadata 中声明挂载请求
 - AgentCore 的运行时会在**下一轮 LLM 调用前**自动把这些媒体嵌入到 messages 里
 
 推荐用法：
-- 用户或其他工具先将文件保存到 user_file/ 目录
+- 用户或其他工具先将文件保存到 user_file/ 目录（或远程工作区内）
 - 你调用 attach_media(path=\"user_file/xxx.png\") 或 attach_media(paths=[...])
 - 下一轮回答时，直接根据「刚刚挂载的截图」继续推理，无需再关心 base64 或 URL 细节。
 
@@ -231,8 +275,9 @@ class AttachMediaTool(BaseTool):
                 },
             ],
             usage_notes=[
-                "本工具不会直接返回图片内容或进行识图，只是声明下一轮需要附带的媒体。",
-                "路径推荐使用 user_file/ 前缀下的相对路径，方便与上传逻辑对齐。",
+                "本工具不会直接返回媒体内容，只是声明下一轮需要附带的图片/视频。",
+                "路径推荐使用 user_file/ 前缀下的相对路径；远程工作区会自动拉取到 daemon。",
+                "视频依赖当前模型的 Files API（如 Kimi vendor_files_api=kimi），不会把整段视频 base64 进消息。",
                 "调用成功后，你可以在后续回复中自然地引用这些媒体，例如：“根据刚才挂载的截图……”。",
             ],
             tags=["多模态", "媒体", "挂载"],
@@ -252,44 +297,54 @@ class AttachMediaTool(BaseTool):
         media_items: List[Dict[str, Any]] = []
         errors: List[str] = []
 
-        from agent_core.utils.media import resolve_media_to_content_item
+        from agent_core.utils.media import resolve_media_to_content_item_async
 
         for raw_path in unique_paths:
-            item, err = resolve_media_to_content_item(
+            item, err = await resolve_media_to_content_item_async(
                 raw_path, config=self._config, exec_ctx=ctx
             )
             if err or item is None:
                 errors.append(f"{raw_path}: {err or '无法解析媒体'}")
                 continue
             media_type = str(item.get("media_type") or "").strip().lower()
-            if media_type == "video":
-                errors.append(
-                    f"{raw_path}: 当前默认不把视频直接挂载给模型，请改用文字描述或截图。"
-                )
-                continue
-            if item.get("type") == "media_ref" and media_type == "image":
+            if item.get("type") == "media_ref" and media_type in {"image", "video"}:
                 media_items.append(item)
             else:
-                errors.append(f"{raw_path}: 仅支持挂载图片（image）")
+                errors.append(f"{raw_path}: 仅支持挂载图片/视频（image/video）")
 
         if not media_items:
             return ToolResult(
                 success=False,
                 error="INVALID_MEDIA_PATH",
-                message="；".join(errors) if errors else "没有可挂载的图片。",
+                message="；".join(errors) if errors else "没有可挂载的媒体。",
             )
 
-        msg = "图片已标记，将在下一轮 LLM 调用中附加（Kimi 等 provider 会优先走 Files API ms:// 引用）。"
+        has_video = any(
+            str(i.get("media_type") or "").lower() == "video" for i in media_items
+        )
+        msg = (
+            "媒体已标记，将在下一轮 LLM 调用中附加"
+            "（Kimi 等 provider 会优先走 Files API ms:// 引用；"
+            "视频需 vendor_files_api=kimi，不会 inline base64）。"
+        )
+        if has_video:
+            msg += " 含视频：无 Kimi Files 时下一轮可能无法真正喂给模型。"
         if errors:
             msg += f" 部分路径已跳过：{'；'.join(errors)}"
 
         return ToolResult(
             success=True,
-            data={"paths": [str(i.get("path") or "") for i in media_items if i.get("path")]},
+            data={
+                "paths": [
+                    str(i.get("path") or "") for i in media_items if i.get("path")
+                ]
+            },
             message=msg,
             metadata={
                 "embed_in_next_call": True,
-                "paths": [str(i.get("path") or "") for i in media_items if i.get("path")],
+                "paths": [
+                    str(i.get("path") or "") for i in media_items if i.get("path")
+                ],
                 "media_items": media_items,
             },
         )
@@ -369,11 +424,20 @@ class AttachImageToReplyTool(BaseTool):
         if image_path:
             ctx = kwargs.get("__execution_context__") or {}
             if _remote_workspace_active(ctx):
-                blob, berr = await _read_remote_attachment_blob(
+                from macchiato_remote.protocol import REMOTE_BLOB_STREAM_MAX_BYTES
+
+                blob, berr, bcode = await _read_remote_attachment_blob(
                     path_str=str(image_path).strip(),
                     exec_ctx=ctx,
-                    max_bytes=10 * 1024 * 1024,
+                    max_bytes=min(10 * 1024 * 1024, REMOTE_BLOB_STREAM_MAX_BYTES),
+                    kind="图片",
                 )
+                if bcode == "TOO_LARGE":
+                    return ToolResult(
+                        success=False,
+                        error="REMOTE_ATTACHMENT_TOO_LARGE",
+                        message=berr or "远程图片过大，无法完整拉取。",
+                    )
                 if berr or blob is None:
                     return ToolResult(
                         success=False,
@@ -382,7 +446,7 @@ class AttachImageToReplyTool(BaseTool):
                     )
                 attachment = {
                     "type": "image",
-                    "content_base64": blob["content_base64"],
+                    "path": blob["path"],
                     "content_type": blob["mime_type"],
                 }
                 if blob.get("file_name"):
@@ -503,19 +567,40 @@ class AttachFileToReplyTool(BaseTool):
         if file_path:
             ctx = kwargs.get("__execution_context__") or {}
             if _remote_workspace_active(ctx):
-                blob, berr = await _read_remote_attachment_blob(
+                from macchiato_remote.protocol import (
+                    REMOTE_BLOB_MAX_BYTES,
+                    REMOTE_BLOB_STREAM_MAX_BYTES,
+                )
+
+                blob, berr, bcode = await _read_remote_attachment_blob(
                     path_str=str(file_path).strip(),
                     exec_ctx=ctx,
-                    max_bytes=50 * 1024 * 1024,
+                    max_bytes=REMOTE_BLOB_STREAM_MAX_BYTES,
+                    kind="文件",
                 )
-                if berr or blob is None:
-                    fallback_blob, fallback_err = (
-                        await _read_remote_attachment_text_fallback(
-                            path_str=str(file_path).strip(),
-                            exec_ctx=ctx,
-                            max_bytes=50 * 1024 * 1024,
-                        )
+                if bcode == "TOO_LARGE":
+                    return ToolResult(
+                        success=False,
+                        error="REMOTE_ATTACHMENT_TOO_LARGE",
+                        message=berr or "远程文件过大，无法完整拉取。",
                     )
+                if berr or blob is None:
+                    # 二进制附件的文本兜底几乎无用；仅在 blob 能力缺失/超时时尝试
+                    can_fallback = bool(berr) and (
+                        "CAPABILITY_MISSING" in str(berr)
+                        or "超时" in str(berr)
+                        or "Timeout" in str(berr)
+                    )
+                    fallback_blob = None
+                    fallback_err = None
+                    if can_fallback:
+                        fallback_blob, fallback_err = (
+                            await _read_remote_attachment_text_fallback(
+                                path_str=str(file_path).strip(),
+                                exec_ctx=ctx,
+                                max_bytes=REMOTE_BLOB_MAX_BYTES,
+                            )
+                        )
                     if fallback_blob is not None:
                         blob = fallback_blob
                     else:
@@ -523,17 +608,29 @@ class AttachFileToReplyTool(BaseTool):
                             success=False,
                             error="REMOTE_ATTACHMENT_READ_FAILED",
                             message=(
-                                fallback_err
-                                or berr
-                                or f"无法读取远程文件: {file_path}"
+                                fallback_err or berr or f"无法读取远程文件: {file_path}"
                             ),
                         )
-                attachment = {
-                    "type": "file",
-                    "content_base64": blob["content_base64"],
-                    "mime_type": blob["mime_type"],
-                    "file_name": file_name or blob.get("file_name") or "attachment.bin",
-                }
+                if blob.get("path"):
+                    attachment = {
+                        "type": "file",
+                        "path": blob["path"],
+                        "mime_type": blob.get("mime_type")
+                        or "application/octet-stream",
+                        "file_name": file_name
+                        or blob.get("file_name")
+                        or "attachment.bin",
+                    }
+                else:
+                    attachment = {
+                        "type": "file",
+                        "content_base64": blob["content_base64"],
+                        "mime_type": blob.get("mime_type")
+                        or "application/octet-stream",
+                        "file_name": file_name
+                        or blob.get("file_name")
+                        or "attachment.bin",
+                    }
                 return ToolResult(
                     success=True,
                     data=attachment,

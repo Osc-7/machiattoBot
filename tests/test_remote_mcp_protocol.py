@@ -15,8 +15,8 @@ from macchiato_remote.protocol import (
 )
 
 
-def test_protocol_version_at_least_4():
-    assert REMOTE_PROTOCOL_VERSION >= 4
+def test_protocol_version_at_least_5():
+    assert REMOTE_PROTOCOL_VERSION >= 5
 
 
 def test_capabilities_include_mcp():
@@ -28,6 +28,7 @@ def test_capabilities_include_mcp():
         "mcp_shutdown",
     }.issubset(caps)
     assert "file_blob_write" in caps
+    assert "blob_stream" in caps
 
 
 def test_mcp_models_roundtrip():
@@ -36,9 +37,9 @@ def test_mcp_models_roundtrip():
         session_id="s1",
         servers=[RemoteMcpServerRef(name="chrome")],
     )
-    assert RemoteMcpEnsureRequest.model_validate(ensure.model_dump()).servers[0].name == (
-        "chrome"
-    )
+    assert RemoteMcpEnsureRequest.model_validate(ensure.model_dump()).servers[
+        0
+    ].name == ("chrome")
 
     listed = RemoteMcpListToolsResult(
         request_id="r2",
@@ -58,7 +59,9 @@ def test_mcp_models_roundtrip():
     assert back.arguments["url"].startswith("https://")
 
     shut = RemoteMcpShutdownResult(request_id="r4", closed=["chrome"])
-    assert RemoteMcpShutdownResult.model_validate(shut.model_dump()).closed == ["chrome"]
+    assert RemoteMcpShutdownResult.model_validate(shut.model_dump()).closed == [
+        "chrome"
+    ]
 
     err = RemoteMcpCallToolResult(
         request_id="r5", is_error=True, error="MCP_TOOL_TIMEOUT"

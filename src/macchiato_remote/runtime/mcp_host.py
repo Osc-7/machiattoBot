@@ -295,7 +295,7 @@ class RemoteMcpHost:
                 continue
             try:
                 await runtime.stack.aclose()
-            except Exception:
+            except BaseException:  # anyio cancel-scope bug 会抛 CancelledError(BaseException)
                 logger.exception(
                     "remote mcp shutdown error session=%s server=%s",
                     key[0],

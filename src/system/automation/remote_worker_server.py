@@ -3,31 +3,38 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 import json
 import logging
 import os
 import re
 import secrets
 import time
+from datetime import datetime, timezone
 from threading import RLock
 from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field
 
 from agent_core.config import get_config
-from agent_core.remote.worker_registry import (RemoteWorkerConnection,
-                                               get_remote_worker_registry)
+from agent_core.remote.worker_registry import (
+    RemoteWorkerConnection,
+    get_remote_worker_registry,
+)
 from frontend.feishu.client import FeishuClient
-from frontend.feishu.remote_login_card import (APPROVE, REJECT,
-                                               build_remote_login_request_card)
-from macchiato_remote.tokens import (expected_token_matches,
-                                     load_registered_remote_worker_tokens,
-                                     register_remote_worker_token,
-                                     remote_token_registry_path)
+from frontend.feishu.remote_login_card import (
+    APPROVE,
+    REJECT,
+    build_remote_login_request_card,
+)
+from macchiato_remote.tokens import (
+    expected_token_matches,
+    load_registered_remote_worker_tokens,
+    register_remote_worker_token,
+    remote_token_registry_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +91,9 @@ def remote_login_approval_chat_id() -> str:
 def remote_login_allowed_approver_open_ids() -> set[str]:
     raw = os.environ.get("MACCHIATO_REMOTE_LOGIN_APPROVER_OPEN_IDS", "").strip()
     if raw:
-        return {part.strip() for part in raw.replace("\n", ",").split(",") if part.strip()}
+        return {
+            part.strip() for part in raw.replace("\n", ",").split(",") if part.strip()
+        }
     cfg = get_config().feishu
     return {
         str(v).strip()
@@ -96,7 +105,9 @@ def remote_login_allowed_approver_open_ids() -> set[str]:
 def remote_login_allowed_approver_user_ids() -> set[str]:
     raw = os.environ.get("MACCHIATO_REMOTE_LOGIN_APPROVER_USER_IDS", "").strip()
     if raw:
-        return {part.strip() for part in raw.replace("\n", ",").split(",") if part.strip()}
+        return {
+            part.strip() for part in raw.replace("\n", ",").split(",") if part.strip()
+        }
     cfg = get_config().feishu
     return {
         str(v).strip()
@@ -175,7 +186,9 @@ def _is_remote_login_approver_allowed(*, open_id: str, user_id: str) -> bool:
     return False
 
 
-async def _send_remote_login_approval_card(record: dict[str, object]) -> tuple[bool, str]:
+async def _send_remote_login_approval_card(
+    record: dict[str, object],
+) -> tuple[bool, str]:
     chat_id = remote_login_approval_chat_id()
     if not chat_id:
         return False, "missing_approval_chat_id"
@@ -574,29 +587,49 @@ def create_remote_worker_app(*, token: Optional[str] = None) -> FastAPI:
 
         await websocket.accept()
         login_s = (login or "").strip()
-        conn = RemoteWorkerConnection(login=login_s, send_json=websocket.send_json)
+        conn = RemoteWorkerConnection(
+            login=login_s,
+            send_json=websocket.send_json,
+            send_bytes=websocket.send_bytes,
+        )
         registry = get_remote_worker_registry()
         await registry.register(conn)
         logger.info("remote worker connected: login=%s", login_s)
         try:
             while True:
-                message = await websocket.receive_json()
-                if isinstance(message, dict):
-                    if message.get("type") == "worker_hello":
-                        conn.hello_meta = {
-                            "protocol_version": message.get("protocol_version"),
-                            "package_version": message.get("package_version"),
-                            "capabilities": list(message.get("capabilities") or []),
-                        }
-                        logger.info(
-                            "remote worker hello: login=%s protocol=%s package=%s caps=%s",
-                            login_s,
-                            message.get("protocol_version"),
-                            message.get("package_version"),
-                            message.get("capabilities"),
-                        )
-                        continue
-                    conn.handle_message(message)
+                message = await websocket.receive()
+                msg_type = str(message.get("type") or "")
+                if msg_type == "websocket.disconnect":
+                    raise WebSocketDisconnect(message.get("code") or 1000)
+                raw_bytes = message.get("bytes")
+                raw_text = message.get("text")
+                if raw_bytes is not None:
+                    conn.handle_binary(raw_bytes)
+                    continue
+                if raw_text is None:
+                    continue
+                try:
+                    parsed = json.loads(raw_text)
+                except json.JSONDecodeError:
+                    logger.warning("remote worker invalid json: login=%s", login_s)
+                    continue
+                if not isinstance(parsed, dict):
+                    continue
+                if parsed.get("type") == "worker_hello":
+                    conn.hello_meta = {
+                        "protocol_version": parsed.get("protocol_version"),
+                        "package_version": parsed.get("package_version"),
+                        "capabilities": list(parsed.get("capabilities") or []),
+                    }
+                    logger.info(
+                        "remote worker hello: login=%s protocol=%s package=%s caps=%s",
+                        login_s,
+                        parsed.get("protocol_version"),
+                        parsed.get("package_version"),
+                        parsed.get("capabilities"),
+                    )
+                    continue
+                conn.handle_message(parsed)
         except WebSocketDisconnect:
             logger.info("remote worker disconnected: login=%s", login_s)
         finally:
@@ -716,12 +749,16 @@ async def run_remote_worker_server_until_stopped(
     bind_host = host or remote_server_host()
     bind_port = int(port or remote_server_port())
     app = create_remote_worker_app(token=token)
+    from macchiato_remote.protocol import REMOTE_WS_MAX_SIZE
+
     config = uvicorn.Config(
         app,
         host=bind_host,
         port=bind_port,
         log_level="info",
         access_log=False,
+        # uvicorn 默认 16MiB；低于协议 blob 上限时，worker 回传会直接被踢掉。
+        ws_max_size=REMOTE_WS_MAX_SIZE,
     )
     server = uvicorn.Server(config)
     task = asyncio.create_task(server.serve(), name="remote-worker-websocket-server")

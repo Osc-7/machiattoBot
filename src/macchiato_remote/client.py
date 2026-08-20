@@ -3,19 +3,31 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import mimetypes
 import os
 import platform
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 from urllib.parse import quote, urlencode, urlparse, urlunparse
 
 from macchiato_remote.protocol import (
+    REMOTE_BLOB_CHUNK_BYTES,
+    REMOTE_BLOB_STREAM_MAX_BYTES,
     REMOTE_PROTOCOL_VERSION,
     REMOTE_WORKER_CAPABILITIES,
     REMOTE_WORKSPACE_MOUNT,
     REMOTE_WS_MAX_SIZE,
+    RemoteBlobBegin,
+    RemoteBlobEnd,
+    RemoteBlobPullRequest,
+    RemoteBlobPushBeginRequest,
+    RemoteBlobPushEndRequest,
+    RemoteBlobPushReady,
+    RemoteBlobPushResult,
     RemoteCommandRequest,
     RemoteCommandResult,
     RemoteFileBlobReadRequest,
@@ -52,10 +64,16 @@ from macchiato_remote.protocol import (
     RemoteWorkspaceCloseResult,
     RemoteWorkspaceOpenRequest,
     RemoteWorkspaceOpenResult,
+    encode_file_too_large,
+    looks_like_blob_chunk,
+    normalize_blob_request_id,
+    pack_blob_chunk,
+    unpack_blob_chunk,
 )
 from macchiato_remote.runtime.files import (
     read_workspace_blob,
     read_workspace_text,
+    resolve_under_workspace,
     write_workspace_blob,
     write_workspace_text,
 )
@@ -197,6 +215,24 @@ def raw_websocket_handshake_probe(
             pass
 
 
+SendJson = Callable[[Dict[str, Any]], Awaitable[None]]
+SendBytes = Callable[[bytes], Awaitable[None]]
+
+
+@dataclass
+class _IncomingPush:
+    request_id: str
+    dest: Path
+    tmp: Path
+    expected_size: int
+    mode: str
+    hasher: Any
+    next_seq: int = 0
+    written: int = 0
+    handle: Any = None
+    last_activity: float = 0.0
+
+
 class RemoteWorkerClient:
     def __init__(
         self,
@@ -213,6 +249,9 @@ class RemoteWorkerClient:
         self._sessions: Dict[str, LocalShellSession] = {}
         self._jobs = RemoteJobRegistry()
         self._mcp_host = RemoteMcpHost()
+        self._send_json: Optional[SendJson] = None
+        self._send_bytes: Optional[SendBytes] = None
+        self._push_sessions: Dict[str, _IncomingPush] = {}
 
     async def run_forever(self) -> None:
         try:
@@ -262,11 +301,22 @@ class RemoteWorkerClient:
                         file=sys.stderr,
                         flush=True,
                     )
-                    async for raw in ws:
-                        message = json.loads(raw)
-                        response = await self._handle_message(message)
-                        if response is not None:
-                            await ws.send(json.dumps(response, ensure_ascii=False))
+
+                    async def _send_json(obj: Dict[str, Any]) -> None:
+                        await ws.send(json.dumps(obj, ensure_ascii=False))
+
+                    async def _send_bytes(data: bytes) -> None:
+                        await ws.send(data)
+
+                    self._send_json = _send_json
+                    self._send_bytes = _send_bytes
+                    try:
+                        async for raw in ws:
+                            await self._dispatch_incoming(raw)
+                    finally:
+                        self._send_json = None
+                        self._send_bytes = None
+                        self._abort_push_sessions()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -301,6 +351,7 @@ class RemoteWorkerClient:
                 await asyncio.sleep(3)
 
     async def close(self) -> None:
+        self._abort_push_sessions()
         for session in list(self._sessions.values()):
             await session.close()
         self._sessions.clear()
@@ -332,6 +383,91 @@ class RemoteWorkerClient:
         """Same URL as connect but without query string (hides token)."""
         parsed = urlparse(self._websocket_url())
         return urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
+
+    def _abort_push_sessions(self) -> None:
+        for session in list(self._push_sessions.values()):
+            try:
+                if session.handle is not None:
+                    session.handle.close()
+            except Exception:
+                pass
+            try:
+                session.tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+        self._push_sessions.clear()
+
+    async def _emit(self, msg_type: str, result: Any) -> None:
+        if self._send_json is None:
+            return
+        payload = result.model_dump() if hasattr(result, "model_dump") else result
+        await self._send_json({"type": msg_type, "result": payload})
+
+    async def _dispatch_incoming(self, raw: Any) -> None:
+        if isinstance(raw, bytes):
+            if looks_like_blob_chunk(raw):
+                await self._handle_binary(raw)
+                return
+            try:
+                message = json.loads(raw.decode("utf-8"))
+            except Exception:
+                return
+        elif isinstance(raw, str):
+            message = json.loads(raw)
+        else:
+            return
+        if not isinstance(message, dict):
+            return
+        response = await self._handle_message(message)
+        if response is not None and self._send_json is not None:
+            await self._send_json(response)
+
+    async def _handle_binary(self, frame: bytes) -> None:
+        try:
+            request_id, seq, payload = unpack_blob_chunk(frame)
+        except ValueError:
+            return
+        rid = normalize_blob_request_id(request_id)
+        session = self._push_sessions.get(rid)
+        if session is None or session.handle is None:
+            return
+        if seq != session.next_seq:
+            session.handle.close()
+            session.handle = None
+            try:
+                session.tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+            self._push_sessions.pop(rid, None)
+            await self._emit(
+                "blob_push_result",
+                RemoteBlobPushResult(
+                    request_id=session.request_id,
+                    path=str(session.dest),
+                    error=f"BLOB_SEQ_GAP: expected {session.next_seq} got {seq}",
+                ),
+            )
+            return
+        session.handle.write(payload)
+        session.hasher.update(payload)
+        session.written += len(payload)
+        session.next_seq += 1
+        if session.written > session.expected_size:
+            session.handle.close()
+            session.handle = None
+            try:
+                session.tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+            self._push_sessions.pop(rid, None)
+            await self._emit(
+                "blob_push_result",
+                RemoteBlobPushResult(
+                    request_id=session.request_id,
+                    path=str(session.dest),
+                    error="BLOB_SIZE_EXCEEDED",
+                ),
+            )
 
     async def _handle_message(
         self, message: Dict[str, Any]
@@ -368,6 +504,18 @@ class RemoteWorkerClient:
             req = RemoteFileBlobWriteRequest.model_validate(payload)
             result = await self._file_blob_write(req)
             return {"type": "file_blob_write_result", "result": result.model_dump()}
+        if msg_type == "blob_pull":
+            req = RemoteBlobPullRequest.model_validate(payload)
+            await self._blob_pull(req)
+            return None
+        if msg_type == "blob_push_begin":
+            req = RemoteBlobPushBeginRequest.model_validate(payload)
+            ready = await self._blob_push_begin(req)
+            return {"type": "blob_push_ready", "result": ready.model_dump()}
+        if msg_type == "blob_push_end":
+            req = RemoteBlobPushEndRequest.model_validate(payload)
+            result = await self._blob_push_end(req)
+            return {"type": "blob_push_result", "result": result.model_dump()}
         if msg_type == "reset_shell":
             req = RemoteShellResetRequest.model_validate(payload)
             result = await self._reset_shell(req)
@@ -434,7 +582,9 @@ class RemoteWorkerClient:
             self._jobs.open_session(req.session_id, root)
             self._mcp_host.bind_workspace(req.session_id, root)
             try:
-                from macchiato_remote.runtime.macchiato_dir import ensure_macchiato_layout
+                from macchiato_remote.runtime.macchiato_dir import (
+                    ensure_macchiato_layout,
+                )
 
                 ensure_macchiato_layout(
                     root,
@@ -463,13 +613,21 @@ class RemoteWorkerClient:
     async def _close_workspace(
         self, req: RemoteWorkspaceCloseRequest
     ) -> RemoteWorkspaceCloseResult:
+        # best-effort 清理：MCP host 的 anyio cancel-scope bug 会在 shutdown 时
+        # 抛出逃逸的 CancelledError（BaseException，不被 except Exception 捕获）。
+        # 若放任它抛出，会被 run_forever 的 `except CancelledError: raise` 当成
+        # 真取消而把整个 worker 干掉（release 后 worker 掉线）。这里吞掉，
+        # 保证 close_workspace 只清会话、worker 保持连接。
         try:
             await self._mcp_host.shutdown(req.session_id)
-        except Exception:
+        except BaseException:
             pass
         session = self._sessions.pop(req.session_id, None)
         if session is not None:
-            await session.close()
+            try:
+                await session.close()
+            except BaseException:
+                pass
         self._jobs.close_session(req.session_id)
         return RemoteWorkspaceCloseResult(
             request_id=req.request_id,
@@ -503,9 +661,11 @@ class RemoteWorkerClient:
             RemoteMcpToolMeta(
                 name=str(t.get("name") or ""),
                 description=str(t.get("description") or ""),
-                input_schema=t.get("input_schema")
-                if isinstance(t.get("input_schema"), dict)
-                else {},
+                input_schema=(
+                    t.get("input_schema")
+                    if isinstance(t.get("input_schema"), dict)
+                    else {}
+                ),
             )
             for t in (data.get("tools") or [])
             if isinstance(t, dict)
@@ -553,7 +713,9 @@ class RemoteWorkerClient:
                 error="SESSION_NOT_OPEN",
             )
         hard_timeout = req.timeout_seconds
-        wait_window_ms = req.wait_window_ms if req.wait_window_ms is not None else 30_000
+        wait_window_ms = (
+            req.wait_window_ms if req.wait_window_ms is not None else 30_000
+        )
         wait_for_completion = bool(req.wait_for_completion)
         if self._is_stateful_shell_command(req.command):
             return await session.execute(
@@ -710,12 +872,6 @@ class RemoteWorkerClient:
             req.path,
             max_bytes=req.max_bytes,
         )
-        if err:
-            return RemoteFileBlobReadResult(
-                request_id=req.request_id,
-                path=req.path,
-                error=err,
-            )
         return RemoteFileBlobReadResult(
             request_id=req.request_id,
             path=req.path,
@@ -724,6 +880,7 @@ class RemoteWorkerClient:
             mime_type=mime,
             bytes_read=read_n,
             truncated=truncated,
+            error=err,
         )
 
     async def _file_blob_write(
@@ -753,6 +910,218 @@ class RemoteWorkerClient:
             request_id=req.request_id,
             path=req.path,
             bytes_written=written,
+        )
+
+    async def _blob_pull(self, req: RemoteBlobPullRequest) -> None:
+        rid = req.request_id
+        session = self._sessions.get(req.session_id)
+        if session is None:
+            await self._emit(
+                "blob_end",
+                RemoteBlobEnd(request_id=rid, error="remote session is not open"),
+            )
+            return
+        limit = min(
+            max(1, int(req.max_bytes or REMOTE_BLOB_STREAM_MAX_BYTES)),
+            int(REMOTE_BLOB_STREAM_MAX_BYTES),
+        )
+        try:
+            path = resolve_under_workspace(session.root, req.path)
+        except ValueError as exc:
+            await self._emit(
+                "blob_end",
+                RemoteBlobEnd(request_id=rid, error=str(exc)),
+            )
+            return
+        if not path.is_file():
+            await self._emit(
+                "blob_end",
+                RemoteBlobEnd(request_id=rid, error="FILE_NOT_FOUND"),
+            )
+            return
+        try:
+            size = path.stat().st_size
+        except OSError as exc:
+            await self._emit(
+                "blob_end",
+                RemoteBlobEnd(request_id=rid, error=str(exc)),
+            )
+            return
+        mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        if size > limit:
+            await self._emit(
+                "blob_end",
+                RemoteBlobEnd(
+                    request_id=rid,
+                    total_bytes=size,
+                    file_name=path.name,
+                    mime_type=mime,
+                    error=encode_file_too_large(size, limit),
+                ),
+            )
+            return
+        await self._emit(
+            "blob_begin",
+            RemoteBlobBegin(
+                request_id=rid,
+                path=req.path,
+                file_name=path.name,
+                mime_type=mime,
+                size=size,
+                chunk_bytes=REMOTE_BLOB_CHUNK_BYTES,
+            ),
+        )
+        hasher = hashlib.sha256()
+        seq = 0
+        total = 0
+        try:
+            with path.open("rb") as handle:
+                while True:
+                    chunk = handle.read(REMOTE_BLOB_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    hasher.update(chunk)
+                    total += len(chunk)
+                    if self._send_bytes is None:
+                        raise RuntimeError("blob sink unavailable")
+                    await self._send_bytes(pack_blob_chunk(rid, seq, chunk))
+                    seq += 1
+        except OSError as exc:
+            await self._emit(
+                "blob_end",
+                RemoteBlobEnd(
+                    request_id=rid,
+                    total_bytes=total,
+                    file_name=path.name,
+                    mime_type=mime,
+                    error=str(exc),
+                ),
+            )
+            return
+        await self._emit(
+            "blob_end",
+            RemoteBlobEnd(
+                request_id=rid,
+                total_bytes=total,
+                sha256=hasher.hexdigest(),
+                file_name=path.name,
+                mime_type=mime,
+            ),
+        )
+
+    async def _blob_push_begin(
+        self, req: RemoteBlobPushBeginRequest
+    ) -> RemoteBlobPushReady:
+        rid = normalize_blob_request_id(req.request_id)
+        session = self._sessions.get(req.session_id)
+        if session is None:
+            return RemoteBlobPushReady(
+                request_id=req.request_id, error="remote session is not open"
+            )
+        limit = min(
+            max(1, int(req.max_bytes or REMOTE_BLOB_STREAM_MAX_BYTES)),
+            int(REMOTE_BLOB_STREAM_MAX_BYTES),
+        )
+        if int(req.size) > limit:
+            return RemoteBlobPushReady(
+                request_id=req.request_id,
+                error=encode_file_too_large(int(req.size), limit),
+            )
+        try:
+            dest = resolve_under_workspace(session.root, req.path)
+        except ValueError as exc:
+            return RemoteBlobPushReady(request_id=req.request_id, error=str(exc))
+        tmp = dest.with_name(dest.name + f".{rid[:8]}.part")
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            handle = tmp.open("wb")
+        except OSError as exc:
+            return RemoteBlobPushReady(request_id=req.request_id, error=str(exc))
+        old = self._push_sessions.pop(rid, None)
+        if old is not None:
+            try:
+                if old.handle is not None:
+                    old.handle.close()
+                old.tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+        self._push_sessions[rid] = _IncomingPush(
+            request_id=req.request_id,
+            dest=dest,
+            tmp=tmp,
+            expected_size=int(req.size),
+            mode=req.mode,
+            hasher=hashlib.sha256(),
+            handle=handle,
+        )
+        return RemoteBlobPushReady(request_id=req.request_id)
+
+    async def _blob_push_end(
+        self, req: RemoteBlobPushEndRequest
+    ) -> RemoteBlobPushResult:
+        rid = normalize_blob_request_id(req.request_id)
+        session = self._push_sessions.pop(rid, None)
+        if session is None:
+            return RemoteBlobPushResult(
+                request_id=req.request_id,
+                path="",
+                error="BLOB_PUSH_SESSION_MISSING",
+            )
+        try:
+            if session.handle is not None:
+                session.handle.close()
+                session.handle = None
+        except Exception:
+            pass
+        actual_hash = session.hasher.hexdigest()
+        expected_hash = (req.sha256 or "").strip().lower()
+        if expected_hash and actual_hash != expected_hash:
+            try:
+                session.tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return RemoteBlobPushResult(
+                request_id=req.request_id,
+                path=str(session.dest),
+                error=f"BLOB_SHA256_MISMATCH: {actual_hash} != {expected_hash}",
+            )
+        if session.written != session.expected_size:
+            try:
+                session.tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return RemoteBlobPushResult(
+                request_id=req.request_id,
+                path=str(session.dest),
+                error=(
+                    f"BLOB_SIZE_MISMATCH: {session.written} != {session.expected_size}"
+                ),
+            )
+        try:
+            if session.mode == "append" and session.dest.exists():
+                with session.tmp.open("rb") as src, session.dest.open("ab") as dst:
+                    while True:
+                        chunk = src.read(REMOTE_BLOB_CHUNK_BYTES)
+                        if not chunk:
+                            break
+                        dst.write(chunk)
+                session.tmp.unlink(missing_ok=True)
+            else:
+                session.tmp.replace(session.dest)
+        except OSError as exc:
+            try:
+                session.tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return RemoteBlobPushResult(
+                request_id=req.request_id,
+                path=str(session.dest),
+                error=str(exc),
+            )
+        return RemoteBlobPushResult(
+            request_id=req.request_id,
+            path=str(session.dest),
+            bytes_written=session.written,
         )
 
     async def _reset_shell(

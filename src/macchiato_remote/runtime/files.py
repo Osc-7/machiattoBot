@@ -100,30 +100,51 @@ def read_workspace_blob(
     root: Path,
     relative: str,
     *,
-    max_bytes: int = 20 * 1024 * 1024,
+    max_bytes: Optional[int] = None,
 ) -> Tuple[str, str, str, int, bool, Optional[str]]:
-    """Returns (content_base64, file_name, mime_type, bytes_read, truncated, error)."""
+    """Returns (content_base64, file_name, mime_type, bytes_read, truncated, error).
+
+    超过上限时不读文件、不发 payload，避免撑爆 WebSocket；error 为
+    ``FILE_TOO_LARGE:{actual}:{limit}``。
+    """
+    from macchiato_remote.protocol import (
+        REMOTE_BLOB_MAX_BYTES,
+        encode_file_too_large,
+    )
+
     try:
         path = resolve_under_workspace(root, relative)
     except ValueError as exc:
         return "", "", "application/octet-stream", 0, False, str(exc)
     if not path.is_file():
         return "", "", "application/octet-stream", 0, False, "FILE_NOT_FOUND"
+    requested = int(REMOTE_BLOB_MAX_BYTES if max_bytes is None else max_bytes)
+    limit = min(max(1, requested), int(REMOTE_BLOB_MAX_BYTES))
     try:
-        raw = path.read_bytes()
+        size = path.stat().st_size
     except OSError as exc:
         return "", "", "application/octet-stream", 0, False, str(exc)
-    limit = max(1, int(max_bytes))
-    truncated = len(raw) > limit
-    if truncated:
-        raw = raw[:limit]
     mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    if size > limit:
+        return (
+            "",
+            path.name,
+            mime,
+            size,
+            True,
+            encode_file_too_large(size, limit),
+        )
+    try:
+        with path.open("rb") as handle:
+            raw = handle.read(limit)
+    except OSError as exc:
+        return "", "", "application/octet-stream", 0, False, str(exc)
     return (
         base64.b64encode(raw).decode("ascii"),
         path.name,
         mime,
         len(raw),
-        truncated,
+        False,
         None,
     )
 
@@ -134,9 +155,11 @@ def write_workspace_blob(
     content_base64: str,
     *,
     mode: str = "overwrite",
-    max_bytes: int = 20 * 1024 * 1024,
+    max_bytes: Optional[int] = None,
 ) -> Tuple[int, Optional[str]]:
     """Decode base64 and write bytes under workspace. Returns (bytes_written, error)."""
+    from macchiato_remote.protocol import REMOTE_BLOB_MAX_BYTES
+
     try:
         path = resolve_under_workspace(root, relative)
     except ValueError as exc:
@@ -145,7 +168,8 @@ def write_workspace_blob(
         raw = base64.b64decode(content_base64 or "", validate=False)
     except Exception as exc:  # noqa: BLE001
         return 0, f"INVALID_BASE64: {exc}"
-    limit = max(1, int(max_bytes))
+    requested = int(REMOTE_BLOB_MAX_BYTES if max_bytes is None else max_bytes)
+    limit = min(max(1, requested), int(REMOTE_BLOB_MAX_BYTES))
     if len(raw) > limit:
         return 0, f"BLOB_TOO_LARGE: {len(raw)} > {limit}"
     try:
