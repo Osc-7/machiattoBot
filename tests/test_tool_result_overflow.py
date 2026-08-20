@@ -122,9 +122,10 @@ class TestMaybeOffloadToolResult:
         full = json.loads(outcome.overflow_path.read_text(encoding="utf-8"))
         assert full["data"]["raw"] == big
 
-        # 截断后 message 含显式标记 + 相对路径
+        # 截断后 message 含显式标记 + 相对路径（不再保留原 message 全文）
         assert "已截断" in new_result.message
         assert ".tool_results/" in new_result.message
+        assert "搜索完成" not in new_result.message
         assert outcome.display_path == f".tool_results/{outcome.overflow_path.name}"
 
         # 截断后 to_json 估算 ≤ 上限（核心保护目标）
@@ -132,17 +133,70 @@ class TestMaybeOffloadToolResult:
         assert kept <= 5_000, f"kept={kept} 超过上限 5000"
         assert outcome.kept_tokens == kept
 
-        # data 替换为结构化 dict，AI 既能看到 head preview 也知道路径
+        # data 替换为结构化 dict，AI 既能看到 head+tail preview 也知道路径
         assert new_result.data["truncated"] is True
         assert new_result.data["original_tokens"] == original_tokens
         assert new_result.data["overflow_path"] == outcome.display_path
         assert isinstance(new_result.data["preview"], str) and len(new_result.data["preview"]) > 0
+        assert "char_size" in new_result.data
 
         # 保留 success / error / 用户 metadata，并注入 _overflow 审计字段
         assert new_result.success is True
         assert new_result.metadata["source"] == "web"
         assert new_result.metadata["_overflow"]["triggered"] is True
         assert new_result.metadata["_overflow"]["original_tokens"] == original_tokens
+
+    def test_huge_mcp_style_message_is_not_kept(self, tmp_path: Path):
+        """MCP 把整段 stdout 塞进 message 时，截断后仍必须 ≤ max_tokens。"""
+        huge_stdout = _big_text(80_000)
+        result = ToolResult(
+            success=True,
+            message=huge_stdout,
+            data={
+                "content": [{"type": "text", "text": huge_stdout}],
+                "structured_content": {"result": huge_stdout},
+            },
+        )
+        assert estimate_result_tokens(result) > 50_000
+
+        new_result, outcome = maybe_offload_tool_result(
+            result,
+            tool_name="gpu_worker__gpu_output",
+            tool_call_id="tool_mcp_huge_1",
+            workspace_dir=str(tmp_path),
+            max_tokens=5_000,
+        )
+        assert outcome.triggered is True
+        kept = estimate_result_tokens(new_result)
+        assert kept <= 5_000, f"kept={kept} 超过上限 5000"
+        assert outcome.kept_tokens == kept
+        # 原超长 message 不得泄漏
+        assert huge_stdout[:200] not in new_result.message
+        assert len(new_result.message) < 2000
+        assert "middle omitted" in new_result.data["preview"] or len(
+            new_result.data["preview"]
+        ) < len(huge_stdout)
+
+    def test_dual_explosion_message_and_data(self, tmp_path: Path):
+        """message + data 双爆炸时 invariant 仍成立。"""
+        msg = _big_text(40_000)
+        data_blob = _big_text(40_000)
+        result = ToolResult(
+            success=True,
+            message=msg,
+            data={"raw": data_blob, "extra": data_blob[:10000]},
+        )
+        new_result, outcome = maybe_offload_tool_result(
+            result,
+            tool_name="dual_boom",
+            tool_call_id="call_dual",
+            workspace_dir=str(tmp_path),
+            max_tokens=3_000,
+        )
+        assert outcome.triggered is True
+        assert estimate_result_tokens(new_result) <= 3_000
+        assert msg[:100] not in new_result.message
+        assert data_blob[:100] not in (new_result.message or "")
 
     def test_persist_failure_still_truncates(self, tmp_path: Path, monkeypatch):
         """目录无法 mkdir 时仍做截断，message 给降级标记，不抛异常。"""
@@ -165,6 +219,7 @@ class TestMaybeOffloadToolResult:
         assert "落盘失败" in new_result.message
         # 即便落盘失败，也应保证 to_json 不超阈值
         assert estimate_result_tokens(new_result) <= 2_000
+        assert outcome.kept_tokens == estimate_result_tokens(new_result)
 
     def test_admin_mode_uses_admin_overflow_dir_with_absolute_path(self, tmp_path: Path):
         """管理员模式下转储到 admin_overflow_dir，marker 给绝对路径。"""
@@ -226,3 +281,15 @@ class TestMaybeOffloadToolResult:
         )
         assert "base64 omitted" in str(new_result.data["preview_url"])
         assert "data:image/png;base64" not in new_result.to_json()
+
+
+class TestHeadTailPreview:
+    def test_head_and_tail_present(self):
+        from agent_core.agent.tool_result_overflow import _head_tail_preview
+
+        text = "HEAD" + ("x" * 20000) + "TAIL"
+        out = _head_tail_preview(text, target_tokens=200)
+        assert "HEAD" in out
+        assert "TAIL" in out
+        assert "middle omitted" in out
+        assert estimate_tokens(out) <= 200

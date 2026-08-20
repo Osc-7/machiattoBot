@@ -37,7 +37,7 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from agent_core.memory.working_memory import estimate_tokens
 from agent_core.tools.base import ToolResult
@@ -195,6 +195,58 @@ def _truncate_string_to_tokens(text: str, target_tokens: int) -> str:
     return text[:lo]
 
 
+def _truncate_string_to_tokens_suffix(text: str, target_tokens: int) -> str:
+    """把 ``text`` 截断到估算 token 数 ≤ ``target_tokens`` 的最长后缀。"""
+    if target_tokens <= 0 or not text:
+        return ""
+    if estimate_tokens(text) <= target_tokens:
+        return text
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        # mid = 保留的后缀字符数
+        if estimate_tokens(text[-mid:]) <= target_tokens:
+            lo = mid
+        else:
+            hi = mid - 1
+    return text[-lo:] if lo else ""
+
+
+def _head_tail_preview(text: str, target_tokens: int) -> str:
+    """
+    构造 head + tail preview，便于同时看到开头元信息与 JSON/日志尾部。
+
+    预算对半切分；中间用显式省略标记连接。整体估算不超过 ``target_tokens``。
+    """
+    if target_tokens <= 0 or not text:
+        return ""
+    if estimate_tokens(text) <= target_tokens:
+        return text
+
+    sep = "\n\n…[middle omitted]…\n\n"
+    sep_tokens = estimate_tokens(sep)
+    # 极小预算：只留 head
+    if target_tokens <= sep_tokens + 2:
+        return _truncate_string_to_tokens(text, target_tokens)
+
+    half = max((target_tokens - sep_tokens) // 2, 1)
+    head = _truncate_string_to_tokens(text, half)
+    tail = _truncate_string_to_tokens_suffix(text, half)
+    if not tail or head == text or tail == text:
+        return head
+    # 若 head/tail 重叠则退化为纯 head
+    if len(head) + len(tail) >= len(text):
+        return _truncate_string_to_tokens(text, target_tokens)
+    preview = f"{head}{sep}{tail}"
+    if estimate_tokens(preview) <= target_tokens:
+        return preview
+    # 再收紧一次
+    tighter = max((target_tokens - sep_tokens) // 2 - 8, 1)
+    head = _truncate_string_to_tokens(text, tighter)
+    tail = _truncate_string_to_tokens_suffix(text, tighter)
+    return f"{head}{sep}{tail}"
+
+
 @dataclass(frozen=True)
 class OverflowOutcome:
     """``maybe_offload_tool_result`` 的执行结果元数据，便于审计/日志。"""
@@ -253,8 +305,8 @@ def maybe_offload_tool_result(
     -------
     (new_result, outcome)
         ``new_result``：若未触发，与入参为同一对象；触发时为新构造的
-        ``ToolResult``，``data`` 仅含 head preview 与元信息，``message`` 末尾追加
-        显式截断 marker。
+        ``ToolResult``，``data`` 仅含 head+tail preview 与元信息，``message``
+        替换为短截断 marker（不保留原 message）。
         ``outcome``：本次操作的统计元数据。
     """
     # 无论是否启用 overflow，先做 base64 脱敏，避免把大块编码内容写入上下文。
@@ -290,18 +342,19 @@ def maybe_offload_tool_result(
             target_dir,
             exc,
         )
-        return _build_truncated_result(
+        truncated = _build_truncated_result(
             result=result_for_context,
             original_json=original_json,
             original_tokens=original_tokens,
             max_tokens=max_tokens,
             display_path="",
             persist_error=str(exc),
-        ), OverflowOutcome(
+        )
+        return truncated, OverflowOutcome(
             triggered=True,
             overflow_path=None,
             original_tokens=original_tokens,
-            kept_tokens=0,
+            kept_tokens=estimate_tokens(truncated.to_json()),
             display_path="",
         )
 
@@ -320,18 +373,19 @@ def maybe_offload_tool_result(
             overflow_path,
             exc,
         )
-        return _build_truncated_result(
+        truncated = _build_truncated_result(
             result=result_for_context,
             original_json=original_json,
             original_tokens=original_tokens,
             max_tokens=max_tokens,
             display_path="",
             persist_error=str(exc),
-        ), OverflowOutcome(
+        )
+        return truncated, OverflowOutcome(
             triggered=True,
             overflow_path=None,
             original_tokens=original_tokens,
-            kept_tokens=0,
+            kept_tokens=estimate_tokens(truncated.to_json()),
             display_path="",
         )
 
@@ -371,6 +425,31 @@ def maybe_offload_tool_result(
     )
 
 
+def _build_truncation_message(
+    *,
+    original_tokens: int,
+    char_size: int,
+    preview_tokens: int,
+    display_path: str,
+    persist_error: Optional[str],
+) -> str:
+    """构造短 message：不保留原 message（MCP 常把整段 stdout 塞进 message）。"""
+    if display_path:
+        return (
+            f"[此工具结果过大已截断] 原始约 {original_tokens} tokens"
+            f"（{char_size} chars），上下文仅保留 head+tail preview"
+            f"（~{preview_tokens} tokens）。完整内容存档：{display_path}"
+            f"（位于当前工作区，可用 read_file / cat / grep 按需检索）"
+        )
+    return (
+        f"[此工具结果过大已截断] 原始约 {original_tokens} tokens"
+        f"（{char_size} chars），上下文仅保留 head+tail preview"
+        f"（~{preview_tokens} tokens）；本次落盘失败"
+        + (f"（{persist_error}）" if persist_error else "")
+        + "，完整内容已无法检索"
+    )
+
+
 def _build_truncated_result(
     *,
     result: ToolResult,
@@ -384,51 +463,15 @@ def _build_truncated_result(
     构造截断后的 ``ToolResult``：
 
     * ``success`` / ``error`` 保留；
-    * ``message`` = 原 message + 显式截断标记（一行话讲清楚去哪取完整内容）；
-    * ``data`` 替换为结构化 dict：``{"truncated": True, "preview": <head text>,
-      "original_tokens": N, "kept_tokens": M, "overflow_path": display_path}``，
-      让 AI 既能看到 head preview，又知道完整内容路径；
+    * ``message`` **替换**为短截断标记（绝不拼接原 message，避免 MCP 超长
+      stdout 泄漏进上下文）；
+    * ``data`` 替换为结构化 dict：``truncated`` / ``preview``(head+tail) /
+      ``original_tokens`` / ``overflow_path`` / ``char_size`` 等；
     * ``metadata`` 注入 ``_overflow`` 字段供审计。
 
-    head preview 的 token 预算 = ``max_tokens - 元信息 overhead``，确保最终
-    ``new_result.to_json()`` 的估算不超过 ``max_tokens``。
+    硬 invariant：最终 ``new_result.to_json()`` 估算 token ≤ ``max_tokens``。
     """
-    # 元信息（除 preview 外）的 token 占用预估，留出余量
-    overhead_tokens = 200
-    preview_budget = max(max_tokens - overhead_tokens, 100)
-
-    # 取原始 JSON 的 head 作为 preview。从 data 字段直接截断更直观，但 ToolResult
-    # 的序列化形态多样（data 可能是 dict / list / str / 嵌套结构），统一用
-    # to_json 字符串的 head 既稳定又包含 message / 错误等关键信息。
-    preview = _truncate_string_to_tokens(original_json, preview_budget)
-
-    if display_path:
-        marker = (
-            f"\n\n[此工具结果原始约 {original_tokens} tokens，已截断保留前 "
-            f"~{estimate_tokens(preview)} tokens。完整内容存档：{display_path}（"
-            f"位于当前工作区，可用 read_file 或 cat 查看完整 JSON）]"
-        )
-    else:
-        # 落盘失败时的退化标记
-        marker = (
-            f"\n\n[此工具结果原始约 {original_tokens} tokens，已截断保留前 "
-            f"~{estimate_tokens(preview)} tokens；本次落盘失败"
-            + (f"（{persist_error}）" if persist_error else "")
-            + "，完整内容已无法检索]"
-        )
-
-    new_message = (result.message or "") + marker
-
-    new_data = {
-        "truncated": True,
-        "original_tokens": original_tokens,
-        "preview_tokens": estimate_tokens(preview),
-        "overflow_path": display_path,
-        "preview": preview,
-    }
-    if persist_error:
-        new_data["persist_error"] = persist_error
-
+    char_size = len(original_json)
     new_metadata = dict(result.metadata or {})
     new_metadata["_overflow"] = {
         "triggered": True,
@@ -436,14 +479,95 @@ def _build_truncated_result(
         "max_tokens": max_tokens,
         "overflow_path": display_path,
         "persist_error": persist_error,
+        "char_size": char_size,
     }
 
-    return ToolResult(
+    # 从较大 preview 预算开始，若 to_json 仍超限则二分收紧，直至满足硬上限。
+    # overhead 预留 message + 元数据字段；过小则退到空 preview。
+    preview_budget = max(max_tokens - 280, 0)
+    last_result: Optional[ToolResult] = None
+
+    for _ in range(12):
+        preview = _head_tail_preview(original_json, preview_budget)
+        preview_tokens = estimate_tokens(preview) if preview else 0
+        new_message = _build_truncation_message(
+            original_tokens=original_tokens,
+            char_size=char_size,
+            preview_tokens=preview_tokens,
+            display_path=display_path,
+            persist_error=persist_error,
+        )
+        new_data: Dict[str, Any] = {
+            "truncated": True,
+            "original_tokens": original_tokens,
+            "preview_tokens": preview_tokens,
+            "overflow_path": display_path,
+            "char_size": char_size,
+            "preview": preview,
+        }
+        if persist_error:
+            new_data["persist_error"] = persist_error
+
+        candidate = ToolResult(
+            success=result.success,
+            data=new_data,
+            message=new_message,
+            error=result.error,
+            metadata=new_metadata,
+        )
+        last_result = candidate
+        kept = estimate_tokens(candidate.to_json())
+        if kept <= max_tokens:
+            return candidate
+        if preview_budget <= 0:
+            break
+        # 按超限比例收紧，至少减半，避免慢收敛
+        overshoot = kept / max(max_tokens, 1)
+        preview_budget = max(int(preview_budget / max(overshoot, 1.5)), 0)
+
+    # 极端：空 preview 仍超限（message/error 本身过大）——再砍 message
+    assert last_result is not None
+    bare_message = (
+        f"[此工具结果过大已截断] 原始约 {original_tokens} tokens"
+        f"（{char_size} chars）。"
+        + (
+            f"完整内容存档：{display_path}"
+            if display_path
+            else "落盘失败，完整内容已无法检索"
+        )
+    )
+    bare = ToolResult(
         success=result.success,
-        data=new_data,
-        message=new_message,
+        data={
+            "truncated": True,
+            "original_tokens": original_tokens,
+            "preview_tokens": 0,
+            "overflow_path": display_path,
+            "char_size": char_size,
+            "preview": "",
+            **({"persist_error": persist_error} if persist_error else {}),
+        },
+        message=_truncate_string_to_tokens(bare_message, max(max_tokens // 2, 32)),
         error=result.error,
         metadata=new_metadata,
+    )
+    if estimate_tokens(bare.to_json()) <= max_tokens:
+        return bare
+    # 最后兜底：丢掉 error 长文本，只留最小壳
+    return ToolResult(
+        success=result.success,
+        data={
+            "truncated": True,
+            "original_tokens": original_tokens,
+            "overflow_path": display_path,
+            "char_size": char_size,
+            "preview": "",
+        },
+        message=_truncate_string_to_tokens(
+            f"[truncated tool_result ~{original_tokens} tok]", max(max_tokens // 2, 16)
+        ),
+        error=None,
+        metadata={"_overflow": new_metadata["_overflow"]},
     )
 
 

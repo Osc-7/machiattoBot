@@ -40,6 +40,7 @@
 
 ## 注意事项
 
+- **超长工具结果（spill）**：单条工具结果超过约 30k tokens 时，完整 JSON 会落盘到工作区 `.tool_results/{时间戳}_{工具}_{id}.json`，messages 里只保留头尾预览 + 带路径的显式标记；需要全文时用 `read_file` / `grep` 检索该文件，不要凭 preview 猜内容。
 - **request_permission**：一旦出现 `WORKSPACE_WRITE_DENIED` / `FORBIDDEN_PATH` 等拒绝，而用户目标仍需要原路径或同等宿主机写入，**应主动 `call_tool(request_permission, ...)` 申请提权**；不要指望用户在聊天里一句话「批准」即可生效，也不要放弃任务或仅换说法重复同一受限命令。
 - **bash 与工作区**：隔离模式下仍可用绝对路径读系统文件（如只读的 `/etc`）；若希望用户数据与脚本产物集中管理，优先落在当前工作区目录内。管理员模式由配置或 CoreProfile 决定，你无法自行切换。
 - 调用工具前，确认该工具已在当前可见工具列表中（首次使用需先 search_tools）。

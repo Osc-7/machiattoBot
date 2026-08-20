@@ -409,6 +409,27 @@ class AgentKernel:
         except Exception:
             pass
 
+        # L2：压缩后保留段里的大 tool_result — scrub 超限 + 清扫陈旧
+        shrink = getattr(agent, "_shrink_tool_results_before_llm", None)
+        if callable(shrink):
+            try:
+                shrink()
+            except Exception as exc:
+                logger.warning(
+                    "AgentKernel.compress_context: shrink tool_results failed: %s",
+                    exc,
+                )
+        else:
+            clearer = getattr(agent, "_maybe_clear_stale_tool_results", None)
+            if callable(clearer):
+                try:
+                    clearer()
+                except Exception as exc:
+                    logger.warning(
+                        "AgentKernel.compress_context: clear stale tool_results failed: %s",
+                        exc,
+                    )
+
         kept = len(ctx.messages)
         logger.info(
             "AgentKernel: compressed %d old messages → summary (%d chars), kept %d messages",

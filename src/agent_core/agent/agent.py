@@ -924,6 +924,8 @@ class AgentCore:
         summary, kept = await AgentKernel.compress_context(
             self, keep_recent_turns=keep_recent_turns
         )
+        # 压缩后保留段里可能仍有大 tool_result，scrub + 清扫
+        self._shrink_tool_results_before_llm()
 
         after = len(self._context.get_messages())
         # 压缩后下一轮 LLM 的 prompt_tokens 会显著变化；清掉缓存的提示，
@@ -1327,6 +1329,9 @@ class AgentCore:
             await self._inject_background_job_notifications(turn_id=turn_id)
 
             try:
+                # ── L1.5 scrub 超限巨石 + L2 清扫陈旧 tool_result ──────────
+                self._shrink_tool_results_before_llm()
+
                 # ── 上下文压缩检查（信号机制：Core 检测 → Kernel 执行）──────
                 current_tokens = self._estimate_current_context_tokens()
                 compress_threshold = self._compute_compress_threshold()
@@ -1336,9 +1341,11 @@ class AgentCore:
                         threshold_tokens=compress_threshold,
                         session_id=self._session_id,
                     )
-                    # 摘要由 Kernel 写入 context.messages；此处不再写 running_summary
+                    # 摘要由 Kernel 写入 context.messages；此处再 scrub+清扫保留段
+                    self._shrink_tool_results_before_llm()
 
                 missing_reasoning_retries = 0
+                context_overflow_retried = False
                 while True:
                     # ── 组装 LLM Payload（Prompt + Context + Tools）──────────
                     payload = loader.assemble(self)
@@ -1381,15 +1388,31 @@ class AgentCore:
                     effective_max_tokens = self._compute_effective_max_tokens(payload)
 
                     # ── AgentCore 直接调用 LLM（CPU 自旋，无 Kernel 中介）───
-                    response = await self._llm_client.chat_with_tools(
-                        system_message=payload.system,
-                        messages=payload.messages,
-                        tools=payload.tools,
-                        tool_choice="auto",
-                        on_content_delta=hooks.on_assistant_delta if hooks else None,
-                        on_reasoning_delta=hooks.on_reasoning_delta if hooks else None,
-                        max_tokens_override=effective_max_tokens,
-                    )
+                    try:
+                        response = await self._llm_client.chat_with_tools(
+                            system_message=payload.system,
+                            messages=payload.messages,
+                            tools=payload.tools,
+                            tool_choice="auto",
+                            on_content_delta=hooks.on_assistant_delta if hooks else None,
+                            on_reasoning_delta=hooks.on_reasoning_delta if hooks else None,
+                            max_tokens_override=effective_max_tokens,
+                        )
+                    except Exception as llm_exc:
+                        if (
+                            context_overflow_retried
+                            or not self._is_context_overflow_http_error(llm_exc)
+                        ):
+                            raise
+                        context_overflow_retried = True
+                        logger.warning(
+                            "run_loop: context overflow HTTP error; "
+                            "clear tool_results(keep=2)+compress and retry once: %s",
+                            llm_exc,
+                        )
+                        await self._recover_from_context_overflow_http_error()
+                        # 重新组装后 continue 内层 while，再打一次 LLM
+                        continue
 
                     if self._session_logger:
                         self._session_logger.on_llm_response(
@@ -2125,6 +2148,158 @@ class AgentCore:
     def _collect_outgoing_attachment(self, result: ToolResult) -> None:
         """将工具结果中声明的「随回复发给用户的附件」加入本轮待发送列表。"""
         collect_outgoing_attachment(result, self._outgoing_attachments)
+
+    def _maybe_scrub_oversized_tool_results(self) -> int:
+        """
+        就地二次截断：历史中任意超 ``max_tool_result_tokens`` 的 tool 消息。
+
+        消化 checkpoint / 旧 L1 bug 留下的假截断巨石（keep_recent 保不住它们）。
+        """
+        mem_cfg = getattr(self._config, "memory", None)
+        if mem_cfg is None:
+            return 0
+        max_tokens = getattr(mem_cfg, "max_tool_result_tokens", None)
+        if not max_tokens or int(max_tokens) <= 0:
+            return 0
+        from agent_core.agent.tool_result_clearing import apply_scrub_to_context
+
+        try:
+            outcome = apply_scrub_to_context(
+                self._context, max_tokens=int(max_tokens)
+            )
+        except Exception as exc:
+            logger.warning("_maybe_scrub_oversized_tool_results failed: %s", exc)
+            return 0
+        return int(outcome.scrubbed or 0)
+
+    def _maybe_clear_stale_tool_results(
+        self,
+        *,
+        keep_recent: Optional[int] = None,
+        min_tokens: Optional[int] = None,
+        force: bool = False,
+    ) -> int:
+        """
+        L2：清扫历史超大 tool_result（只改 content，保留配对）。
+
+        ``force=True`` 时忽略 ``clear_stale_tool_results`` 开关（用于 400 兜底）。
+        返回清扫条数。
+        """
+        mem_cfg = getattr(self._config, "memory", None)
+        if mem_cfg is None:
+            return 0
+        enabled = bool(getattr(mem_cfg, "clear_stale_tool_results", True))
+        if not force and not enabled:
+            return 0
+
+        from agent_core.agent.tool_result_clearing import apply_clearing_to_context
+
+        kr = (
+            int(keep_recent)
+            if keep_recent is not None
+            else int(getattr(mem_cfg, "keep_recent_tool_results", 6) or 0)
+        )
+        mt = (
+            int(min_tokens)
+            if min_tokens is not None
+            else int(getattr(mem_cfg, "clear_tool_result_min_tokens", 2000) or 0)
+        )
+        try:
+            outcome = apply_clearing_to_context(
+                self._context, keep_recent=kr, min_tokens=mt
+            )
+        except Exception as exc:
+            logger.warning("_maybe_clear_stale_tool_results failed: %s", exc)
+            return 0
+        return int(outcome.cleared or 0)
+
+    def _shrink_tool_results_before_llm(self) -> None:
+        """发 LLM / 压缩前：先 scrub 超限巨石，再清扫陈旧中等结果。"""
+        self._maybe_scrub_oversized_tool_results()
+        self._maybe_clear_stale_tool_results()
+
+    def _is_context_overflow_http_error(self, exc: BaseException) -> bool:
+        """判断是否为上下文过长导致的 HTTP 400/413（或文案暗示）。"""
+        try:
+            import httpx
+        except Exception:  # pragma: no cover
+            httpx = None  # type: ignore
+
+        status: Optional[int] = None
+        body = ""
+        if httpx is not None and isinstance(exc, httpx.HTTPStatusError):
+            status = int(getattr(exc.response, "status_code", 0) or 0)
+            try:
+                body = (exc.response.text or "")[:4000]
+            except Exception:
+                body = str(exc)
+        else:
+            text = str(exc)
+            if "400" in text or "413" in text or "Bad Request" in text:
+                body = text
+                if "413" in text:
+                    status = 413
+                elif "400" in text or "Bad Request" in text:
+                    status = 400
+
+        if status not in (400, 413):
+            return False
+
+        lowered = (body or str(exc)).lower()
+        keywords = (
+            "context",
+            "too long",
+            "too_long",
+            "token",
+            "maximum context",
+            "prompt is too long",
+            "prompt_too_long",
+            "exceed",
+            "overflow",
+            "context_length",
+            "context window",
+            "input length",
+        )
+        if any(k in lowered for k in keywords):
+            return True
+        if status == 413:
+            return True
+
+        # 本地估算已显著偏高时：任意 400（含空 body / 无关键词）都当上下文过长。
+        # Kimi 对超长请求常回空 body；schema 类 400 在小上下文时仍不会误触。
+        try:
+            est = int(self._estimate_current_context_tokens() or 0)
+            thr = int(self._compute_compress_threshold() or 0)
+        except Exception:
+            est, thr = 0, 0
+        if thr > 0 and est >= int(thr * 0.5):
+            logger.warning(
+                "_is_context_overflow_http_error: treat HTTP %s as overflow "
+                "(est=%d thr=%d body=%r)",
+                status,
+                est,
+                thr,
+                (body or "")[:300],
+            )
+            return True
+        return False
+
+    async def _recover_from_context_overflow_http_error(self) -> None:
+        """400/413 上下文过长：scrub 全部超限 + 清扫(keep=0) + compress + 再 scrub。"""
+        from system.kernel import AgentKernel
+
+        self._maybe_scrub_oversized_tool_results()
+        self._maybe_clear_stale_tool_results(keep_recent=0, min_tokens=0, force=True)
+        try:
+            await AgentKernel.compress_context(self, keep_recent_turns=2)
+        except Exception as exc:
+            logger.warning(
+                "_recover_from_context_overflow_http_error: compress failed: %s",
+                exc,
+            )
+        self._maybe_scrub_oversized_tool_results()
+        self._maybe_clear_stale_tool_results(keep_recent=0, min_tokens=0, force=True)
+        self._last_prompt_tokens = None
 
     def _maybe_offload_tool_result_for_context(
         self,

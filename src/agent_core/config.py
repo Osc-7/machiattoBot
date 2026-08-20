@@ -856,10 +856,10 @@ class MemoryConfig(BaseModel):
         default=30000,
         ge=0,
         description=(
-            "单个 tool result 的 token 上限。超出时 messages 内只保留 head N tokens 与显式截断标记，"
-            "完整内容会落盘到工作区 .tool_results/ 目录，AI 可用 read_file/cat 检索。"
-            "防止单条工具结果（如 web_search、file_read）一次撑爆模型上下文窗口。"
-            "设为 None 或 0 关闭此机制。"
+            "单个 tool result 的 token 上限。超出时 messages 内只保留 head+tail preview "
+            "与显式截断标记，完整内容会落盘到工作区 .tool_results/ 目录，AI 可用 "
+            "read_file/cat/grep 检索。防止单条工具结果（如 MCP stdout、web_search）"
+            "一次撑爆模型上下文窗口。设为 None 或 0 关闭此机制。"
         ),
     )
     tool_result_overflow_dir: str = Field(
@@ -869,6 +869,23 @@ class MemoryConfig(BaseModel):
             "对 bash_workspace_admin 的 Core，转储目录会改放到对应的 /tmp/macchiato/{frontend}/{user}/，"
             "避免污染项目根。"
         ),
+    )
+    clear_stale_tool_results: bool = Field(
+        default=True,
+        description=(
+            "发 LLM 前 / 压缩后清扫历史超大 tool_result：保留最近 N 条完整内容，"
+            "更早的大结果替换为短占位（不破坏 tool_call 配对）。"
+        ),
+    )
+    keep_recent_tool_results: int = Field(
+        default=6,
+        ge=0,
+        description="L2 清扫时保留的最近 tool_result 条数（完整内容）。",
+    )
+    clear_tool_result_min_tokens: int = Field(
+        default=2000,
+        ge=0,
+        description="L2 清扫阈值：仅替换估算 tokens 大于此值的历史 tool_result。",
     )
 
     # 短期记忆
