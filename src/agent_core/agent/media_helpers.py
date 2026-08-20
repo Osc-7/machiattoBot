@@ -350,7 +350,22 @@ def _hydrate_media_ref_for_api(
         return None
 
     if media_type == "video":
-        # 视频不在 messages 里直接挂载；仅保留 path 文字提示。
+        if not vision_supported:
+            return None
+        # 视频禁止 inline base64；仅支持已有非 data URL（如 ms://）或 Kimi Files 上传。
+        ms_ref = url if url and not _is_data_url(url) else None
+        if not ms_ref and kimi_files is not None and path:
+            ms_ref = kimi_files.ensure_ms_url(path=path, media_type="video")
+            if ms_ref:
+                item = {**item, "url": ms_ref, "vendor": "kimi"}
+        if ms_ref:
+            return {
+                "type": "video_url",
+                "video_url": {"url": ms_ref},
+                "path": path,
+                "name": name,
+                "mime_type": mime or "video/mp4",
+            }
         return None
 
     if media_type == "file":
@@ -373,7 +388,7 @@ def _hydrate_user_content_for_api(
     vision_supported: bool,
     kimi_files: Optional["KimiVendorFilesClient"] = None,
 ) -> Any:
-    """仅对图片 media_ref 做临时注入；PDF/视频不挂载二进制。"""
+    """对 image/video media_ref 做临时注入；PDF 不挂载二进制。"""
     if isinstance(content, str):
         return content
     if not isinstance(content, list):
@@ -393,7 +408,7 @@ def _hydrate_user_content_for_api(
             )
             if api_item is not None:
                 hydrated.append(api_item)
-            # file/video/PDF 的 media_ref 不传给 LLM API（路径已在 text preface 里）。
+            # 未能 hydrate 的 file/video/PDF 不传二进制（路径应在 text preface）。
             continue
         if part.get("type") == "image_url":
             inner = part.get("image_url") if isinstance(part.get("image_url"), dict) else {}
@@ -422,9 +437,28 @@ def _hydrate_user_content_for_api(
             if vision_supported:
                 hydrated.append(part)
             continue
-        if part.get("type") in ("video_url", "file") or (
-            not vision_supported
-            and part.get("type") not in ("text",)
+        if part.get("type") == "video_url":
+            if not vision_supported:
+                continue
+            inner = part.get("video_url") if isinstance(part.get("video_url"), dict) else {}
+            url = str(inner.get("url") or "").strip()
+            path = str(part.get("path") or "").strip()
+            # data URL 视频过大，一律改走 Files API
+            if path and kimi_files is not None and (not url or _is_data_url(url)):
+                ms_ref = kimi_files.ensure_ms_url(path=path, media_type="video")
+                if ms_ref:
+                    hydrated.append(
+                        {
+                            **part,
+                            "video_url": {"url": ms_ref},
+                        }
+                    )
+                    continue
+            if url and not _is_data_url(url):
+                hydrated.append(part)
+            continue
+        if part.get("type") == "file" or (
+            not vision_supported and part.get("type") not in ("text",)
         ):
             # 非 vision 模型 / 非 OpenAI content 类型：丢弃（路径信息应在 text preface 里）
             continue
@@ -439,7 +473,7 @@ def persist_kimi_ms_urls_in_media_items(
     *,
     kimi_files: Optional["KimiVendorFilesClient"],
 ) -> None:
-    """将 ``ms://`` 写回 pending / content_items 中的 image media_ref。"""
+    """将 ``ms://`` 写回 pending / content_items 中的 image/video media_ref。"""
     if kimi_files is None:
         return
     from agent_core.llm.vendor_files import is_kimi_ms_url
@@ -447,14 +481,15 @@ def persist_kimi_ms_urls_in_media_items(
     for part in items:
         if not isinstance(part, dict) or part.get("type") != "media_ref":
             continue
-        if str(part.get("media_type") or "").lower() != "image":
+        media = str(part.get("media_type") or "").lower()
+        if media not in {"image", "video"}:
             continue
         if is_kimi_ms_url(str(part.get("url") or "")):
             continue
         path = str(part.get("path") or "").strip()
         if not path:
             continue
-        ms_ref = kimi_files.ensure_ms_url(path=path, media_type="image")
+        ms_ref = kimi_files.ensure_ms_url(path=path, media_type=media)
         if ms_ref:
             part["url"] = ms_ref
             part["vendor"] = "kimi"
@@ -481,14 +516,15 @@ def persist_kimi_ms_urls_in_context(
         for part in content:
             if not isinstance(part, dict) or part.get("type") != "media_ref":
                 continue
-            if str(part.get("media_type") or "").lower() != "image":
+            media = str(part.get("media_type") or "").lower()
+            if media not in {"image", "video"}:
                 continue
             if is_kimi_ms_url(str(part.get("url") or "")):
                 continue
             path = str(part.get("path") or "").strip()
             if not path:
                 continue
-            ms_ref = kimi_files.ensure_ms_url(path=path, media_type="image")
+            ms_ref = kimi_files.ensure_ms_url(path=path, media_type=media)
             if ms_ref:
                 part["url"] = ms_ref
                 part["vendor"] = "kimi"
@@ -507,8 +543,9 @@ def hydrate_messages_for_api(
     组装 LLM 请求前处理 messages：
 
     - 剥离已持久化的 base64 / data URL；
-    - 所有轮次用户消息中的图片：优先 ``ms://``（Kimi Files API），否则临时 base64；
-    - PDF/视频/文档仅保留 path 文字。
+    - 图片：优先 ``ms://``（Kimi Files API），否则临时 base64；
+    - 视频：仅 ``ms://`` / 非 data URL（需 Kimi Files）；不 inline base64；
+    - PDF/文档仅保留 path 文字。
     """
     _ = current_turn_id, enable_native_file_blocks, supported_file_mime_types
     out: List[Dict[str, Any]] = []

@@ -2080,6 +2080,7 @@ class AgentCore:
                 provider_base_url=str(getattr(prov, "base_url", "") or ""),
                 api_key=str(getattr(prov, "api_key", "") or ""),
                 cache=self._vendor_file_ref_cache,
+                timeout_seconds=180.0,
             )
         except Exception:
             return None

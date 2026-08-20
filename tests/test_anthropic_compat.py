@@ -23,6 +23,23 @@ def _provider(*, caps: Capabilities) -> AnthropicCompatProvider:
     )
 
 
+def test_convert_video_url_ms_to_anthropic_video_block():
+    from agent_core.llm.providers.anthropic_compat import (
+        _convert_openai_user_content_part_to_anthropic,
+    )
+
+    block = _convert_openai_user_content_part_to_anthropic(
+        {
+            "type": "video_url",
+            "video_url": {"url": "ms://file_video_1"},
+        }
+    )
+    assert block == {
+        "type": "video",
+        "source": {"type": "url", "url": "ms://file_video_1"},
+    }
+
+
 def test_parse_extended_thinking_blocks_split_reasoning_and_content():
     p = _provider(
         caps=Capabilities(reasoning_content=True),

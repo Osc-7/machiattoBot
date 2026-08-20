@@ -45,6 +45,16 @@ def _convert_openai_user_content_part_to_anthropic(part: Any) -> Any:
                 "source": {"type": "url", "url": image_url.strip()},
             }
 
+    if part_type == "video_url":
+        # Kimi Coding（Anthropic Messages 兼容）接受 url 源的 video block；
+        # OpenAI 风格 video_url（含 ms://）在此对称转为 Anthropic 形态。
+        video_url = (part.get("video_url") or {}).get("url")
+        if isinstance(video_url, str) and video_url.strip():
+            return {
+                "type": "video",
+                "source": {"type": "url", "url": video_url.strip()},
+            }
+
     if part_type == "file":
         file_obj = part.get("file") or {}
         mime = str(part.get("mime_type") or "application/octet-stream").strip().lower()
@@ -64,7 +74,11 @@ def _convert_openai_user_content_part_to_anthropic(part: Any) -> Any:
 
     if part_type == "media_ref":
         media_type = str(part.get("media_type") or "").strip().lower()
-        if media_type in {"file", "video"}:
+        if media_type == "file":
+            return None
+        # video/image media_ref 应在 hydrate 阶段已变成 video_url/image_url；
+        # 若仍落到这里则跳过，避免把本地 path 原样塞进 Anthropic。
+        if media_type in {"video", "image"}:
             return None
 
     return part

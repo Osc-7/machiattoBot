@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 from agent_core.config import Config, get_config
 from agent_core.llm.client import LLMClient
 from agent_core.tools.base import BaseTool, ToolDefinition, ToolParameter, ToolResult
-from agent_core.utils.media import resolve_media_to_content_item
+from agent_core.utils.media import resolve_media_to_content_item_async
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,33 @@ class RecognizeImageTool(BaseTool):
     @property
     def name(self) -> str:
         return "recognize_image"
+
+    @staticmethod
+    def _content_item_to_image_url(
+        content_item: Dict[str, Any],
+    ) -> tuple[Optional[str], Optional[str]]:
+        """把 resolve 结果转为 vision API 可用的 image URL（含 data URL）。"""
+        from pathlib import Path
+
+        from agent_core.utils.media import _file_to_data_url
+
+        t = str(content_item.get("type") or "").strip()
+        if t == "image_url":
+            url = (content_item.get("image_url") or {}).get("url")
+            if isinstance(url, str) and url.strip():
+                return url.strip(), None
+            return None, "image_url 缺少 url"
+        if t == "media_ref":
+            if str(content_item.get("media_type") or "").strip().lower() != "image":
+                return None, f"登记条目不是图像（media_type={content_item.get('media_type')}）"
+            path = str(content_item.get("path") or "").strip()
+            if not path:
+                return None, "media_ref 缺少 path"
+            data_url, _mime, err = _file_to_data_url(Path(path))
+            if err or not data_url:
+                return None, err or f"无法读取图片: {path}"
+            return data_url, None
+        return None, f"不支持的 content type={t}"
 
     def get_definition(self) -> ToolDefinition:
         return ToolDefinition(
@@ -174,7 +201,7 @@ class RecognizeImageTool(BaseTool):
                 if registered_url:
                     resolved_url = registered_url
                 elif lookup.get("path"):
-                    content_item, err = resolve_media_to_content_item(
+                    content_item, err = await resolve_media_to_content_item_async(
                         str(lookup.get("path") or "").strip(),
                         config=self._config,
                         exec_ctx=ctx,
@@ -185,15 +212,16 @@ class RecognizeImageTool(BaseTool):
                             error="RESOLVE_FAILED",
                             message=err or f"无法解析登记的图片: {original_key}",
                         )
-                    if content_item.get("type") != "image_url":
+                    resolved_url, url_err = self._content_item_to_image_url(content_item)
+                    if url_err or not resolved_url:
                         return ToolResult(
                             success=False,
                             error="NOT_AN_IMAGE",
-                            message=f"登记条目不是图像（type={content_item.get('type')}）。",
+                            message=url_err
+                            or f"登记条目不是图像（type={content_item.get('type')}）。",
                         )
-                    resolved_url = (content_item.get("image_url") or {}).get("url")
             else:
-                content_item, err = resolve_media_to_content_item(
+                content_item, err = await resolve_media_to_content_item_async(
                     original_key, config=self._config, exec_ctx=ctx
                 )
                 if err or not content_item:
@@ -202,14 +230,14 @@ class RecognizeImageTool(BaseTool):
                         error="RESOLVE_FAILED",
                         message=err or f"无法解析图片路径: {image_path}",
                     )
-                media_type = content_item.get("type")
-                if media_type != "image_url":
+                resolved_url, url_err = self._content_item_to_image_url(content_item)
+                if url_err or not resolved_url:
                     return ToolResult(
                         success=False,
                         error="NOT_AN_IMAGE",
-                        message=f"路径指向的不是图像（type={media_type}）；recognize_image 仅支持图像。",
+                        message=url_err
+                        or f"路径指向的不是图像（type={content_item.get('type')}）；recognize_image 仅支持图像。",
                     )
-                resolved_url = (content_item.get("image_url") or {}).get("url")
 
         if not resolved_url:
             return ToolResult(

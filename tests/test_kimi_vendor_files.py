@@ -85,6 +85,70 @@ def test_hydrate_prefers_ms_url_when_kimi_client_available(tmp_path: Path):
     assert "base64" not in img["image_url"]["url"]
 
 
+def test_hydrate_video_uses_kimi_ms_url_not_base64(tmp_path: Path):
+    mp4 = tmp_path / "clip.mp4"
+    mp4.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+    kimi = MagicMock(spec=KimiVendorFilesClient)
+    kimi.ensure_ms_url.return_value = "ms://video_abc"
+
+    stored = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "看视频"},
+                {
+                    "type": "media_ref",
+                    "media_type": "video",
+                    "path": str(mp4),
+                    "name": "clip.mp4",
+                    "mime_type": "video/mp4",
+                },
+            ],
+        }
+    ]
+
+    hydrated = hydrate_messages_for_api(
+        stored,
+        current_turn_id=1,
+        vision_supported=True,
+        kimi_files=kimi,
+    )
+    parts = hydrated[0]["content"]
+    vid = next(p for p in parts if p.get("type") == "video_url")
+    assert vid["video_url"]["url"] == "ms://video_abc"
+    kimi.ensure_ms_url.assert_called_with(path=str(mp4), media_type="video")
+
+
+def test_hydrate_video_without_kimi_files_drops_binary(tmp_path: Path):
+    """无 Files API 时不把视频 base64 塞进消息。"""
+    mp4 = tmp_path / "clip.mp4"
+    mp4.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+
+    stored = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "看视频"},
+                {
+                    "type": "media_ref",
+                    "media_type": "video",
+                    "path": str(mp4),
+                    "name": "clip.mp4",
+                },
+            ],
+        }
+    ]
+    hydrated = hydrate_messages_for_api(
+        stored,
+        current_turn_id=1,
+        vision_supported=True,
+        kimi_files=None,
+    )
+    parts = hydrated[0]["content"]
+    assert all(p.get("type") != "video_url" for p in parts if isinstance(p, dict))
+    assert any(p.get("type") == "text" for p in parts if isinstance(p, dict))
+
+
 def test_persist_ms_url_writes_back_to_context(tmp_path: Path):
     png = tmp_path / "a.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
