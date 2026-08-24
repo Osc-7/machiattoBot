@@ -235,6 +235,19 @@ class AnthropicCompatProvider(BaseProvider):
     def max_tokens(self) -> int:
         return self._max_tokens
 
+    def _thinking_mode_tool_rounds_need_nonstream(self) -> bool:
+        """thinking + 工具：下一轮须原样回传 assistant content 块（含 signature）。
+
+        流式路径只汇总 ``reasoning_content``/text，不保留 ``anthropic_message_content``；
+        Kimi/Anthropic 扩展思考多轮工具调用会 400。非流式 ``_parse_response`` 可一次取全块。
+        """
+        if not self._capabilities.reasoning_content:
+            return False
+        th = (self._vendor_params or {}).get("thinking")
+        if not isinstance(th, dict):
+            return False
+        return str(th.get("type", "")).strip().lower() == "enabled"
+
     def _build_auth_headers(self) -> Dict[str, str]:
         """构建认证请求头。"""
         headers = {"Authorization": f"Bearer {self._api_key}"}
@@ -874,7 +887,20 @@ class AnthropicCompatProvider(BaseProvider):
                 # 指定具体工具
                 payload["tool_choice"] = {"type": "tool", "name": tool_choice}
         
-        if self._stream:
+        use_stream = self._stream
+        if (
+            use_stream
+            and anthropic_tools
+            and self._capabilities.function_calling
+            and self._thinking_mode_tool_rounds_need_nonstream()
+        ):
+            logger.debug(
+                "AnthropicCompatProvider[%s] thinking+tools: force stream=False "
+                "to preserve anthropic_message_content",
+                self._name,
+            )
+            use_stream = False
+        if use_stream:
             return await self._make_stream_request(
                 "/messages",
                 payload,

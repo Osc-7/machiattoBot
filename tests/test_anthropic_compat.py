@@ -6,6 +6,7 @@ import pytest
 
 from agent_core.llm.capabilities import Capabilities
 from agent_core.llm.providers import AnthropicCompatProvider
+from agent_core.llm.response import LLMResponse
 
 
 def _provider(*, caps: Capabilities) -> AnthropicCompatProvider:
@@ -401,4 +402,74 @@ async def test_chat_with_tools_stream_emits_delta_and_tool_calls():
     assert out.tool_calls[0].id == "tool_1"
     assert out.tool_calls[0].name == "search_tools"
     assert out.tool_calls[0].arguments == {"query": "calendar"}
+    await p.close()
+
+
+def test_thinking_enabled_requests_nonstream_for_tools():
+    p = AnthropicCompatProvider(
+        name="kimi_code",
+        base_url="https://api.kimi.com/coding/v1",
+        api_key="k",
+        model="kimi-for-coding",
+        capabilities=Capabilities(
+            reasoning_content=True,
+            function_calling=True,
+        ),
+        stream=True,
+        vendor_params={"thinking": {"type": "enabled", "budget_tokens": 65536}},
+    )
+    assert p._thinking_mode_tool_rounds_need_nonstream() is True
+
+
+@pytest.mark.asyncio
+async def test_chat_with_tools_forces_nonstream_when_thinking_enabled():
+    from unittest.mock import AsyncMock, patch
+
+    p = AnthropicCompatProvider(
+        name="kimi_k3",
+        base_url="https://api.kimi.com/coding/v1",
+        api_key="k",
+        model="k3",
+        capabilities=Capabilities(
+            reasoning_content=True,
+            function_calling=True,
+        ),
+        stream=True,
+        vendor_params={"thinking": {"type": "enabled", "effort": "max"}},
+    )
+    parse_out = LLMResponse(
+        content="ok",
+        tool_calls=[],
+        finish_reason="stop",
+        reasoning_content="think",
+        anthropic_message_content=[
+            {"type": "thinking", "thinking": "think", "signature": "sig"},
+            {"type": "text", "text": "ok"},
+        ],
+    )
+    with patch.object(p, "_make_stream_request", new_callable=AsyncMock) as stream_fn:
+        with patch.object(
+            p, "_make_request", new_callable=AsyncMock, return_value={"content": []}
+        ) as req_fn:
+            with patch.object(
+                p, "_parse_response", return_value=parse_out
+            ) as parse_fn:
+                tools = [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "bash",
+                            "description": "run",
+                            "parameters": {"type": "object", "properties": {}},
+                        },
+                    }
+                ]
+                out = await p.chat_with_tools(
+                    messages=[{"role": "user", "content": "hi"}],
+                    tools=tools,
+                )
+                stream_fn.assert_not_awaited()
+                req_fn.assert_awaited_once()
+                parse_fn.assert_called_once()
+    assert out.anthropic_message_content is not None
     await p.close()
